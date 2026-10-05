@@ -816,29 +816,8 @@ static int handle_seccomp_event_common(Tracee *tracee)
 	default:
 	{
 		word_t kernel_num = peek_reg(tracee, CURRENT, SYSARG_NUM);
-		const char *log_path = "/data/data/id.or.oo.pr/cache/sigsys-log.txt";
-		FILE *f = fopen(log_path, "a");
-		if (f) {
-			time_t now = time(NULL);
-			struct tm *tm = localtime(&now);
-			char comm[64];
-			char timebuf[32];
-			FILE *commf;
-			strftime(timebuf, sizeof(timebuf), "%H:%M:%S", tm);
-			memset(comm, 0, sizeof(comm));
-			commf = fopen("/proc/self/comm", "r");
-			if (commf) {
-				if (fgets(comm, sizeof(comm), commf)) {
-					char *nl = strchr(comm, '\n');
-					if (nl) *nl = '\0';
-				}
-				fclose(commf);
-			}
-			fprintf(f, "SIGSYS: time=%s pid=%d comm=%s kernel_num=%lu pr=%d\n",
-				timebuf, (int)tracee->pid, comm,
-				(unsigned long)kernel_num, (int)sysnum);
-			fclose(f);
-		}
+		VERBOSE(tracee, 1, "SIGSYS: pid=%d kernel_num=%lu pr=%d",
+			(int)tracee->pid, (unsigned long)kernel_num, (int)sysnum);
 		if (sysnum == PR_openat || sysnum == PR_fstatat64) {
 			set_result_after_seccomp(tracee, -ENOENT);
 		} else {

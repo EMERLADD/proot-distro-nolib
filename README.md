@@ -2,6 +2,13 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
+## Standalone proot-distro-nolib engine
+
+Run `make` in this directory to build the ARM64 Android engine into
+`build/proot-distro-nolib/arm64/proot-distro-nolib`. Run `make test` to build
+and execute its Android regression tests. These targets only build the engine;
+they do not install files or build the APK. See [standalone engine notes](docs/proot-distro-nolib.md).
+
 ## What it does
 
 - Install and run Linux distributions (Alpine, Debian, Ubuntu, and 5 more) on any Android device
