@@ -23,9 +23,10 @@ build:
 
 test: build
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_proot_nolib.py" -v
+	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn.py" -v
 
 clean:
 	rm -rf "$(PROJECT_ROOT)/build/proot-distro-nolib"
 
 help:
-	@printf '%s\n' 'make                 Build the ARM64 Android engine' 'make test            Build and run Android regression tests' 'make clean           Remove this engine build only' 'make NDK_PATH=...    Select an Android NDK installation' 'Output: $(OUT_DIR)/proot-distro-nolib'
+	@printf '%s\n' 'make                 Build the ARM64 Android pdn and engine' 'make test            Build and run Android regression tests' 'make clean           Remove this engine build only' 'make NDK_PATH=...    Select an Android NDK installation' 'Output: $(OUT_DIR)/pdn and proot-distro-nolib'

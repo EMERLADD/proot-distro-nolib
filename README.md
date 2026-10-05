@@ -2,12 +2,16 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
-## Standalone proot-distro-nolib engine
+## Standalone proot-distro-nolib 0.2.0
 
-Run `make` in this directory to build the ARM64 Android engine into
-`build/proot-distro-nolib/arm64/proot-distro-nolib`. Run `make test` to build
-and execute its Android regression tests. These targets only build the engine;
-they do not install files or build the APK. See [standalone engine notes](docs/proot-distro-nolib.md).
+Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
+`proot-distro-nolib` executable. Version 0.2.0 supports local rootfs login,
+command execution and listing; automatic installation is not included in this
+standalone release. Set `PDN_ROOTFS_DIR` to the directory containing your rootfs
+directories, then use `pdn login ubuntu` or `pdn login --rootfs /path/to/rootfs`.
+Command and rootfs names ignore ASCII case. Run `make test` for Android
+regression tests. These targets do not install files or build the APK.
+See [standalone usage and build notes](docs/proot-distro-nolib.md).
 
 ## What it does
 

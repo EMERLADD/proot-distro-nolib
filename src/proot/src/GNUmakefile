@@ -19,6 +19,7 @@ CFLAGS   += -Wall -Wextra -O2
 LDFLAGS  += -ltalloc -Wl,-z,noexecstack
 
 OBJECTS += \
+	cli/pdn.o		\
 	cli/cli.o		\
 	cli/proot.o		\
 	cli/note.o		\

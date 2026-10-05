@@ -437,7 +437,7 @@ static int parse_config(Tracee *tracee, size_t argc, char *const argv[])
 
 bool exit_failure = true;
 
-int main(int argc, char *const argv[])
+int proot_main(int argc, char *const argv[])
 {
 	Tracee *tracee;
 	int status;

@@ -61,5 +61,6 @@ if LC_ALL=C grep -aiE 'termux|/data/data/|/data/user/|/home/' \
     echo 'Unexpected host path or dependency in release binaries' >&2
     exit 1
 fi
-(cd "$OUT_DIR" && sha256sum proot-distro-nolib proot-loader > SHA256SUMS)
+cp "$OUT_DIR/proot-distro-nolib" "$OUT_DIR/pdn"
+(cd "$OUT_DIR" && sha256sum proot-distro-nolib pdn proot-loader > SHA256SUMS)
 echo "Built: $OUT_DIR/proot-distro-nolib"
