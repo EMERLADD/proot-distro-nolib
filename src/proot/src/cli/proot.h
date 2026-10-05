@@ -9,6 +9,8 @@
 #define VERSION "5.4.0-pr"
 #endif
 
+#define PDN_VERSION "0.1.1"
+
 static const char *recommended_bindings[] = {
 	"/etc/host.conf",
 	"/etc/hosts",
@@ -72,17 +74,19 @@ static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *,
 static int post_initialize_exe(Tracee *, const Cli *, size_t, char *const *, size_t);
 
 static Cli proot_cli = {
-	.version  = VERSION,
-	.name     = "proot",
+	.version  = PDN_VERSION,
+	.name     = "proot-distro-nolib",
 	.subtitle = "chroot, mount --bind, and binfmt_misc without privilege/setup",
-	.synopsis = "proot [option] ... [command]",
-	.colophon = "Visit http://proot.me for help, bug reports, suggestions, patchs, ...\n\
+	.synopsis = "proot-distro-nolib [option] ... [command]",
+	.colophon = "Based on PRoot " VERSION ".\n\
+Visit http://proot.me for help, bug reports, suggestions, patchs, ...\n\
 Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
-	.logo = "\
- _____ _____              ___\n\
-|  __ \\  __ \\_____  _____|   |_\n\
-|   __/     /  _  \\/  _  \\    _|\n\
-|__|  |__|__\\_____/\\_____/\\____|",
+	.logo =
+		"    _   __      __    _ __\n"
+		"   / | / /___  / /   (_) /_\n"
+		"  /  |/ / __ \\/ /   / / __ \\\n"
+		" / /|  / /_/ / /___/ / /_/ /\n"
+		"/_/ |_/\\____/_____/_/_.___/",
 
 	.pre_initialize_bindings = pre_initialize_bindings,
 	.post_initialize_exe = post_initialize_exe,

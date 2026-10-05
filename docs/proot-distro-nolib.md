@@ -1,5 +1,10 @@
 # proot-distro-nolib engine
 
+Current project version: **0.1.1**, based on **PRoot 5.4.0-pr**.
+`--version`, `-V`, and `--about` display the slanted NoLib logo and the project
+version on separate lines, followed by the base version and original copyright
+and license information.
+
 This stage cleans the existing PRoot execution engine for use in independent
 Android CLI hosts. Its interface remains `proot [options] [command]`.
 Distribution management commands such as `pd install` and `pd login` are a

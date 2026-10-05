@@ -109,7 +109,7 @@ void print_usage(Tracee *tracee, const Cli *cli, bool detailed)
  */
 void print_version(const Cli *cli)
 {
-	printf("%s %s\n\n", cli->logo, cli->version);
+	printf("%s\n\n%s %s\n\n", cli->logo, cli->name, cli->version);
 	printf("built-in accelerators: process_vm = %s, seccomp_filter = %s\n",
 #if defined(HAVE_PROCESS_VM)
 		"yes",

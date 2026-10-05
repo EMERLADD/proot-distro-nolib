@@ -73,13 +73,22 @@ class ProotNolibTests(unittest.TestCase):
             self.assertNotRegex(name.read_bytes().lower(), rb"termux|/data/data/|/data/user/|/home/")
 
     def test_help_and_version_without_host_environment(self):
-        for option, expected in (("--help", "--rootfs"), ("--version", "5.4.0-pr")):
+        for option in ("--help", "--version", "-V", "--about"):
             env = {"PATH": "/system/bin"}
             if "LLVM_PROFILE_FILE" in self.env:
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(expected, result.stdout)
+            self.assertIn("proot-distro-nolib 0.1.1", result.stdout)
+            self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
+            self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
+            if option == "--help":
+                self.assertIn("proot-distro-nolib [option] ... [command]", result.stdout)
+                self.assertIn("--rootfs", result.stdout)
+            else:
+                logo, version, _ = result.stdout.split("\n\n", 2)
+                self.assertEqual(len(logo.splitlines()), 5)
+                self.assertEqual(version, "proot-distro-nolib 0.1.1")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()
