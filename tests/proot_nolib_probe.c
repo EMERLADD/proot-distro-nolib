@@ -8,12 +8,49 @@
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 int main(int argc, char **argv)
 {
     if (argc != 2)
         return 2;
+
+    if (strcmp(argv[1], "groups-exec") == 0) {
+        gid_t list[3];
+        return syscall(__NR_getgroups, 3, list) == 3 && list[0] == 0 && list[1] == 1234 && list[2] == 65537 ? 0 : 20;
+    }
+    if (strcmp(argv[1], "groups") == 0) {
+        gid_t list[4] = {65537, 0, 1234, 0}, output[4] = {0};
+        int status;
+        if (syscall(__NR_getgroups, 0, NULL) != 0) return 21;
+        if (syscall(__NR_getgroups, -1, NULL) != -1 || errno != EINVAL) return 22;
+        if (syscall(__NR_setgroups, 65537, list) != -1 || errno != EINVAL) return 23;
+        if (syscall(__NR_setgroups, 1, NULL) != -1 || errno != EFAULT) return 24;
+        gid_t invalid = (gid_t)-1;
+        if (syscall(__NR_setgroups, 1, &invalid) != -1 || errno != EINVAL) return 25;
+        if (syscall(__NR_setgroups, 3, list) != 0 || syscall(__NR_getgroups, 0, NULL) != 3) return 26;
+        if (syscall(__NR_getgroups, 2, output) != -1 || errno != EINVAL) return 27;
+        if (syscall(__NR_getgroups, 3, NULL) != -1 || errno != EFAULT) return 28;
+        if (syscall(__NR_getgroups, 4, output) != 3 || output[0] != 0 || output[1] != 1234 || output[2] != 65537) return 29;
+        pid_t child = fork();
+        if (child < 0) return 30;
+        if (!child) {
+            if (syscall(__NR_setgroups, 0, NULL) != 0 || syscall(__NR_getgroups, 0, NULL) != 0) _exit(31);
+            if (syscall(__NR_setuid, 1234) != 0) _exit(32);
+            if (syscall(__NR_setgroups, 0, NULL) != -1 || errno != EPERM) _exit(33);
+            _exit(0);
+        }
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return 34;
+        child = fork();
+        if (child < 0) return 35;
+        if (!child) { execl(argv[0], argv[0], "groups-exec", NULL); _exit(36); }
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return 37;
+        if (syscall(__NR_setgroups, 0, NULL) != 0 || syscall(__NR_getgroups, 0, NULL) != 0) return 38;
+        puts("guest groups isolated; setgroups, fork and exec passed");
+        return 0;
+    }
 
     if (strcmp(argv[1], "sigsys") == 0) {
         struct sock_filter filter[] = {

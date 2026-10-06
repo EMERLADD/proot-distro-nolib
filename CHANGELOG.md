@@ -1,5 +1,15 @@
 # proot-distro-nolib 更新记录
 
+## v0.4.1 — 2026-10-06
+
+- 修复 Android 宿主附加组泄漏到 guest，导致登录时 `groups: cannot find name for group ID` 的问题。
+- 在 PRoot fake-id 层统一虚拟附加组，支持查询、设置、清空、参数与权限检查，以及 fork/exec 继承。
+- 保持 Android 实际组权限不变，不改写 guest 的 `/etc/group`；已有系统替换二进制后重新登录即可生效。
+
+验证：61 项自动测试通过；新增附加组模块行覆盖率 92.59%。
+已有 Alpine、Ubuntu、Debian、Arch Linux ARM 的交互登录均只显示 `root` 组且无未知组警告，
+组文件保持不变；Ubuntu apt 联网更新通过。原生 ARM64 路径已验证。
+
 ## v0.4.0 — 2026-10-06
 
 - 新增 `pdn install ubuntu`、`pdn install debian`、`pdn install arch`，继续支持 Alpine；均为 ARM64，命令和名称兼容大小写。
@@ -15,7 +25,7 @@
 验证：59 项自动测试通过；前端行覆盖率 98.65%，安装模块 98.72%，发行版目录 100%。
 三个新增发行版均已验证真实下载安装、登录、软件源更新以及安装运行 `tree`；
 Arch 归档已验证官方 PGP 签名。运行时依赖仍仅为 Android libc/libdl。
-详细来源与摘要见 [rootfs 目录](docs/pdn-rootfs-sources.md)。本版 MT 管理器试用结果待确认。
+详细来源与摘要见 [rootfs 目录](docs/pdn-rootfs-sources.md)。用户已验证 Ubuntu 安装与登录；附加组名称警告在 v0.4.1 修复。
 
 ## v0.3.2 — 2026-10-06
 

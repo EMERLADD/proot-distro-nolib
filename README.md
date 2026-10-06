@@ -2,7 +2,7 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
-## Standalone proot-distro-nolib 0.4.0
+## Standalone proot-distro-nolib 0.4.1
 
 Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
 `proot-distro-nolib` executable. Install Alpine, Ubuntu, Debian or Arch Linux ARM

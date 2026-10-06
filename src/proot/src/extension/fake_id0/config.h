@@ -14,6 +14,8 @@ typedef struct {
 	gid_t sgid;
 	gid_t fsgid;
 
+	gid_t *groups;
+	size_t group_count;
 	mode_t umask;
 } Config;
 

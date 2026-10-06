@@ -72,6 +72,17 @@ class ProotNolibTests(unittest.TestCase):
         for name in (BINARY, BINARY.parent / "proot-loader"):
             self.assertNotRegex(name.read_bytes().lower(), rb"termux|/data/data/|/data/user/|/home/")
 
+    def test_virtual_supplementary_groups(self):
+        before = os.getgroups()
+        for disabled in (True, False):
+            env = dict(self.env)
+            if not disabled:
+                env.pop("PROOT_NO_SECCOMP")
+            result = self.invoke(["-0", str(self.probe), "groups"], env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("guest groups isolated", result.stdout)
+        self.assertEqual(os.getgroups(), before)
+
     def test_help_and_version_without_host_environment(self):
         for option in ("--help", "--version", "-V", "--about"):
             env = {"PATH": "/system/bin"}
@@ -79,7 +90,7 @@ class ProotNolibTests(unittest.TestCase):
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("proot-distro-nolib 0.4.0", result.stdout)
+            self.assertIn("proot-distro-nolib 0.4.1", result.stdout)
             self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
             if option == "--help":
@@ -88,7 +99,7 @@ class ProotNolibTests(unittest.TestCase):
             else:
                 logo, version, _ = result.stdout.split("\n\n", 2)
                 self.assertEqual(len(logo.splitlines()), 5)
-                self.assertEqual(version, "proot-distro-nolib 0.4.0")
+                self.assertEqual(version, "proot-distro-nolib 0.4.1")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()

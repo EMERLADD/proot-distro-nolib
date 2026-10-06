@@ -42,6 +42,10 @@ class PdnTests(unittest.TestCase):
                       "0\n6.17.0-pr\n/root:root:root:/tmp\n")
         self.assertTrue((self.root / ".pdn-tmp").is_dir())
 
+    def test_login_has_no_host_supplementary_groups(self):
+        result = self.invoke("login", "ubuntu", "--", "/bin/busybox", "id", "-G")
+        self.good(result, "0\n")
+
     def test_direct_path_and_exact_arguments(self):
         payloads = ["two words", "", "MiXeD", "a'b\"c", "$(echo injected)", "; exit 99", "line\nbreak"]
         result = self.invoke("login", "--ROOTFS", str(self.root), "--", "/bin/sh", "-c",
@@ -142,7 +146,7 @@ class PdnTests(unittest.TestCase):
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.4.0", result.stdout)
+            self.assertIn("proot-distro-nolib 0.4.1", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 

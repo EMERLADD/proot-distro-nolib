@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current project version: **0.4.0**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.4.1**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
@@ -174,6 +174,13 @@ Explicit commands start in `/` and preserve argument boundaries via guest
 `/bin/sh` and `exec "$@"`. Shell expressions require explicit `/bin/sh -c` as
 shown above. Standard input/output and the guest exit status are preserved.
 Background guest processes are terminated when the primary command exits.
+
+Since v0.4.1 fake-identity sessions start with an empty virtual supplementary
+group list, so Android app groups are not exposed by `groups` or `id`. Guest
+`setgroups` updates a private list, inherited across fork/exec, while the real
+Android supplementary groups remain unchanged for host file/network access.
+This applies to existing rootfs without rewriting `/etc/group`; replace the
+binary and start a new login session. The native ARM64 path is regression-tested.
 
 The frontend sets guest HOME/USER/LOGNAME/PATH/SHELL/TMPDIR and removes host
 LD_PRELOAD, LD_LIBRARY_PATH, ENV and BASH_ENV. Other variables are inherited;
