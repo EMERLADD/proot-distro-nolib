@@ -7,7 +7,8 @@
 #include <unistd.h>
 
 #ifdef PDN_WITH_INSTALL
-int pdn_install(const char *local_archive);
+int pdn_install(const char *local_archive, const char *mirror_name);
+int pdn_mirrors(void);
 #endif
 
 int proot_main(int argc, char *const argv[]);
@@ -50,7 +51,8 @@ static int help(void)
     puts("pdn - proot-distro-nolib\n"
          "Usage:\n"
 #ifdef PDN_WITH_INSTALL
-         "  pdn install alpine [--archive PATH]\n"
+         "  pdn install alpine [--mirror NAME | --archive PATH]\n"
+         "  pdn mirrors\n"
 #endif
          "  pdn login NAME [-- COMMAND ARG...]\n"
          "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
@@ -219,12 +221,14 @@ int main(int argc, char *const argv[])
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
     if (argc > 1) {
 #ifdef PDN_WITH_INSTALL
+        if (equal(argv[1], "mirrors")) return argc == 2 ? pdn_mirrors() : fail("unexpected argument", argv[2]);
         if (equal(argv[1], "install")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3 || !equal(argv[2], "alpine")) return fail("only Alpine is supported", "install alpine");
-            if (argc == 3) return pdn_install(NULL);
-            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[4]);
-            return fail("usage", "install alpine [--archive PATH]");
+            if (argc == 3) return pdn_install(NULL, NULL);
+            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[4], NULL);
+            if (argc == 5 && equal(argv[3], "--mirror")) return pdn_install(NULL, argv[4]);
+            return fail("usage", "install alpine [--mirror NAME | --archive PATH]");
         }
 #endif
         if (equal(argv[1], "login")) return login(argc, argv);

@@ -46,18 +46,20 @@ class InstallTests(unittest.TestCase):
         source = cls.fixtures / "harness.c"
         source.write_text(f'''#define ALPINE_SIZE {cls.archive.stat().st_size}
 #define ALPINE_SHA256 "{digest}"
-#define ALPINE_URL getenv("TEST_URL")
+#define ALPINE_MIRRORS {{"tuna", "https://mirrors.tuna.tsinghua.edu.cn/alpine", getenv("TEST_URL")}}, {{"ustc", "https://mirrors.ustc.edu.cn/alpine", getenv("TEST_URL_2")}}
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
 char *pdn_rootfs_base(void) {{
     const char *base = getenv("PDN_ROOTFS_DIR");
     return base ? strdup(base) : NULL;
 }}
 int main(int argc, char **argv) {{
+    if (argc == 2 && !strcmp(argv[1], "mirrors")) return pdn_mirrors();
     if (argc == 3 && !strcmp(argv[1], "extract")) return extract(argv[2]) != 0;
     if (argc == 3 && !strcmp(argv[1], "verify")) return verify(argv[2]) != 0;
     if (argc == 4 && !strcmp(argv[1], "download")) return download(argv[2], argv[3]) != 0;
-    if (argc == 2 && !strcmp(argv[1], "configure")) return configure() != 0;
-    return pdn_install(argc == 2 ? argv[1] : NULL);
+    if (argc == 2 && !strcmp(argv[1], "configure")) return configure("https://mirrors.tuna.tsinghua.edu.cn/alpine") != 0;
+    if (argc == 3 && !strcmp(argv[1], "mirror")) return pdn_install(NULL, argv[2]);
+    return pdn_install(argc == 2 ? argv[1] : NULL, NULL);
 }}
 ''')
         ndk = Path(os.environ["NDK_PATH"])
@@ -86,12 +88,14 @@ int main(int argc, char **argv) {{
                         "-lmbedcrypto", "-o", str(certgen)], check=True)
         subprocess.run([str(certgen), str(key), str(cls.cert)], check=True)
         payload = cls.archive.read_bytes()
+        cls.requests = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
 
             def do_GET(self):
+                cls.requests.append(self.path)
                 if self.path == "/slow":
                     self.send_response(200)
                     self.send_header("Content-Length", str(len(payload)))
@@ -107,6 +111,10 @@ int main(int argc, char **argv) {{
                     self.send_error(404)
                     return
                 data = payload + b"too long" if self.path == "/large" else payload
+                if self.path == "/corrupt":
+                    data = payload[:-1] + bytes([payload[-1] ^ 1])
+                if self.path == "/short":
+                    data = payload[:-17]
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
@@ -127,8 +135,9 @@ int main(int argc, char **argv) {{
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
         self.roots = self.base / "new roots" / "linux"
+        self.requests.clear()
         self.env = {"PATH": "/system/bin", "PDN_ROOTFS_DIR": str(self.roots),
-                    "PDN_CA_BUNDLE": str(self.cert), "TEST_URL": self.url + "/archive"}
+                    "PDN_CA_BUNDLE": str(self.cert), "TEST_URL": self.url + "/archive", "TEST_URL_2": self.url + "/missing"}
         if "LLVM_PROFILE_FILE" in os.environ:
             self.env["LLVM_PROFILE_FILE"] = os.environ["LLVM_PROFILE_FILE"]
 
@@ -158,6 +167,47 @@ int main(int argc, char **argv) {{
         result = self.run_harness()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.roots / "alpine/bin/tool").exists())
+
+    def test_mirror_fallback(self):
+        self.env["TEST_URL_2"] = self.url + "/archive"
+        for endpoint in ("/missing", "/corrupt", "/short", "/large"):
+            with self.subTest(endpoint=endpoint):
+                self.env["TEST_URL"] = self.url + endpoint
+                self.env["PDN_ROOTFS_DIR"] = str(self.base / endpoint[1:])
+                result = self.run_harness()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Mirror tuna failed", result.stderr)
+                root = Path(self.env["PDN_ROOTFS_DIR"]) / "alpine"
+                self.assertIn("mirrors.ustc.edu.cn", (root / "etc/apk/repositories").read_text())
+                self.assertEqual((root / "bin/tool").read_bytes(), b"guest\n")
+
+    def test_manual_mirror(self):
+        self.env["TEST_URL_2"] = self.url + "/archive"
+        result = self.run_harness("mirror", "USTC")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Trying mirror: tuna", result.stdout)
+        self.assertEqual(self.requests, ["/archive"])
+        self.env["PDN_ROOTFS_DIR"] = str(self.base / "failed")
+        self.env["TEST_URL_2"] = self.url + "/missing"
+        result = self.run_harness("mirror", "ustc")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Trying mirror: tuna", result.stdout)
+        self.assertNotEqual(self.run_harness("mirror", "unknown").returncode, 0)
+
+    def test_mirror_listing_and_options(self):
+        listing = self.run_harness("mirrors")
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        self.assertIn("tuna", listing.stdout)
+        self.assertIn("ustc", listing.stdout)
+        result = subprocess.run([str(BINARY), "MiRrOrS"], env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("tuna", "ustc", "nju", "official", "dotsrc"):
+            self.assertIn(name, result.stdout)
+        for args in [("mirrors", "extra"), ("install", "alpine", "--mirror"),
+                     ("install", "alpine", "--mirror", "unknown"),
+                     ("install", "alpine", "--archive", "/missing", "--mirror", "tuna")]:
+            result = subprocess.run([str(BINARY), *args], env=self.env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
 
     def test_download_validation(self):
         output = self.base / "download"
@@ -217,6 +267,7 @@ int main(int argc, char **argv) {{
         proc.send_signal(signal.SIGINT)
         proc.communicate(timeout=10)
         self.assertEqual(proc.returncode, 130)
+        self.assertNotIn("/missing", self.requests)
         self.assert_clean()
 
     def test_extraction_boundaries(self):

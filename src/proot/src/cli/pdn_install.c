@@ -15,8 +15,21 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#ifndef ALPINE_URL
-#define ALPINE_URL "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.2-aarch64.tar.gz"
+#define ALPINE_FILE "/v3.24/releases/aarch64/alpine-minirootfs-3.24.2-aarch64.tar.gz"
+
+struct mirror {
+    const char *name;
+    const char *base;
+    const char *url;
+};
+
+#ifndef ALPINE_MIRRORS
+#define ALPINE_MIRRORS \
+    {"tuna", "https://mirrors.tuna.tsinghua.edu.cn/alpine", "https://mirrors.tuna.tsinghua.edu.cn/alpine" ALPINE_FILE}, \
+    {"ustc", "https://mirrors.ustc.edu.cn/alpine", "https://mirrors.ustc.edu.cn/alpine" ALPINE_FILE}, \
+    {"nju", "https://mirrors.nju.edu.cn/alpine", "https://mirrors.nju.edu.cn/alpine" ALPINE_FILE}, \
+    {"official", "https://dl-cdn.alpinelinux.org/alpine", "https://dl-cdn.alpinelinux.org/alpine" ALPINE_FILE}, \
+    {"dotsrc", "https://mirrors.dotsrc.org/alpine", "https://mirrors.dotsrc.org/alpine" ALPINE_FILE}
 #endif
 #ifndef ALPINE_SHA256
 #define ALPINE_SHA256 "9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773"
@@ -114,14 +127,14 @@ static int download(const char *url, const char *path)
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return error("cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.3.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.3.1");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
     curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 20L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)ALPINE_SIZE);
@@ -172,8 +185,37 @@ static int verify(const char *path)
     if (mbedtls_md_file(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), path, digest) != 0)
         return error("cannot hash archive");
     for (i = 0; i < sizeof(digest); i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
-    if (strcmp(hex, ALPINE_SHA256) != 0) return error("SHA256 mismatch; installation cancelled");
+    if (strcmp(hex, ALPINE_SHA256) != 0) return error("SHA256 mismatch; archive rejected");
     return 0;
+}
+
+int pdn_mirrors(void)
+{
+    const struct mirror mirrors[] = { ALPINE_MIRRORS };
+    size_t i;
+    puts("Alpine ARM64 rootfs mirrors (automatic fallback order):");
+    for (i = 0; i < sizeof(mirrors) / sizeof(mirrors[0]); i++)
+        printf("%-10s %s\n", mirrors[i].name, mirrors[i].base);
+    return 0;
+}
+
+static int download_mirrors(const struct mirror *mirrors, size_t count,
+                            int selected, const char *path)
+{
+    size_t i;
+    for (i = 0; i < count; i++) {
+        if (selected >= 0 && i != (size_t)selected) continue;
+        if (cancelled) return -1;
+        printf("Trying mirror: %s\n", mirrors[i].name);
+        fflush(stdout);
+        if (download(mirrors[i].url, path) == 0 && !cancelled && verify(path) == 0)
+            return (int)i;
+        if (unlink(path) < 0 && errno != ENOENT) return error("cannot remove failed download");
+        if (cancelled) return -1;
+        if (selected >= 0) break;
+        if (i + 1 < count) fprintf(stderr, "Mirror %s failed; trying the next source.\n", mirrors[i].name);
+    }
+    return error("no mirror provided a verified Alpine archive");
 }
 
 static int extract(const char *path)
@@ -234,14 +276,15 @@ static int write_config(int parent, const char *name, const char *text)
     return result;
 }
 
-static int configure(void)
+static int configure(const char *mirror_base)
 {
+    char repositories[1024];
+    int length = snprintf(repositories, sizeof(repositories), "%s/v3.24/main\n%s/v3.24/community\n", mirror_base, mirror_base);
+    if (length < 0 || (size_t)length >= sizeof(repositories)) return error("mirror URL too long");
     int etc = open("etc", O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC), apk, result;
     if (etc < 0) return error("missing etc directory");
     apk = openat(etc, "apk", O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    result = apk < 0 ? -1 : write_config(apk, "repositories",
-        "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/main\n"
-        "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/community\n");
+    result = apk < 0 ? -1 : write_config(apk, "repositories", repositories);
     if (apk >= 0) close(apk);
     if (result == 0) result = write_config(etc, "resolv.conf", "nameserver 223.5.5.5\nnameserver 1.1.1.1\n");
     close(etc);
@@ -249,8 +292,16 @@ static int configure(void)
     return 0;
 }
 
-int pdn_install(const char *local_archive)
+int pdn_install(const char *local_archive, const char *mirror_name)
 {
+    const struct mirror mirrors[] = { ALPINE_MIRRORS };
+    size_t count = sizeof(mirrors) / sizeof(mirrors[0]), i;
+    int selected = -1, downloaded = 0;
+    if (mirror_name) {
+        for (i = 0; i < count; i++)
+            if (!strcasecmp(mirror_name, mirrors[i].name)) { selected = (int)i; break; }
+        if (selected < 0) return error("unknown mirror; run pdn mirrors") != 0;
+    }
     char *base = pdn_rootfs_base(), *archive = NULL;
     char stage[] = ".pdn-alpine-XXXXXX";
     int cwd = -1, basefd = -1, lock = -1, staged = 0, result = 1;
@@ -275,18 +326,21 @@ int pdn_install(const char *local_archive)
     sigaction(SIGINT, &action, &old_int);
     sigaction(SIGTERM, &action, &old_term);
     if (chdir(stage) < 0) goto restore;
-    puts("Installing Alpine 3.24.2 (ARM64) from Tsinghua TUNA...");
+    puts("Installing Alpine 3.24.2 (ARM64)...");
     fflush(stdout);
     if (archive) {
         if (copy_archive(archive, "rootfs.tar.gz") != 0) goto restore;
-    } else if (download(ALPINE_URL, "rootfs.tar.gz") != 0) goto restore;
+    } else {
+        downloaded = download_mirrors(mirrors, count, selected, "rootfs.tar.gz");
+        if (downloaded < 0) goto restore;
+    }
     free(archive);
     archive = realpath("rootfs.tar.gz", NULL);
     puts("Verifying SHA256...");
     if (!archive || verify(archive) != 0 || cancelled) goto restore;
     if (mkdir("rootfs", 0700) < 0 || chdir("rootfs") < 0) goto restore;
     puts("Extracting rootfs...");
-    if (extract(archive) != 0 || configure() != 0 || cancelled) goto restore;
+    if (extract(archive) != 0 || configure(mirrors[downloaded].base) != 0 || cancelled) goto restore;
     if (fchdir(basefd) < 0) goto restore;
     if (exists_alpine()) { error("Alpine appeared during installation; refusing to replace it"); goto restore; }
     {

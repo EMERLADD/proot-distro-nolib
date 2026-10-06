@@ -1,13 +1,13 @@
 # proot-distro-nolib engine
 
-Current project version: **0.3.0**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.3.1**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`install`, `login`, `list` (alias `ls`), `help`, and `version`. No host Python, Bash, BusyBox, or app
+`install`, `mirrors`, `login`, `list` (alias `ls`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Alpine installation
@@ -20,10 +20,30 @@ pdn login alpine
 
 The default directory remains `$HOME/.local/share/pdn/rootfs`. Commands and
 `alpine` ignore ASCII case. Installation downloads the fixed ARM64 Alpine 3.24.2
-Mini Root Filesystem from Tsinghua TUNA over verified HTTPS, checks its exact
-size and compiled-in SHA256, extracts it, and configures the v3.24 TUNA main
-and community apk repositories. DNS defaults to 223.5.5.5 and 1.1.1.1; these
+Mini Root Filesystem over verified HTTPS, checks its exact size and compiled-in
+SHA256, extracts it, and configures the v3.24 main and community apk repositories
+from the mirror that supplied the verified archive. DNS defaults to 223.5.5.5 and 1.1.1.1; these
 can be edited in the installed rootfs's `etc/resolv.conf` for your network.
+
+Version 0.3.1 tries these mirrors in order: Tsinghua TUNA (`tuna`), USTC (`ustc`),
+Nanjing University (`nju`), Alpine official CDN (`official`), and dotsrc (`dotsrc`).
+Network errors, HTTP errors, size mismatches and SHA256 mismatches reject that
+download and try the next mirror, starting a fresh file. All mirrors must supply
+the same pinned version, architecture, size and hash. Ctrl+C/SIGTERM stop the
+whole operation; they do not trigger another mirror attempt.
+
+```sh
+pdn mirrors
+pdn install alpine
+pdn install alpine --mirror ustc
+pdn INSTALL ALPINE --MIRROR OFFICIAL
+```
+
+Manual selection tries only that mirror. Mirror names ignore ASCII case. Each
+mirror has an 8-second connection timeout, a 90-second transfer timeout and a
+30-second low-speed threshold at 1 KiB/s. This is fixed-order fallback, not a
+latency or throughput ranking; interrupted downloads are not resumed. Existing
+installed systems and their repository settings are not changed.
 
 A previously downloaded copy of the same official archive can be used offline:
 
@@ -31,7 +51,8 @@ A previously downloaded copy of the same official archive can be used offline:
 pdn install alpine --archive /path/to/alpine-minirootfs-3.24.2-aarch64.tar.gz
 ```
 
-Local archives are copied into staging before verification. This is not a
+Local archives use TUNA apk repositories as before, and cannot be combined with
+`--mirror`. They are copied into staging before verification. This is not a
 universal archive importer: other versions and modified archives fail the check.
 
 Existing Alpine directories, symlinks and files (including case variants) are
@@ -237,3 +258,12 @@ The standalone build enables `PDN_WITH_INSTALL=1`. The original engine build
 remains available without that option and does not require the installer
 libraries. On 2026-10-06, the user confirmed that the v0.3.0 release worked
 in their MT Manager setup.
+
+
+Version 0.3.1 passed 42 tests (15 engine, 14 login/list, 13 installer).
+Installer line coverage is 96.44%. USTC and the official CDN were each used for
+real installation and login, and the USTC-installed guest successfully updated
+its apk indexes. Each candidate mirror's checksum file matched the pinned hash;
+range downloads succeeded for USTC, NJU, the official CDN and dotsrc. TUNA had
+one connection timeout during these probes, after successful use in v0.3.0.
+Mirror availability varies by network; fallback does not imply a speed ranking.
