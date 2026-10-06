@@ -235,4 +235,5 @@ Alpine 3.24.2 guests. The default login successfully ran `apk update`, installed
 
 The standalone build enables `PDN_WITH_INSTALL=1`. The original engine build
 remains available without that option and does not require the installer
-libraries. MT Manager validation of this release is still a user-side check.
+libraries. On 2026-10-06, the user confirmed that the v0.3.0 release worked
+in their MT Manager setup.
