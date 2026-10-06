@@ -1,13 +1,13 @@
 # proot-distro-nolib engine
 
-Current project version: **0.5.0**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.6.0**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`install`, `mirrors`, `login`, `exec`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
+`install`, `mirrors`, `login`, `exec`, `config`, `backup`, `restore`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Installing a distribution
@@ -225,6 +225,107 @@ manager help. `pdn proot --help` shows the engine's options.
 
 Automatic mirror speed ranking and additional distro installers are deferred. This release targets ARM64 Android hosts that permit the
 existing engine to run; it does not add other operating-system/CPU support.
+
+## Saved startup settings and users
+
+```sh
+pdn config ubuntu --bind /sdcard:/mnt/shared --work-dir /root --env LANG=C.UTF-8
+pdn config ubuntu --show
+pdn login ubuntu
+pdn exec ubuntu --work-dir /tmp --env EXAMPLE='two words' -- /usr/bin/env
+pdn login ubuntu --user root
+pdn login ubuntu --no-config
+pdn config ubuntu --clear
+```
+
+`config NAME [options]` replaces the entire saved configuration. With no options
+or `--show`, it prints JSON; `--clear` removes it. The same `--rootfs PATH`
+selector as login is accepted. Configuration is stored as bounded, non-executable
+data in the rootfs `.pdn-config`, with mode 0600 and atomic replacement. Exit all
+sessions before writing or clearing settings. Invalid files fail closed; use
+`--no-config` to start a recovery session. Saved settings are removed with the
+rootfs on uninstall. Configuration can contain environment values; `--show`
+prints those values as supplied.
+
+Supported startup options for config, login and exec:
+
+| Option | Behavior |
+| --- | --- |
+| `--bind`, `-b HOST[:GUEST]` | Repeatable; canonical host paths saved. Invocation binds follow defaults. |
+| `--user`, `-u USER[:GID]` | Guest username or numeric UID, optionally with numeric GID. |
+| `--work-dir`, `-w /PATH` | Absolute guest initial directory, for both interactive and explicit commands. |
+| `--env`, `-e KEY=VALUE` | Repeatable; exact values, last assignment to each key wins. |
+| `--no-config` | Login/exec only: ignore all saved settings for this invocation. |
+
+Invocation user, working directory and environment values override the saved
+values. Bindings are appended, with later destinations taking precedence. A
+missing saved bind source is an error; bypass with `--no-config` or replace the
+configuration. Commands and option names ignore ASCII case; user names, paths,
+environment keys and values retain exact case. Guest commands cannot be saved.
+
+The default identity remains root. An explicitly selected username must exist
+in the guest's regular `/etc/passwd`; neither the file nor its `etc` directory
+may be a symlink. Numeric UIDs use matching passwd metadata when available;
+otherwise HOME is `/`, SHELL is `/bin/sh`, USER/LOGNAME are the numeric ID and
+GID defaults to that UID. An explicit numeric GID overrides it. This does not
+create accounts or add supplementary group memberships. Identity is emulated
+by PRoot and does not grant host permissions. Switching back to root is needed
+for package management inside the guest.
+
+Guest environment values are exported after the guest shell starts; they do not
+reconfigure the host tracer. They may override HOME, USER and SHELL variables.
+The chosen account's login shell still determines the executable shell.
+An explicit work directory is resolved inside the guest after bindings are
+applied; failure to enter it returns an error, without running the requested
+command. Without an explicit directory, interactive login uses HOME (then `/`
+as a fallback), while exec retains its existing `/` starting directory.
+
+## Backing up and restoring
+
+```sh
+pdn backup ubuntu /sdcard/ubuntu.tar.gz
+pdn restore ubuntu-copy /sdcard/ubuntu.tar.gz
+pdn login ubuntu-copy
+```
+
+Backup requires a named real rootfs directory with no active pdn sessions.
+It holds an exclusive root lock and the install/uninstall lock. Choose a new
+output filename outside the source rootfs; existing files, symlinks and archive
+names are never replaced. Gzip-compressed tar output is first written to a
+private temporary file and published only on success. Host-side changes made
+outside pdn are not covered by its advisory locks: keep the source quiescent.
+
+Backups preserve regular file contents, ordinary file permissions, modification
+times and symlinks. Internal PRoot hardlink-emulation links are made portable
+and relocated on restore. Known hardlink backing paths outside the rootfs are
+rejected instead of silently producing an incomplete portable backup. Raw
+native hardlinks are copied as separate files; normal PRoot hardlink-emulation
+links retain their shared data behavior. Files reached through symlinks and
+host bind mounts are not copied into the archive.
+
+Host-specific `.pdn-config*`, loader scratch `.pdn-tmp`, contents of `/dev`,
+`/proc`, `/sys`, and sockets/FIFOs/device nodes are excluded. Restore does not
+activate saved host settings from an input archive; configure new host paths
+with `pdn config` after migration. Host ownership is not restored, setuid/setgid
+bits are stripped, and directory owner rwx permission is ensured for rootless
+operation and cleanup. This is a portable application rootfs backup, not a
+privileged filesystem image.
+
+Restore accepts uncompressed or gzip tar with the Linux rootfs directly at the
+archive's top level. It works offline and performs no installation scripts,
+package reconfiguration or catalogue checksum validation. Use archives you
+intend to run as guest Linux. Destination names are checked case-insensitively;
+a new name is required, so a failed restore cannot replace an existing system.
+Only the configured rootfs parent is supported, not arbitrary destination paths.
+
+Extraction occurs in a private staging directory, with traversal and symlink-write
+protection. Archive hardlinks become relative aliases as in the installer.
+Limits are 1,000,000 entries, 8 GiB per regular file and 64 GiB total declared
+file data. Backup imposes the same limits and a maximum directory depth of 256.
+Errors and handled SIGINT/SIGTERM remove partial output/staging; SIGKILL or power
+loss can leave `.pdn-backup-*` or `.pdn-restore-*` scratch entries. Successful
+publication requires the host's no-replace rename support; it fails instead of
+falling back to overwriting a destination.
 
 ## Build in this repository
 

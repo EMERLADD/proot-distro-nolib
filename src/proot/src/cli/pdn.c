@@ -8,10 +8,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "cli/pdn_config.h"
+
 #ifdef PDN_WITH_INSTALL
 int pdn_install(const char *name, const char *local_archive, const char *mirror_name);
 int pdn_mirrors(const char *name);
 int pdn_available(void);
+int pdn_archive(const char *name, const char *file, int restoring);
 #endif
 
 int proot_main(int argc, char *const argv[]);
@@ -57,11 +60,15 @@ static int help(void)
 #ifdef PDN_WITH_INSTALL
          "  pdn install NAME [--mirror NAME | --archive PATH]\n"
          "  pdn mirrors [NAME]\n  pdn list --available\n"
+         "  pdn backup NAME FILE.tar.gz\n  pdn restore NAME FILE.tar.gz\n"
 #endif
-         "  pdn login NAME [--bind HOST[:GUEST] | -b HOST[:GUEST]]... [-- COMMAND ARG...]\n"
-         "  pdn login --rootfs PATH [--bind HOST[:GUEST] | -b HOST[:GUEST]]... [-- COMMAND ARG...]\n"
-         "  pdn exec NAME [--bind HOST[:GUEST] | -b HOST[:GUEST]]... -- COMMAND ARG...\n"
-         "  pdn exec --rootfs PATH [--bind HOST[:GUEST] | -b HOST[:GUEST]]... -- COMMAND ARG...\n"
+         "  pdn login NAME|--rootfs PATH [OPTIONS] [-- COMMAND ARG...]\n"
+         "  pdn exec NAME|--rootfs PATH [OPTIONS] -- COMMAND ARG...\n"
+         "  pdn config NAME|--rootfs PATH [--show | --clear | OPTIONS]\n"
+         "  OPTIONS: --bind/-b HOST[:GUEST], --env/-e KEY=VALUE (repeatable),\n"
+         "           --user/-u NAME|UID[:GID], --work-dir/-w /GUEST/PATH\n"
+         "  Login/exec: --no-config bypasses saved defaults.\n"
+         "  Config replaces all saved options; no options shows defaults as JSON.\n"
          "  pdn list (alias: ls)\n"
          "  pdn uninstall NAME [--yes | -y] (alias: remove)\n"
          "  pdn version\n"
@@ -135,20 +142,17 @@ static int parse_bind(const char *spec, char **binding)
     return 0;
 }
 
-int pdn_login(int argc, char *const argv[])
+static int resolve_root(int argc, char *const argv[], char **root, int *command)
 {
-    char *root = NULL, *base = NULL, *candidate = NULL, *temp = NULL;
-    const char *requested, *tmp;
-    char **args = NULL, **binds = NULL;
-    int command, n = 0, result, rootfd = -1, bind_count = 0, i;
-    int require_command = equal(argv[1], "exec");
-    if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
-    if (argc < 3) return fail("missing rootfs", "use login NAME or login --rootfs PATH");
+    char *base = NULL, *candidate = NULL;
+    const char *requested;
+    int result = 0;
+    if (argc < 3) return fail("missing rootfs", "use NAME or --rootfs PATH");
     if (equal(argv[2], "--rootfs")) {
         if (argc < 4 || !*argv[3]) return fail("missing path", "--rootfs");
         requested = argv[3];
         candidate = strdup(requested);
-        command = 4;
+        *command = 4;
     } else {
         DIR *dir;
         struct dirent *entry;
@@ -169,44 +173,86 @@ int pdn_login(int argc, char *const argv[])
         closedir(dir);
         free(base);
         if (!candidate) return fail("rootfs not found", requested);
-        command = 3;
+        *command = 3;
     }
-    binds = calloc((size_t)argc, sizeof(*binds));
-    if (!binds) { result = fail("out of memory", argv[1]); goto done; }
+    if (!candidate) return fail("out of memory", requested);
+    *root = realpath(candidate, NULL);
+    free(candidate);
+    if (!*root) return fail(strerror(errno), requested);
+    if (!directory(*root) || !strcmp(*root, "/")) result = fail("rootfs must be a Linux directory other than /", requested);
+    return result;
+}
+
+int pdn_login(int argc, char *const argv[])
+{
+    char *root = NULL, *temp = NULL;
+    const char *tmp;
+    char **args = NULL;
+    int command = 0, n = 0, result, rootfd = -1, i;
+    int require_command = equal(argv[1], "exec"), config = equal(argv[1], "config");
+    int no_config = 0, action = 0, option_count = 0, shell_override = 0;
+    PdnOptions options = {0}, cli = {0};
+    PdnIdentity identity = {0};
+    if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+    result = resolve_root(argc, argv, &root, &command);
+    if (result) goto done;
     while (command < argc && strcmp(argv[command], "--") != 0) {
         const char *option = argv[command++];
-        if (!equal(option, "--bind") && !equal(option, "-b")) {
-            result = fail("unexpected option; expected --bind, -b or --", option);
+        char kind = 0, *binding = NULL;
+        if (equal(option, "--bind") || equal(option, "-b")) kind = 'b';
+        else if (equal(option, "--env") || equal(option, "-e")) kind = 'e';
+        else if (equal(option, "--user") || equal(option, "-u")) kind = 'u';
+        else if (equal(option, "--work-dir") || equal(option, "-w")) kind = 'w';
+        else if (!config && equal(option, "--no-config")) { no_config = 1; continue; }
+        else if (config && (equal(option, "--show") || equal(option, "--clear"))) {
+            if (action || option_count) { result = fail("config actions cannot be combined", option); goto done; }
+            action = equal(option, "--show") ? 1 : 2;
+            continue;
+        } else { result = fail("unexpected startup option", option); goto done; }
+        if (action || command == argc || !strcmp(argv[command], "--")) {
+            result = fail("missing value or incompatible config action", option);
             goto done;
         }
-        if (command == argc || !strcmp(argv[command], "--") ||
-            equal(argv[command], "--bind") || equal(argv[command], "-b")) {
-            result = fail("missing bind host", option);
-            goto done;
-        }
-        result = parse_bind(argv[command++], &binds[bind_count]);
+        if (kind == 'b') {
+            result = parse_bind(argv[command++], &binding);
+            if (!result) result = pdn_option_add(&cli, kind, binding);
+            free(binding);
+        } else result = pdn_option_add(&cli, kind, argv[command++]);
         if (result) goto done;
-        bind_count++;
+        option_count++;
     }
-    if (command < argc) {
-        if (++command == argc) {
-            result = fail("missing guest command", "--");
-            goto done;
-        }
+    if (config) {
+        if (command < argc) { result = fail("config cannot save a guest command", "--"); goto done; }
+        if (!action && !option_count) action = 1;
+    } else if (command < argc) {
+        if (++command == argc) { result = fail("missing guest command", "--"); goto done; }
     } else if (require_command) {
         result = fail("missing guest command", "exec requires -- COMMAND ARG...");
         goto done;
     }
-    root = realpath(candidate, NULL);
-    if (!root) { result = fail(strerror(errno), requested); goto done; }
-    if (!directory(root) || strcmp(root, "/") == 0) {
-        result = fail("rootfs must be a Linux directory other than /", requested);
+    rootfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (rootfd < 0 || flock(rootfd, (config && action != 1 ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
+        result = fail("rootfs unavailable or locked by another operation", root);
         goto done;
     }
-    rootfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (rootfd < 0 || flock(rootfd, LOCK_SH | LOCK_NB) < 0) {
-        result = fail("rootfs unavailable or being uninstalled", requested);
-        goto done;
+    if (config && action == 2) { result = pdn_options_clear(rootfd); goto done; }
+    if ((!config && !no_config) || (config && action == 1)) {
+        result = pdn_options_load(rootfd, &options);
+        if (result) goto done;
+    }
+    if (config && action == 1) { pdn_options_show(&options); result = 0; goto done; }
+    for (i = 0; i < cli.bind_count; i++) if ((result = pdn_option_add(&options, 'b', cli.binds[i]))) goto done;
+    for (i = 0; i < cli.env_count; i++) if ((result = pdn_option_add(&options, 'e', cli.env[i]))) goto done;
+    if (cli.user && (result = pdn_option_add(&options, 'u', cli.user))) goto done;
+    if (cli.workdir && (result = pdn_option_add(&options, 'w', cli.workdir))) goto done;
+    if (options.user && (result = pdn_identity(rootfd, options.user, &identity))) goto done;
+    if (config) { result = pdn_options_save(rootfd, &options); goto done; }
+    for (i = 0; i < options.bind_count; i++) {
+        char *binding = NULL;
+        result = parse_bind(options.binds[i], &binding);
+        if (result) goto done;
+        free(options.binds[i]);
+        options.binds[i] = binding;
     }
     tmp = nonempty("PROOT_TMP_DIR");
     if (!tmp) tmp = nonempty("TMPDIR");
@@ -222,16 +268,17 @@ int pdn_login(int argc, char *const argv[])
     unsetenv("LD_LIBRARY_PATH");
     unsetenv("ENV");
     unsetenv("BASH_ENV");
-    setenv("HOME", "/root", 1);
-    setenv("USER", "root", 1);
-    setenv("LOGNAME", "root", 1);
-    setenv("SHELL", "/bin/sh", 1);
+    setenv("HOME", identity.home ? identity.home : "/root", 1);
+    setenv("USER", identity.name ? identity.name : "root", 1);
+    setenv("LOGNAME", identity.name ? identity.name : "root", 1);
+    setenv("SHELL", identity.shell ? identity.shell : "/bin/sh", 1);
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("TMPDIR", "/tmp", 1);
-    args = calloc((size_t)argc + 32, sizeof(*args));
+    args = calloc((size_t)argc + (size_t)options.bind_count * 2 + (size_t)options.env_count + 48, sizeof(*args));
     if (!args) { result = fail("out of memory", argv[1]); goto done; }
     args[n++] = argv[0];
     args[n++] = "-0";
+    if (options.user) { args[n++] = "-i"; args[n++] = identity.ids; }
     args[n++] = "--link2symlink";
     args[n++] = "-L";
     args[n++] = "--kernel-release=6.17.0-pr";
@@ -240,23 +287,38 @@ int pdn_login(int argc, char *const argv[])
     args[n++] = "-b"; args[n++] = "/dev";
     args[n++] = "-b"; args[n++] = "/proc";
     args[n++] = "-b"; args[n++] = "/sys";
-    for (i = 0; i < bind_count; i++) {
-        args[n++] = "-b"; args[n++] = binds[i];
+    for (i = 0; i < options.bind_count; i++) {
+        args[n++] = "-b"; args[n++] = options.binds[i];
     }
     args[n++] = "-w"; args[n++] = "/";
     args[n++] = "/bin/sh";
     args[n++] = "-c";
-    args[n++] = "if [ \"$#\" -gt 0 ]; then exec \"$@\"; fi; "
-                "cd /root 2>/dev/null || cd /; "
-                "if [ -x /bin/bash ]; then SHELL=/bin/bash; export SHELL; exec /bin/bash -l; fi; "
+    args[n++] = "while [ \"$1\" != -- ]; do export \"$1\" || exit 2; shift; done; shift; "
+                "if [ -n \"$1\" ]; then cd \"$1\" || exit 2; fi; "
+                "if [ \"$3\" = command ]; then shift 4; exec \"$@\"; fi; "
+                "if [ -z \"$1\" ]; then cd \"$HOME\" 2>/dev/null || cd / || exit 2; fi; "
+                "if [ -n \"$2\" ]; then exec \"$2\" -l; fi; "
+                "if [ -x /bin/bash ]; then "
+                "if [ \"$4\" = default ]; then SHELL=/bin/bash; export SHELL; fi; exec /bin/bash -l; fi; "
                 "exec /bin/sh -l";
     args[n++] = "pdn";
+    for (i = 0; i < options.env_count; i++) {
+        if (!strncmp(options.env[i], "SHELL=", 6)) shell_override = 1;
+        args[n++] = options.env[i];
+    }
+    args[n++] = "--";
+    args[n++] = options.workdir ? options.workdir : "";
+    args[n++] = identity.shell ? identity.shell : "";
+    args[n++] = command < argc ? "command" : "interactive";
+    args[n++] = shell_override ? "override" : "default";
     for (; command < argc; command++) args[n++] = argv[command];
     result = proot_main(n, args);
 done:
     if (rootfd >= 0) close(rootfd);
-    for (i = 0; i < bind_count; i++) free(binds[i]);
-    free(binds); free(candidate); free(args); free(root); free(temp);
+    pdn_options_free(&options);
+    pdn_options_free(&cli);
+    pdn_identity_free(&identity);
+    free(args); free(root); free(temp);
     return result;
 }
 
@@ -288,6 +350,11 @@ int main(int argc, char *const argv[])
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
     if (argc > 1) {
 #ifdef PDN_WITH_INSTALL
+        if (equal(argv[1], "backup") || equal(argv[1], "restore")) {
+            if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+            if (argc != 4) return fail("usage", "backup|restore NAME FILE.tar.gz");
+            return pdn_archive(argv[2], argv[3], equal(argv[1], "restore"));
+        }
         if (equal(argv[1], "mirrors")) return argc <= 3 ? pdn_mirrors(argc == 3 ? argv[2] : NULL) : fail("unexpected argument", argv[3]);
         if ((equal(argv[1], "list") || equal(argv[1], "ls")) && argc == 3 && equal(argv[2], "--available")) return pdn_available();
         if (equal(argv[1], "install")) {
@@ -299,7 +366,7 @@ int main(int argc, char *const argv[])
             return fail("usage", "install NAME [--mirror NAME | --archive PATH]");
         }
 #endif
-        if (equal(argv[1], "login") || equal(argv[1], "exec")) return pdn_login(argc, argv);
+        if (equal(argv[1], "login") || equal(argv[1], "exec") || equal(argv[1], "config")) return pdn_login(argc, argv);
         if (equal(argv[1], "uninstall") || equal(argv[1], "remove")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3 || argc > 4 || (argc == 4 && !equal(argv[3], "--yes") && !equal(argv[3], "-y")))

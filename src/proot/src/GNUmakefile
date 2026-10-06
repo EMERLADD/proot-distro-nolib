@@ -20,6 +20,7 @@ LDFLAGS  += -ltalloc -Wl,-z,noexecstack
 
 OBJECTS += \
 	cli/pdn.o		\
+	cli/pdn_config.o		\
 	cli/pdn_remove.o		\
 	cli/cli.o		\
 	cli/proot.o		\
@@ -90,7 +91,7 @@ OBJECTS += \
 	tls-align.o
 
 ifdef PDN_WITH_INSTALL
-  OBJECTS += cli/pdn_install.o
+  OBJECTS += cli/pdn_install.o cli/pdn_backup.o
   CPPFLAGS += -DPDN_WITH_INSTALL
 endif
 

@@ -252,7 +252,7 @@ class PdnTests(unittest.TestCase):
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.5.0", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.0", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 
