@@ -47,7 +47,7 @@ static int help(void)
          "Usage:\n"
          "  pdn login NAME [-- COMMAND ARG...]\n"
          "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
-         "  pdn list\n"
+         "  pdn list (alias: ls)\n"
          "  pdn version\n"
          "  pdn proot [PROOT OPTIONS...]\n\n"
          "Rootfs directory: PDN_ROOTFS_DIR or $HOME/.local/share/pdn/rootfs\n"
@@ -205,7 +205,7 @@ int main(int argc, char *const argv[])
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
     if (argc > 1) {
         if (equal(argv[1], "login")) return login(argc, argv);
-        if (equal(argv[1], "list")) return argc == 2 ? list() : fail("unexpected argument", argv[2]);
+        if (equal(argv[1], "list") || equal(argv[1], "ls")) return argc == 2 ? list() : fail("unexpected argument", argv[2]);
         if (equal(argv[1], "help")) return help();
         if (equal(argv[1], "version")) {
             char *version_args[] = {argv[0], "--version", NULL};

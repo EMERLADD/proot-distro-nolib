@@ -7,7 +7,7 @@ and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`login`, `list`, `help`, and `version`. No host Python, Bash, BusyBox, or app
+`login`, `list` (alias `ls`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Local rootfs usage

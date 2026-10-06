@@ -80,7 +80,8 @@ class PdnTests(unittest.TestCase):
     def test_list_and_ambiguity(self):
         (self.root.parent / "file").write_text("ignore")
         (self.root.parent / ".hidden").mkdir()
-        self.good(self.invoke("list"), "Ubuntu\n")
+        for command in ("list", "ls", "LS", "Ls"):
+            self.good(self.invoke(command), "Ubuntu\n")
         (self.root.parent / "ubuntu").mkdir()
         result = self.invoke("login", "ubuntu")
         self.assertEqual(result.returncode, 2)
@@ -92,7 +93,7 @@ class PdnTests(unittest.TestCase):
                  ("login", "../Ubuntu"), ("login", ""), ("login", "no/such"),
                  ("login", "ubuntu", "echo"), ("login", "ubuntu", "--"),
                  ("login", "missing"), ("login", "--rootfs", "/"),
-                 ("login", "--rootfs", str(self.base / "missing")), ("list", "extra")]
+                 ("login", "--rootfs", str(self.base / "missing")), ("list", "extra"), ("ls", "extra")]
         (self.base / "file").write_text("not a directory")
         cases.append(("login", "--rootfs", str(self.base / "file")))
         for args in cases:
