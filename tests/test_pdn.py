@@ -52,6 +52,112 @@ class PdnTests(unittest.TestCase):
                              'printf "<%s>\\n" "$@"', "marker", *payloads)
         self.good(result, "".join(f"<{value}>\n" for value in payloads))
 
+    def test_exec_exact_arguments_and_case(self):
+        payloads = ["two words", "", "MiXeD", "a'b\"c", "$(echo injected)",
+                    "; exit 99", "line\nbreak", "--bind", "-B", "--rootfs", "--"]
+        for selector in (("uBuNtU",), ("--ROOTFS", str(self.root))):
+            result = self.invoke("ExEc", *selector, "--", "/bin/sh", "-c",
+                                 'printf "<%s>\\n" "$@"', "marker", *payloads)
+            self.good(result, "".join(f"<{value}>\n" for value in payloads))
+
+    def test_exec_requires_command_and_preserves_io_status(self):
+        for selector in (("ubuntu",), ("--rootfs", str(self.root))):
+            for trailing in ((), ("--",), ("/bin/sh",), ("-b", str(self.base))):
+                result = self.invoke("exec", *selector, *trailing, input="echo interactive\n")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+        result = self.invoke("exec", "ubuntu", "--", "/bin/sh", "-c",
+                             'read value; echo "out:$value"; echo error >&2; exit 37', input="from stdin\n")
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertEqual(result.stdout, "out:from stdin\n")
+        self.assertEqual(result.stderr, "error\n")
+        self.assertEqual(self.invoke("exec", "ubuntu", "--", "does-not-exist").returncode, 127)
+
+    def test_repeated_directory_and_file_binds(self):
+        first, second = self.base / "Host One", self.base / "Host Two"
+        first.mkdir()
+        second.mkdir()
+        source = self.base / "Mixed File"
+        source.write_text("exact case\n")
+        for command, selector in (("login", ("ubuntu",)), ("exec", ("--rootfs", str(self.root)))):
+            result = self.invoke(command, *selector, "--BiNd", f"{first}:/Guest One",
+                                 "-B", f"{second}:/Guest Two", "-b", f"{source}:/Guest File", "--",
+                                 "/bin/sh", "-c", 'echo one > "/Guest One/result"; '
+                                 'echo two > "/Guest Two/result"; /bin/busybox cat "/Guest File"')
+            self.good(result, "exact case\n")
+            self.assertEqual((first / "result").read_text(), "one\n")
+            self.assertEqual((second / "result").read_text(), "two\n")
+        self.good(self.invoke("exec", "ubuntu", "-b", f"{source}:/Guest File", "--",
+                              "/bin/sh", "-c", 'echo changed > "/Guest File"'))
+        self.assertEqual(source.read_text(), "changed\n")
+        self.good(self.invoke("exec", "ubuntu", "--", "/bin/sh", "-c",
+                              'test ! -e "/Guest One/result" && test ! -s "/Guest File"'))
+
+    def test_interactive_login_bind(self):
+        source = self.base / "interactive"
+        source.mkdir()
+        (source / "value").write_text("interactive bind\n")
+        self.good(self.invoke("login", "ubuntu", "-b", f"{source}:/shared",
+                              input="/bin/busybox cat /shared/value\nexit\n"), "interactive bind\n")
+
+    def test_bind_relative_host_and_default_destination(self):
+        source = self.base / "relative source"
+        source.mkdir()
+        (source / "value").write_text("canonical\n")
+        link = self.base / "source link"
+        link.symlink_to(source, target_is_directory=True)
+        relative = os.path.relpath(link)
+        self.good(self.invoke("exec", "ubuntu", "-b", relative, "--", "/bin/busybox", "cat",
+                              str(source / "value")), "canonical\n")
+
+    def test_bind_overrides_default_and_prior_bind(self):
+        first, second = self.base / "first", self.base / "second"
+        first.mkdir()
+        second.mkdir()
+        (first / "marker").write_text("first\n")
+        (second / "marker").write_text("second\n")
+        self.good(self.invoke("exec", "ubuntu", "-b", f"{first}:/sys", "-b", f"{second}:/sys", "--",
+                              "/bin/busybox", "cat", "/sys/marker"), "second\n")
+
+    def test_bind_invalid_specs_and_options(self):
+        fifo = self.base / "fifo"
+        os.mkfifo(fifo)
+        missing = self.base / "missing"
+        cases = [("--bind",), ("-b", "--"), ("-b", "--bind", str(self.base)),
+                 ("-b", ""), ("-b", ":/guest"), ("-b", f"{self.base}:"),
+                 ("-b", f"{self.base}:relative"), ("-b", f"{self.base}:/guest:extra"),
+                 ("-b", f"{self.base}:/guest!"), ("-b", f"{self.base}!:/guest"),
+                 ("-b", f"{missing}:/guest"), ("-b", str(fifo)),
+                 ("--unknown",), ("--bind=" + str(self.base),),
+                 ("-b", str(self.base), "--rootfs", str(self.root)),
+                 ("-b", str(self.base), "--bind", f"{missing}:/guest")]
+        for command in ("login", "exec"):
+            for options in cases:
+                with self.subTest(command=command, options=options):
+                    result = self.invoke(command, "ubuntu", *options)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn("pdn:", result.stderr)
+        for name in ("colon:host", "suffix!"):
+            source = self.base / name
+            source.mkdir()
+            link = self.base / "link"
+            link.symlink_to(source, target_is_directory=True)
+            self.assertEqual(self.invoke("exec", "ubuntu", "-b", f"{link}:/guest",
+                                         "--", "/bin/sh").returncode, 2)
+            link.unlink()
+
+    def test_exec_environment_and_lock(self):
+        self.env.update(ENV="/missing-hook", BASH_ENV="/missing-hook")
+        self.good(self.invoke("exec", "ubuntu", "--", "/bin/sh", "-c",
+                              'echo "$HOME:$USER:$LOGNAME:$TMPDIR:${ENV-unset}:${BASH_ENV-unset}"'),
+                  "/root:root:root:/tmp:unset:unset\n")
+        rootfd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(rootfd, fcntl.LOCK_EX)
+            self.assertEqual(self.invoke("exec", "ubuntu", "--", "/bin/sh").returncode, 2)
+        finally:
+            os.close(rootfd)
+
     def test_interactive_shell_fallback_and_stdin(self):
         result = self.invoke("login", "ubuntu", input='echo "$SHELL"; pwd; exit 23\n')
         self.assertEqual(result.returncode, 23, result.stderr)
@@ -138,7 +244,7 @@ class PdnTests(unittest.TestCase):
     def test_frontend_relocation_and_help(self):
         renamed = self.base / "pdn"
         shutil.copy2(BINARY, renamed)
-        for args in [(), ("--HELP",), ("-H",), ("HeLp",), ("login", "--help"), ("login", "-h")]:
+        for args in [(), ("--HELP",), ("-H",), ("HeLp",), ("login", "--help"), ("login", "-h"), ("exec", "--help"), ("exec", "-H")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
             self.assertIn("pdn login", result.stdout)
@@ -146,7 +252,7 @@ class PdnTests(unittest.TestCase):
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.4.1", result.stdout)
+            self.assertIn("proot-distro-nolib 0.5.0", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 
@@ -253,7 +359,13 @@ class PdnTests(unittest.TestCase):
         self.good(self.invoke("uninstall", "ubuntu", "--yes"))
 
     def test_uninstall_blocks_live_session(self):
-        session = subprocess.Popen([str(BINARY), "login", "ubuntu", "--", "/bin/sh", "-c", "echo ready; read answer"],
+        self.assert_uninstall_blocks_live_session("login")
+
+    def test_uninstall_blocks_live_exec(self):
+        self.assert_uninstall_blocks_live_session("exec")
+
+    def assert_uninstall_blocks_live_session(self, command):
+        session = subprocess.Popen([str(BINARY), command, "ubuntu", "--", "/bin/sh", "-c", "echo ready; read answer"],
                                    env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True)
         try:

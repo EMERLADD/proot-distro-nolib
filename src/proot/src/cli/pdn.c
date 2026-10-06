@@ -58,8 +58,10 @@ static int help(void)
          "  pdn install NAME [--mirror NAME | --archive PATH]\n"
          "  pdn mirrors [NAME]\n  pdn list --available\n"
 #endif
-         "  pdn login NAME [-- COMMAND ARG...]\n"
-         "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
+         "  pdn login NAME [--bind HOST[:GUEST] | -b HOST[:GUEST]]... [-- COMMAND ARG...]\n"
+         "  pdn login --rootfs PATH [--bind HOST[:GUEST] | -b HOST[:GUEST]]... [-- COMMAND ARG...]\n"
+         "  pdn exec NAME [--bind HOST[:GUEST] | -b HOST[:GUEST]]... -- COMMAND ARG...\n"
+         "  pdn exec --rootfs PATH [--bind HOST[:GUEST] | -b HOST[:GUEST]]... -- COMMAND ARG...\n"
          "  pdn list (alias: ls)\n"
          "  pdn uninstall NAME [--yes | -y] (alias: remove)\n"
          "  pdn version\n"
@@ -102,12 +104,44 @@ static int directory(const char *path)
     return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
+static int parse_bind(const char *spec, char **binding)
+{
+    const char *colon = strchr(spec, ':');
+    char *host, *resolved;
+    struct stat st;
+    int result;
+    if (!*spec || colon == spec) return fail("missing bind host", spec);
+    if (colon && !colon[1]) return fail("missing bind destination", spec);
+    if (colon && (colon[1] != '/' || strchr(colon + 1, ':')))
+        return fail("bind destination must be an absolute path without colons", spec);
+    if (spec[strlen(spec) - 1] == '!' || (colon && colon[-1] == '!'))
+        return fail("bind ! suffix is unsupported", spec);
+    host = colon ? strndup(spec, (size_t)(colon - spec)) : strdup(spec);
+    if (!host) return fail("out of memory", "bind");
+    resolved = realpath(host, NULL);
+    free(host);
+    if (!resolved) return fail("bind host unavailable", spec);
+    if (strchr(resolved, ':') || resolved[strlen(resolved) - 1] == '!') {
+        free(resolved);
+        return fail("bind host contains unsupported syntax", spec);
+    }
+    if (stat(resolved, &st) < 0 || (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))) {
+        free(resolved);
+        return fail("bind host must be a directory or regular file", spec);
+    }
+    result = asprintf(binding, "%s:%s", resolved, colon ? colon + 1 : resolved);
+    free(resolved);
+    if (result < 0) { *binding = NULL; return fail("out of memory", "bind"); }
+    return 0;
+}
+
 int pdn_login(int argc, char *const argv[])
 {
-    char *root = NULL, *base = NULL, *candidate = NULL, *temp;
+    char *root = NULL, *base = NULL, *candidate = NULL, *temp = NULL;
     const char *requested, *tmp;
-    char **args;
-    int command, n = 0, result, rootfd;
+    char **args = NULL, **binds = NULL;
+    int command, n = 0, result, rootfd = -1, bind_count = 0, i;
+    int require_command = equal(argv[1], "exec");
     if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
     if (argc < 3) return fail("missing rootfs", "use login NAME or login --rootfs PATH");
     if (equal(argv[2], "--rootfs")) {
@@ -137,34 +171,50 @@ int pdn_login(int argc, char *const argv[])
         if (!candidate) return fail("rootfs not found", requested);
         command = 3;
     }
-    if (command < argc && strcmp(argv[command], "--") != 0) {
-        free(candidate);
-        return fail("expected -- before guest command", argv[command]);
+    binds = calloc((size_t)argc, sizeof(*binds));
+    if (!binds) { result = fail("out of memory", argv[1]); goto done; }
+    while (command < argc && strcmp(argv[command], "--") != 0) {
+        const char *option = argv[command++];
+        if (!equal(option, "--bind") && !equal(option, "-b")) {
+            result = fail("unexpected option; expected --bind, -b or --", option);
+            goto done;
+        }
+        if (command == argc || !strcmp(argv[command], "--") ||
+            equal(argv[command], "--bind") || equal(argv[command], "-b")) {
+            result = fail("missing bind host", option);
+            goto done;
+        }
+        result = parse_bind(argv[command++], &binds[bind_count]);
+        if (result) goto done;
+        bind_count++;
     }
-    if (command < argc && ++command == argc) {
-        free(candidate);
-        return fail("missing guest command", "--");
+    if (command < argc) {
+        if (++command == argc) {
+            result = fail("missing guest command", "--");
+            goto done;
+        }
+    } else if (require_command) {
+        result = fail("missing guest command", "exec requires -- COMMAND ARG...");
+        goto done;
     }
     root = realpath(candidate, NULL);
-    free(candidate);
-    if (!root) return fail(strerror(errno), requested);
+    if (!root) { result = fail(strerror(errno), requested); goto done; }
     if (!directory(root) || strcmp(root, "/") == 0) {
-        free(root);
-        return fail("rootfs must be a Linux directory other than /", requested);
+        result = fail("rootfs must be a Linux directory other than /", requested);
+        goto done;
     }
     rootfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (rootfd < 0 || flock(rootfd, LOCK_SH | LOCK_NB) < 0) {
-        if (rootfd >= 0) close(rootfd);
-        free(root);
-        return fail("rootfs unavailable or being uninstalled", requested);
+        result = fail("rootfs unavailable or being uninstalled", requested);
+        goto done;
     }
     tmp = nonempty("PROOT_TMP_DIR");
     if (!tmp) tmp = nonempty("TMPDIR");
     temp = tmp ? realpath(tmp, NULL) : join(root, ".pdn-tmp");
     if (!temp || (!tmp && mkdir(temp, 0700) < 0 && errno != EEXIST) ||
         !directory(temp) || access(temp, W_OK | X_OK) < 0) {
-        close(rootfd); free(root); free(temp);
-        return fail("temporary directory unavailable", tmp ? tmp : ".pdn-tmp");
+        result = fail("temporary directory unavailable", tmp ? tmp : ".pdn-tmp");
+        goto done;
     }
     setenv("PROOT_TMP_DIR", temp, 1);
     if (!nonempty("PROOT_NO_SECCOMP")) setenv("PROOT_NO_SECCOMP", "1", 1);
@@ -179,7 +229,7 @@ int pdn_login(int argc, char *const argv[])
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("TMPDIR", "/tmp", 1);
     args = calloc((size_t)argc + 32, sizeof(*args));
-    if (!args) { close(rootfd); free(root); free(temp); return fail("out of memory", "login"); }
+    if (!args) { result = fail("out of memory", argv[1]); goto done; }
     args[n++] = argv[0];
     args[n++] = "-0";
     args[n++] = "--link2symlink";
@@ -190,6 +240,9 @@ int pdn_login(int argc, char *const argv[])
     args[n++] = "-b"; args[n++] = "/dev";
     args[n++] = "-b"; args[n++] = "/proc";
     args[n++] = "-b"; args[n++] = "/sys";
+    for (i = 0; i < bind_count; i++) {
+        args[n++] = "-b"; args[n++] = binds[i];
+    }
     args[n++] = "-w"; args[n++] = "/";
     args[n++] = "/bin/sh";
     args[n++] = "-c";
@@ -200,8 +253,10 @@ int pdn_login(int argc, char *const argv[])
     args[n++] = "pdn";
     for (; command < argc; command++) args[n++] = argv[command];
     result = proot_main(n, args);
-    close(rootfd);
-    free(args); free(root); free(temp);
+done:
+    if (rootfd >= 0) close(rootfd);
+    for (i = 0; i < bind_count; i++) free(binds[i]);
+    free(binds); free(candidate); free(args); free(root); free(temp);
     return result;
 }
 
@@ -244,7 +299,7 @@ int main(int argc, char *const argv[])
             return fail("usage", "install NAME [--mirror NAME | --archive PATH]");
         }
 #endif
-        if (equal(argv[1], "login")) return pdn_login(argc, argv);
+        if (equal(argv[1], "login") || equal(argv[1], "exec")) return pdn_login(argc, argv);
         if (equal(argv[1], "uninstall") || equal(argv[1], "remove")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3 || argc > 4 || (argc == 4 && !equal(argv[3], "--yes") && !equal(argv[3], "-y")))

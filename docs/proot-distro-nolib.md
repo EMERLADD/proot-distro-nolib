@@ -1,13 +1,13 @@
 # proot-distro-nolib engine
 
-Current project version: **0.4.1**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.5.0**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`install`, `mirrors`, `login`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
+`install`, `mirrors`, `login`, `exec`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Installing a distribution
@@ -174,6 +174,28 @@ Explicit commands start in `/` and preserve argument boundaries via guest
 `/bin/sh` and `exec "$@"`. Shell expressions require explicit `/bin/sh -c` as
 shown above. Standard input/output and the guest exit status are preserved.
 Background guest processes are terminated when the primary command exits.
+
+Since v0.5.0, `exec` runs an explicit command using the same environment and
+session lock as `login`. It requires `-- COMMAND ARG...` and never falls back
+to an interactive shell. Both commands accept repeatable `--bind` (`-b`)
+options after the name or `--rootfs PATH`, before the command separator:
+
+```sh
+pdn login ubuntu --bind /sdcard:/mnt/shared
+pdn exec ubuntu -- /usr/bin/id
+pdn exec ubuntu -b '/sdcard/My Files:/mnt/shared' -- /bin/ls /mnt/shared
+pdn exec --rootfs /your/private/linux/ubuntu -- /bin/sh -c 'echo hello; id'
+```
+
+Binding syntax is `HOST[:GUEST]`. The host must be an existing, app-accessible
+regular file or directory. Relative host paths resolve from the caller's current
+directory. The guest destination must be absolute; if omitted, it defaults to
+the canonical host path. Quote paths containing spaces. Colons within paths
+and PRoot's advanced `!` binding suffix are not supported by this frontend.
+Explicit bindings follow the default `/dev`, `/proc`, `/sys` bindings.
+Bindings are writable within the host app's permissions: guest writes affect
+the original host files. They apply only to the current invocation and are
+not saved for future sessions. This does not grant Android storage permission.
 
 Since v0.4.1 fake-identity sessions start with an empty virtual supplementary
 group list, so Android app groups are not exposed by `groups` or `id`. Guest

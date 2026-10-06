@@ -1,5 +1,14 @@
 # proot-distro-nolib 更新记录
 
+## v0.5.0 — 2026-10-06
+
+- 新增 `pdn exec NAME -- COMMAND ARG...`，复用登录环境与会话锁，保留参数边界、标准输入输出和退出码。
+- `login` 和 `exec` 支持重复 `--bind HOST[:GUEST]` / `-b HOST[:GUEST]`，支持文件、目录及带空格路径。
+- 挂载只对当前会话生效，写入直接影响宿主文件；不保存配置、不修改 App 包名或增加 Termux 依赖。
+- 保留 `login NAME -- COMMAND` 和 `--rootfs PATH` 用法，错误参数明确拒绝。
+
+验证：70 项自动测试通过，前端行覆盖率 98.91%。已有 Alpine、Ubuntu、Debian、Arch 的 exec 与挂载文件读写均验证通过。
+
 ## v0.4.1 — 2026-10-06
 
 - 修复 Android 宿主附加组泄漏到 guest，导致登录时 `groups: cannot find name for group ID` 的问题。
