@@ -20,6 +20,7 @@ LDFLAGS  += -ltalloc -Wl,-z,noexecstack
 
 OBJECTS += \
 	cli/pdn.o		\
+	cli/pdn_remove.o		\
 	cli/cli.o		\
 	cli/proot.o		\
 	cli/note.o		\

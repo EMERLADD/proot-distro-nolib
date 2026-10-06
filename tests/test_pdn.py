@@ -1,3 +1,4 @@
+import fcntl
 import os
 from pathlib import Path
 import shutil
@@ -141,7 +142,7 @@ class PdnTests(unittest.TestCase):
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.3.1", result.stdout)
+            self.assertIn("proot-distro-nolib 0.3.2", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 
@@ -150,6 +151,152 @@ class PdnTests(unittest.TestCase):
         hook.write_text("exit 93\n")
         self.env.update(ENV=str(hook), BASH_ENV=str(hook), PROOT_NO_SECCOMP="1")
         self.good(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c", 'echo "${ENV-unset}:${BASH_ENV-unset}"'), "unset:unset\n")
+
+    def test_uninstall_confirmation_and_alias(self):
+        (self.root / "root/important").write_text("user data")
+        for answer in ("", "\n", "n\n", "sure\n", "yes please\n"):
+            result = self.invoke("uninstall", "UBUNTU", input=answer)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(self.root), result.stderr)
+            self.assertIn("Cancelled", result.stderr)
+            self.assertEqual((self.root / "root/important").read_text(), "user data")
+        result = self.invoke("ReMoVe", "uBuNtU", input="YeS\n")
+        self.good(result)
+        self.assertIn("Uninstalled", result.stdout)
+        self.assertFalse(self.root.exists())
+        self.good(self.invoke("ls"), "")
+
+    def test_uninstall_yes_and_default_home(self):
+        for args, answer in ((("--YES",), None), (("-Y",), None), ((), "y\n")):
+            target = self.root.parent / "debian"
+            target.mkdir()
+            self.good(self.invoke("UNINSTALL", "DEBIAN", *args, input=answer))
+            self.assertFalse(target.exists())
+        self.env.pop("PDN_ROOTFS_DIR")
+        self.env["HOME"] = str(self.base)
+        default = self.base / ".local/share/pdn/rootfs/Alpine"
+        default.mkdir(parents=True)
+        self.good(self.invoke("remove", "alpine", "--yes"))
+        self.assertFalse(default.exists())
+        self.assertTrue(self.root.exists())
+
+    def test_uninstall_preserves_external_links_and_other_roots(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        marker = outside / "keep"
+        marker.write_text("keep me")
+        (self.root / "external").symlink_to(outside, target_is_directory=True)
+        (self.root / "host").symlink_to("/")
+        (self.root / "loop").symlink_to(".")
+        (self.root / "dangling").symlink_to("missing")
+        (self.root / "external-file").symlink_to(marker)
+        os.mkfifo(self.root / "fifo")
+        readonly = self.root / "read only"
+        readonly.mkdir()
+        (readonly / "file").write_text("remove")
+        readonly.chmod(0o555)
+        sibling = self.root.parent / "alpine"
+        sibling.mkdir()
+        (sibling / "keep").write_text("other distro")
+        self.good(self.invoke("uninstall", "ubuntu", "-y"))
+        self.assertFalse(self.root.exists())
+        self.assertEqual(marker.read_text(), "keep me")
+        self.assertEqual((sibling / "keep").read_text(), "other distro")
+
+    def test_uninstall_rejects_unsafe_targets(self):
+        for name in ("", ".", "..", "../Ubuntu", "/", str(self.root), "a/b", ".hidden"):
+            self.assertEqual(self.invoke("uninstall", name, "--yes").returncode, 2)
+        for args in ((), ("ubuntu", "--force"), ("--rootfs", str(self.root)),
+                     ("ubuntu", "--yes", "extra"), ("missing",)):
+            self.assertEqual(self.invoke("remove", *args).returncode, 2)
+        (self.root.parent / "file").write_text("keep")
+        (self.root.parent / "linked").symlink_to(self.root, target_is_directory=True)
+        (self.root.parent / "broken").symlink_to("missing")
+        for name in ("file", "linked", "broken"):
+            self.assertEqual(self.invoke("remove", name, "--yes").returncode, 2)
+        duplicate = self.root.parent / "ubuntu"
+        duplicate.mkdir()
+        self.assertIn("ambiguous", self.invoke("remove", "ubuntu", "--yes").stderr)
+        self.assertTrue(duplicate.exists())
+        self.assertTrue((self.root / "bin/busybox").exists())
+
+    def test_uninstall_base_errors_and_help(self):
+        for base in (None, str(self.base / "missing"), str(self.root / "bin/busybox"), "/"):
+            if base is None:
+                self.env.pop("PDN_ROOTFS_DIR", None)
+            else:
+                self.env["PDN_ROOTFS_DIR"] = base
+            self.assertEqual(self.invoke("uninstall", "ubuntu", "--yes").returncode, 2)
+        for command in ("uninstall", "remove"):
+            for option in ("--help", "-H"):
+                result = self.invoke(command, option)
+                self.good(result)
+                self.assertIn("pdn uninstall", result.stdout)
+
+    def test_uninstall_locks(self):
+        with (self.root.parent / ".pdn-install.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            result = self.invoke("uninstall", "ubuntu", "--yes")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("lock", result.stderr)
+        rootfd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(rootfd, fcntl.LOCK_EX)
+            self.assertEqual(self.invoke("uninstall", "ubuntu", "--yes").returncode, 2)
+            self.assertEqual(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c", "exit").returncode, 2)
+        finally:
+            os.close(rootfd)
+        self.good(self.invoke("uninstall", "ubuntu", "--yes"))
+
+    def test_uninstall_blocks_live_session(self):
+        session = subprocess.Popen([str(BINARY), "login", "ubuntu", "--", "/bin/sh", "-c", "echo ready; read answer"],
+                                   env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(session.stdout.readline(), "ready\n")
+            result = self.invoke("uninstall", "ubuntu", "--yes")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("in use", result.stderr)
+            self.assertTrue(self.root.exists())
+            session.communicate("done\n", timeout=10)
+        finally:
+            if session.poll() is None:
+                session.kill()
+            session.communicate(timeout=10)
+        self.good(self.invoke("uninstall", "ubuntu", "--yes"))
+
+    def test_uninstall_rechecks_target_after_confirmation(self):
+        process = subprocess.Popen([str(BINARY), "uninstall", "ubuntu"], env=self.env,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertIn(str(self.root), process.stderr.readline())
+            self.assertEqual(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c", "exit").returncode, 2)
+            saved = self.root.with_name("saved")
+            self.root.rename(saved)
+            self.root.symlink_to(saved, target_is_directory=True)
+            stdout, stderr = process.communicate("yes\n", timeout=10)
+            self.assertEqual(process.returncode, 2, stdout + stderr)
+            self.assertIn("changed", stderr)
+            self.assertTrue((saved / "bin/busybox").exists())
+            self.assertTrue(self.root.is_symlink())
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=10)
+
+    def test_uninstall_permission_error(self):
+        denied = self.root / "denied"
+        denied.mkdir()
+        (denied / "keep").write_text("inaccessible")
+        denied.chmod(0)
+        try:
+            result = self.invoke("uninstall", "ubuntu", "--yes")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("incomplete", result.stderr)
+            self.assertTrue(denied.exists())
+        finally:
+            denied.chmod(0o700)
+        self.good(self.invoke("uninstall", "ubuntu", "--yes"))
 
 
 if __name__ == "__main__":

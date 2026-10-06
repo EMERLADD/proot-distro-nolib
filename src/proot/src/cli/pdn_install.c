@@ -127,7 +127,7 @@ static int download(const char *url, const char *path)
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return error("cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.3.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.3.2");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);

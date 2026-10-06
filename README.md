@@ -2,7 +2,7 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
-## Standalone proot-distro-nolib 0.3.1
+## Standalone proot-distro-nolib 0.3.2
 
 Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
 `proot-distro-nolib` executable. Version 0.3.1 supports `pdn install alpine` with five domestic/international
@@ -12,6 +12,9 @@ execution and listing remain available. Set `PDN_ROOTFS_DIR` to the directory co
 directories, then use `pdn login ubuntu` or `pdn login --rootfs /path/to/rootfs`.
 Command and rootfs names ignore ASCII case. Run `make test` for Android
 regression tests. These targets do not install files or build the APK.
+Use `pdn uninstall ubuntu` (alias `remove`) to remove a local rootfs after
+confirmation, including all its user files. `--yes` skips the prompt for app
+integration; exit login sessions first.
 See [standalone usage and build notes](docs/proot-distro-nolib.md).
 
 ## What it does

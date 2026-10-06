@@ -1,8 +1,10 @@
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -12,6 +14,7 @@ int pdn_mirrors(void);
 #endif
 
 int proot_main(int argc, char *const argv[]);
+int pdn_remove(const char *requested, int yes);
 
 static int fail(const char *message, const char *value)
 {
@@ -57,6 +60,7 @@ static int help(void)
          "  pdn login NAME [-- COMMAND ARG...]\n"
          "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
          "  pdn list (alias: ls)\n"
+         "  pdn uninstall NAME [--yes | -y] (alias: remove)\n"
          "  pdn version\n"
          "  pdn proot [PROOT OPTIONS...]\n\n"
          "Rootfs directory: PDN_ROOTFS_DIR or $HOME/.local/share/pdn/rootfs\n"
@@ -102,7 +106,7 @@ static int login(int argc, char *const argv[])
     char *root = NULL, *base = NULL, *candidate = NULL, *temp;
     const char *requested, *tmp;
     char **args;
-    int command, n = 0, result;
+    int command, n = 0, result, rootfd;
     if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
     if (argc < 3) return fail("missing rootfs", "use login NAME or login --rootfs PATH");
     if (equal(argv[2], "--rootfs")) {
@@ -147,12 +151,18 @@ static int login(int argc, char *const argv[])
         free(root);
         return fail("rootfs must be a Linux directory other than /", requested);
     }
+    rootfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (rootfd < 0 || flock(rootfd, LOCK_SH | LOCK_NB) < 0) {
+        if (rootfd >= 0) close(rootfd);
+        free(root);
+        return fail("rootfs unavailable or being uninstalled", requested);
+    }
     tmp = nonempty("PROOT_TMP_DIR");
     if (!tmp) tmp = nonempty("TMPDIR");
     temp = tmp ? realpath(tmp, NULL) : join(root, ".pdn-tmp");
     if (!temp || (!tmp && mkdir(temp, 0700) < 0 && errno != EEXIST) ||
         !directory(temp) || access(temp, W_OK | X_OK) < 0) {
-        free(root); free(temp);
+        close(rootfd); free(root); free(temp);
         return fail("temporary directory unavailable", tmp ? tmp : ".pdn-tmp");
     }
     setenv("PROOT_TMP_DIR", temp, 1);
@@ -168,7 +178,7 @@ static int login(int argc, char *const argv[])
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("TMPDIR", "/tmp", 1);
     args = calloc((size_t)argc + 32, sizeof(*args));
-    if (!args) { free(root); free(temp); return fail("out of memory", "login"); }
+    if (!args) { close(rootfd); free(root); free(temp); return fail("out of memory", "login"); }
     args[n++] = argv[0];
     args[n++] = "-0";
     args[n++] = "--link2symlink";
@@ -189,6 +199,7 @@ static int login(int argc, char *const argv[])
     args[n++] = "pdn";
     for (; command < argc; command++) args[n++] = argv[command];
     result = proot_main(n, args);
+    close(rootfd);
     free(args); free(root); free(temp);
     return result;
 }
@@ -232,6 +243,13 @@ int main(int argc, char *const argv[])
         }
 #endif
         if (equal(argv[1], "login")) return login(argc, argv);
+        if (equal(argv[1], "uninstall") || equal(argv[1], "remove")) {
+            if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+            if (argc < 3 || argc > 4 || (argc == 4 && !equal(argv[3], "--yes") && !equal(argv[3], "-y")))
+                return fail("usage", "uninstall NAME [--yes | -y]");
+            if (!valid_name(argv[2])) return fail("invalid name", argv[2]);
+            return pdn_remove(argv[2], argc == 4);
+        }
         if (equal(argv[1], "list") || equal(argv[1], "ls")) return argc == 2 ? list() : fail("unexpected argument", argv[2]);
         if (equal(argv[1], "help")) return help();
         if (equal(argv[1], "version")) {

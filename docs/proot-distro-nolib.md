@@ -1,13 +1,13 @@
 # proot-distro-nolib engine
 
-Current project version: **0.3.1**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.3.2**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`install`, `mirrors`, `login`, `list` (alias `ls`), `help`, and `version`. No host Python, Bash, BusyBox, or app
+`install`, `mirrors`, `login`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Alpine installation
@@ -76,6 +76,40 @@ behavior. No Android package name or service request is needed.
 Only Alpine installation is included. Mirror racing, resumable downloads and
 other distro installers remain deferred. Existing local rootfs login still
 works independently of installation.
+
+## Uninstalling a local rootfs
+
+```sh
+pdn uninstall alpine
+pdn remove DEBIAN
+pdn uninstall ubuntu --yes
+```
+
+Version 0.3.2 removes a named immediate child of `PDN_ROOTFS_DIR`, or the default
+`$HOME/.local/share/pdn/rootfs`. This also supports manually extracted systems,
+not just Alpine installed by pdn. The resolved path is displayed before removal.
+Only `y` or `yes` (case-insensitive) confirms the prompt; other input or EOF
+cancels with exit status 1. `--yes` / `-y` skips confirmation for callers that
+already obtained the user's approval. Success returns 0; invalid input, locks
+and removal errors return 2.
+
+Removal deletes the whole rootfs, including software and user files. There is
+no undo. Root symlinks, ambiguous case variants, non-directories, paths such as
+`../debian`, and `/` as the rootfs parent are rejected. There is no arbitrary
+`--rootfs` removal option. Symlinks inside the rootfs are unlinked without
+traversing their targets. Other rootfs directories remain in place. Traversal
+rejects directories on another filesystem and grants owner permissions to
+readable directories when necessary; inaccessible directories can cause a
+partial failure that is reported explicitly.
+
+Install and uninstall share an exclusive advisory lock. New `pdn login`
+sessions hold a shared root-directory lock, so uninstall refuses an active
+session and new logins are blocked during confirmation/removal. Exit sessions
+first; the command does not kill them. Older pdn binaries, the raw `proot`
+entry point, and unrelated host programs do not participate in these locks:
+stop them before uninstalling. This is not isolation against hostile host
+renames or privileged bind mounts. Interruption or permission errors can leave
+a partially deleted rootfs; correct the problem and repeat uninstall to finish.
 
 ## Local rootfs usage
 
