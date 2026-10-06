@@ -68,6 +68,11 @@ class PdnTests(unittest.TestCase):
         self.good(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c", 'echo persisted > /sample; /bin/busybox cat /sample'), "persisted\n")
         self.assertEqual((self.root / "sample").read_text(), "persisted\n")
 
+    def test_hardlink_compatibility(self):
+        self.good(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c",
+                              'echo original > /first; /bin/busybox ln /first /second; '
+                              'echo changed > /second; /bin/busybox cat /first'), "changed\n")
+
     def test_default_home_lookup(self):
         self.env.pop("PDN_ROOTFS_DIR")
         self.env["HOME"] = str(self.base)
@@ -132,11 +137,11 @@ class PdnTests(unittest.TestCase):
             result = self.invoke(*args, binary=renamed)
             self.good(result)
             self.assertIn("pdn login", result.stdout)
-        self.assertEqual(self.invoke("install", "ubuntu", binary=renamed).returncode, 2)
+        self.assertEqual(self.invoke("unsupported", binary=renamed).returncode, 2)
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.2.0", result.stdout)
+            self.assertIn("proot-distro-nolib 0.3.0", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 

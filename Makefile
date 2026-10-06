@@ -24,6 +24,7 @@ build:
 test: build
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_proot_nolib.py" -v
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn.py" -v
+	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_install.py" -v
 
 clean:
 	rm -rf "$(PROJECT_ROOT)/build/proot-distro-nolib"

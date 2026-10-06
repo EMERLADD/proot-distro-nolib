@@ -2,12 +2,11 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
-## Standalone proot-distro-nolib 0.2.0
+## Standalone proot-distro-nolib 0.3.0
 
 Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
-`proot-distro-nolib` executable. Version 0.2.0 supports local rootfs login,
-command execution and listing; automatic installation is not included in this
-standalone release. Set `PDN_ROOTFS_DIR` to the directory containing your rootfs
+`proot-distro-nolib` executable. Version 0.3.0 adds `pdn install alpine` using the Tsinghua TUNA ARM64
+minirootfs, alongside local rootfs login, command execution and listing. Set `PDN_ROOTFS_DIR` to the directory containing your rootfs
 directories, then use `pdn login ubuntu` or `pdn login --rootfs /path/to/rootfs`.
 Command and rootfs names ignore ASCII case. Run `make test` for Android
 regression tests. These targets do not install files or build the APK.

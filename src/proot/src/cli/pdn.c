@@ -6,6 +6,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef PDN_WITH_INSTALL
+int pdn_install(const char *local_archive);
+#endif
+
 int proot_main(int argc, char *const argv[]);
 
 static int fail(const char *message, const char *value)
@@ -45,6 +49,9 @@ static int help(void)
 {
     puts("pdn - proot-distro-nolib\n"
          "Usage:\n"
+#ifdef PDN_WITH_INSTALL
+         "  pdn install alpine [--archive PATH]\n"
+#endif
          "  pdn login NAME [-- COMMAND ARG...]\n"
          "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
          "  pdn list (alias: ls)\n"
@@ -53,11 +60,16 @@ static int help(void)
          "Rootfs directory: PDN_ROOTFS_DIR or $HOME/.local/share/pdn/rootfs\n"
          "Names and commands ignore ASCII case; paths and guest arguments do not.\n"
          "Use -- /bin/sh -c 'COMMAND' for shell expressions.\n"
-         "Rootfs must already be extracted. Downloads are not included.");
+#ifdef PDN_WITH_INSTALL
+         "Install downloads Alpine ARM64; --archive uses its verified local tar.gz."
+#else
+         "Rootfs must already be extracted."
+#endif
+    );
     return 0;
 }
 
-static char *rootfs_base(void)
+char *pdn_rootfs_base(void)
 {
     const char *base = nonempty("PDN_ROOTFS_DIR");
     if (base) return strdup(base);
@@ -101,7 +113,7 @@ static int login(int argc, char *const argv[])
         struct dirent *entry;
         requested = argv[2];
         if (!valid_name(requested)) return fail("invalid name", requested);
-        base = rootfs_base();
+        base = pdn_rootfs_base();
         if (!base) return fail("set PDN_ROOTFS_DIR or HOME", requested);
         dir = opendir(base);
         if (!dir) { result = fail(strerror(errno), base); free(base); return result; }
@@ -157,6 +169,8 @@ static int login(int argc, char *const argv[])
     if (!args) { free(root); free(temp); return fail("out of memory", "login"); }
     args[n++] = argv[0];
     args[n++] = "-0";
+    args[n++] = "--link2symlink";
+    args[n++] = "-L";
     args[n++] = "--kernel-release=6.17.0-pr";
     args[n++] = "--kill-on-exit";
     args[n++] = "-r"; args[n++] = root;
@@ -179,7 +193,7 @@ static int login(int argc, char *const argv[])
 
 static int list(void)
 {
-    char *base = rootfs_base();
+    char *base = pdn_rootfs_base();
     struct dirent **entries;
     int count, i;
     if (!base) return fail("set PDN_ROOTFS_DIR or HOME", "list");
@@ -204,6 +218,15 @@ int main(int argc, char *const argv[])
     const char *name = strrchr(argv[0], '/');
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
     if (argc > 1) {
+#ifdef PDN_WITH_INSTALL
+        if (equal(argv[1], "install")) {
+            if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+            if (argc < 3 || !equal(argv[2], "alpine")) return fail("only Alpine is supported", "install alpine");
+            if (argc == 3) return pdn_install(NULL);
+            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[4]);
+            return fail("usage", "install alpine [--archive PATH]");
+        }
+#endif
         if (equal(argv[1], "login")) return login(argc, argv);
         if (equal(argv[1], "list") || equal(argv[1], "ls")) return argc == 2 ? list() : fail("unexpected argument", argv[2]);
         if (equal(argv[1], "help")) return help();

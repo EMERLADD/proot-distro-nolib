@@ -29,6 +29,9 @@ if "$CC" --help | grep -q -- '-fno-termux-rpath'; then
 fi
 CC_FLAGS="$CC_FLAGS -ffile-prefix-map=$PROJECT_ROOT=. -ffile-prefix-map=$NDK_PATH=ndk"
 TALLOC_SRC=$PROJECT_ROOT/vendor/samba/lib/talloc
+export PROJECT_ROOT CC_FLAGS SYSROOT CC
+sh "$PROJECT_ROOT/scripts/build-pdn-deps.sh"
+PDN_DEPS=$PROJECT_ROOT/build/proot-distro-nolib/deps/install
 
 "$CC" $CC_FLAGS -O2 -DNO_CONFIG_H=1 -D__STDC_WANT_LIB_EXT1__=1 \
     -I"$PROJECT_ROOT/src/proot/lib/talloc" -I"$TALLOC_SRC" \
@@ -38,10 +41,10 @@ TALLOC_SRC=$PROJECT_ROOT/vendor/samba/lib/talloc
 cp -R "$PROJECT_ROOT/src/proot/src" "$WORK_DIR/src"
 make -C "$WORK_DIR/src" clean
 make -C "$WORK_DIR/src" -j"${JOBS:-2}" \
-    CC="$CC $CC_FLAGS" AR="$AR" STRIP="$STRIP" \
+    PDN_WITH_INSTALL=1 CC="$CC $CC_FLAGS" AR="$AR" STRIP="$STRIP" \
     OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" GIT=true \
-    CFLAGS="-Wall -Wextra -O2 -I$TALLOC_SRC ${EXTRA_CFLAGS:-}" \
-    LDFLAGS="-L$WORK_DIR -ltalloc -Wl,-z,noexecstack,-z,max-page-size=16384 ${EXTRA_LDFLAGS:-}" \
+    CFLAGS="-Wall -Wextra -O2 -I$TALLOC_SRC -I$PDN_DEPS/include ${EXTRA_CFLAGS:-}" \
+    LDFLAGS="-L$WORK_DIR -ltalloc -L$PDN_DEPS/lib -lcurl -larchive -lmbedtls -lmbedx509 -lmbedcrypto -lz -Wl,-z,noexecstack,-z,max-page-size=16384 ${EXTRA_LDFLAGS:-}" \
     proot
 
 cp "$WORK_DIR/src/proot" "$OUT_DIR/proot-distro-nolib.debug"
@@ -61,6 +64,7 @@ if LC_ALL=C grep -aiE 'termux|/data/data/|/data/user/|/home/' \
     echo 'Unexpected host path or dependency in release binaries' >&2
     exit 1
 fi
+cp -R "$PDN_DEPS/licenses" "$OUT_DIR/"
 cp "$OUT_DIR/proot-distro-nolib" "$OUT_DIR/pdn"
 (cd "$OUT_DIR" && sha256sum proot-distro-nolib pdn proot-loader > SHA256SUMS)
 echo "Built: $OUT_DIR/proot-distro-nolib"

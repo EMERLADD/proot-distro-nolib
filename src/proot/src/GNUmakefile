@@ -87,6 +87,11 @@ OBJECTS += \
 	extension/fix_symlink_size/fix_symlink_size.o \
 	tls-align.o
 
+ifdef PDN_WITH_INSTALL
+  OBJECTS += cli/pdn_install.o
+  CPPFLAGS += -DPDN_WITH_INSTALL
+endif
+
 define define_from_arch.h
 $2$1 := $(shell $(CC) $1 -E -dM -DNO_LIBC_HEADER $(SRC)/arch.h | grep -w $2 | cut -f 3 -d ' ')
 endef
