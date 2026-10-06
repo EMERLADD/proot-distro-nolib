@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y make curl xz-utils bzip2 pkg-config
-          sdkmanager "ndk;$NDK_VERSION"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION"
           ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
           echo "NDK_PATH=$ndk" >> "$GITHUB_ENV"
           echo "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
