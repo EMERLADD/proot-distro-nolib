@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #ifdef PDN_WITH_INSTALL
-int pdn_install(const char *local_archive, const char *mirror_name);
-int pdn_mirrors(void);
+int pdn_install(const char *name, const char *local_archive, const char *mirror_name);
+int pdn_mirrors(const char *name);
+int pdn_available(void);
 #endif
 
 int proot_main(int argc, char *const argv[]);
@@ -54,8 +55,8 @@ static int help(void)
     puts("pdn - proot-distro-nolib\n"
          "Usage:\n"
 #ifdef PDN_WITH_INSTALL
-         "  pdn install alpine [--mirror NAME | --archive PATH]\n"
-         "  pdn mirrors\n"
+         "  pdn install NAME [--mirror NAME | --archive PATH]\n"
+         "  pdn mirrors [NAME]\n  pdn list --available\n"
 #endif
          "  pdn login NAME [-- COMMAND ARG...]\n"
          "  pdn login --rootfs PATH [-- COMMAND ARG...]\n"
@@ -67,7 +68,7 @@ static int help(void)
          "Names and commands ignore ASCII case; paths and guest arguments do not.\n"
          "Use -- /bin/sh -c 'COMMAND' for shell expressions.\n"
 #ifdef PDN_WITH_INSTALL
-         "Install downloads Alpine ARM64; --archive uses its verified local tar.gz."
+         "Install: alpine, ubuntu, debian, arch (ARM64); --archive uses a pinned local tar.gz."
 #else
          "Rootfs must already be extracted."
 #endif
@@ -101,7 +102,7 @@ static int directory(const char *path)
     return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-static int login(int argc, char *const argv[])
+int pdn_login(int argc, char *const argv[])
 {
     char *root = NULL, *base = NULL, *candidate = NULL, *temp;
     const char *requested, *tmp;
@@ -232,17 +233,18 @@ int main(int argc, char *const argv[])
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
     if (argc > 1) {
 #ifdef PDN_WITH_INSTALL
-        if (equal(argv[1], "mirrors")) return argc == 2 ? pdn_mirrors() : fail("unexpected argument", argv[2]);
+        if (equal(argv[1], "mirrors")) return argc <= 3 ? pdn_mirrors(argc == 3 ? argv[2] : NULL) : fail("unexpected argument", argv[3]);
+        if ((equal(argv[1], "list") || equal(argv[1], "ls")) && argc == 3 && equal(argv[2], "--available")) return pdn_available();
         if (equal(argv[1], "install")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
-            if (argc < 3 || !equal(argv[2], "alpine")) return fail("only Alpine is supported", "install alpine");
-            if (argc == 3) return pdn_install(NULL, NULL);
-            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[4], NULL);
-            if (argc == 5 && equal(argv[3], "--mirror")) return pdn_install(NULL, argv[4]);
-            return fail("usage", "install alpine [--mirror NAME | --archive PATH]");
+            if (argc < 3) return fail("missing distro", "run list --available");
+            if (argc == 3) return pdn_install(argv[2], NULL, NULL);
+            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[2], argv[4], NULL);
+            if (argc == 5 && equal(argv[3], "--mirror")) return pdn_install(argv[2], NULL, argv[4]);
+            return fail("usage", "install NAME [--mirror NAME | --archive PATH]");
         }
 #endif
-        if (equal(argv[1], "login")) return login(argc, argv);
+        if (equal(argv[1], "login")) return pdn_login(argc, argv);
         if (equal(argv[1], "uninstall") || equal(argv[1], "remove")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3 || argc > 4 || (argc == 4 && !equal(argv[3], "--yes") && !equal(argv[3], "-y")))

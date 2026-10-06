@@ -1,5 +1,22 @@
 # proot-distro-nolib 更新记录
 
+## v0.4.0 — 2026-10-06
+
+- 新增 `pdn install ubuntu`、`pdn install debian`、`pdn install arch`，继续支持 Alpine；均为 ARM64，命令和名称兼容大小写。
+- 固定 Ubuntu Base 24.04.5 LTS、Debian 13 trixie slim 20261005、Arch Linux ARM 2026.08，逐个校验下载大小和 SHA256。
+- Ubuntu 支持清华、中科大、官方源；Arch 支持清华、中科大、南大、美国镜像；Debian 使用同一固定上游 GitHub 提交的两个下载入口。
+- 新增 `pdn list --available` 和 `pdn mirrors NAME`；各发行版均支持自动失败切换、`--mirror` 和校验后的 `--archive` 本地安装。
+- 适配 apt 软件源、Android CA 证书和 PRoot 下的运行配置；移除 Debian 容器专用缓存清理钩子。
+- Arch 自动初始化 pacman 密钥，保留软件包签名校验，并为软件源配置备用地址。
+- 归档硬链接转为相对符号链接，目录补充所有者访问权限；安全替换发行版的 DNS 链接，不跟随其目标。
+- 按发行版设置下载超时和解压上限。Arch 官方包约 791 MiB，解压约 2 GiB。
+- 保留已有 rootfs 保护、安装/卸载锁、登录会话保护以及无 Termux 运行依赖。
+
+验证：59 项自动测试通过；前端行覆盖率 98.65%，安装模块 98.72%，发行版目录 100%。
+三个新增发行版均已验证真实下载安装、登录、软件源更新以及安装运行 `tree`；
+Arch 归档已验证官方 PGP 签名。运行时依赖仍仅为 Android libc/libdl。
+详细来源与摘要见 [rootfs 目录](docs/pdn-rootfs-sources.md)。本版 MT 管理器试用结果待确认。
+
 ## v0.3.2 — 2026-10-06
 
 - 新增 `pdn uninstall NAME`，别名 `pdn remove NAME`，命令和发行版名称忽略 ASCII 大小写。
@@ -11,7 +28,7 @@
 
 验证：51 项自动测试通过；前端行覆盖率 98.64%，新增卸载模块 94.59%。
 覆盖确认取消、EOF、链接目标保护、只读目录、权限失败、并发锁及确认期间目录被替换。
-测试只操作临时 rootfs；MT 管理器上的本版试用结果待确认。
+测试只操作临时 rootfs；用户于 2026-10-06 确认本版在 MT 管理器试用成功。
 
 ## v0.3.1 — 2026-10-06
 

@@ -41,25 +41,51 @@ class InstallTests(unittest.TestCase):
         cls.fixtures = Path(cls.shared.name)
         cls.archive = cls.fixtures / "alpine.tar.gz"
         make_archive(cls.archive, [("bin", "dir", ""), ("bin/tool", "file", b"guest\n"),
-                                  ("bin/sh", "link", "tool"), ("etc", "dir", ""), ("etc/apk", "dir", "")])
+                                  ("bin/sh", "link", "tool"), ("etc", "dir", ""), ("etc/apk", "dir", ""),
+                                  ("etc/apt", "dir", ""), ("etc/apt/apt.conf.d", "dir", ""),
+                                  ("etc/apt/apt.conf.d/docker-clean", "file", b"container cache hooks\n")])
         digest = hashlib.sha256(cls.archive.read_bytes()).hexdigest()
         source = cls.fixtures / "harness.c"
         source.write_text(f'''#define ALPINE_SIZE {cls.archive.stat().st_size}
 #define ALPINE_SHA256 "{digest}"
 #define ALPINE_MIRRORS {{"tuna", "https://mirrors.tuna.tsinghua.edu.cn/alpine", getenv("TEST_URL")}}, {{"ustc", "https://mirrors.ustc.edu.cn/alpine", getenv("TEST_URL_2")}}
+#define UBUNTU_SIZE ALPINE_SIZE
+#define UBUNTU_SHA256 ALPINE_SHA256
+#define UBUNTU_MIRRORS ALPINE_MIRRORS
+#define DEBIAN_SIZE ALPINE_SIZE
+#define DEBIAN_SHA256 ALPINE_SHA256
+#define DEBIAN_MIRRORS ALPINE_MIRRORS
+#define ARCH_SIZE ALPINE_SIZE
+#define ARCH_SHA256 ALPINE_SHA256
+#define ARCH_MIRRORS ALPINE_MIRRORS
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
+int pdn_login(int argc, char *const argv[]) {{
+    if (getenv("TEST_INIT_SLOW")) sleep(5);
+#ifdef PDN_TEST_COVERAGE
+    extern int __llvm_profile_write_file(void);
+    __llvm_profile_write_file();
+#endif
+    return getenv("TEST_INIT_FAIL") ? 1 : 0;
+}}
 char *pdn_rootfs_base(void) {{
     const char *base = getenv("PDN_ROOTFS_DIR");
     return base ? strdup(base) : NULL;
 }}
 int main(int argc, char **argv) {{
-    if (argc == 2 && !strcmp(argv[1], "mirrors")) return pdn_mirrors();
-    if (argc == 3 && !strcmp(argv[1], "extract")) return extract(argv[2]) != 0;
-    if (argc == 3 && !strcmp(argv[1], "verify")) return verify(argv[2]) != 0;
-    if (argc == 4 && !strcmp(argv[1], "download")) return download(argv[2], argv[3]) != 0;
-    if (argc == 2 && !strcmp(argv[1], "configure")) return configure("https://mirrors.tuna.tsinghua.edu.cn/alpine") != 0;
-    if (argc == 3 && !strcmp(argv[1], "mirror")) return pdn_install(NULL, argv[2]);
-    return pdn_install(argc == 2 ? argv[1] : NULL, NULL);
+    const char *name = getenv("TEST_DISTRO");
+    struct distro distro;
+    if (!name) name = "alpine";
+    if (find_distro(name, &distro) < 0) return pdn_install(name, NULL, NULL);
+    if (argc == 2 && !strcmp(argv[1], "mirrors")) return pdn_mirrors(NULL);
+    if (argc == 3 && !strcmp(argv[1], "mirrors")) return pdn_mirrors(argv[2]);
+    if (argc == 2 && !strcmp(argv[1], "available")) return pdn_available();
+    if (argc == 3 && !strcmp(argv[1], "extract-small")) {{ distro.extracted_limit = 1; return extract(&distro, argv[2]) != 0; }}
+    if (argc == 3 && !strcmp(argv[1], "extract")) return extract(&distro, argv[2]) != 0;
+    if (argc == 3 && !strcmp(argv[1], "verify")) return verify(&distro, argv[2]) != 0;
+    if (argc == 4 && !strcmp(argv[1], "download")) return download(&distro, argv[2], argv[3]) != 0;
+    if (argc == 2 && !strcmp(argv[1], "configure")) return configure(&distro, &distro.mirrors[0]) != 0;
+    if (argc == 3 && !strcmp(argv[1], "mirror")) return pdn_install(name, NULL, argv[2]);
+    return pdn_install(name, argc == 2 ? argv[1] : NULL, NULL);
 }}
 ''')
         ndk = Path(os.environ["NDK_PATH"])
@@ -71,7 +97,7 @@ int main(int argc, char **argv) {{
         if "-fno-termux-rpath" in subprocess.check_output([compiler, "--help"], text=True):
             flags.append("-fno-termux-rpath")
         if os.environ.get("PDN_COVERAGE"):
-            flags += ["-fprofile-instr-generate", "-fcoverage-mapping"]
+            flags += ["-fprofile-instr-generate", "-fcoverage-mapping", "-DPDN_TEST_COVERAGE"]
             runtime = subprocess.check_output([compiler, "-print-resource-dir"], text=True).strip()
             flags += [f"{runtime}/lib/linux/libclang_rt.profile-aarch64-android.a"]
         subprocess.run([compiler, *flags, str(source), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
@@ -228,6 +254,9 @@ int main(int argc, char **argv) {{
         wrong.write_bytes(b"bad")
         self.assertNotEqual(self.run_harness(wrong).returncode, 0)
         self.assert_clean()
+        wrong.write_bytes(b"x" * (self.archive.stat().st_size + 1))
+        self.assertNotEqual(self.run_harness(wrong).returncode, 0)
+        self.assert_clean()
         wrong.write_bytes(b"x" * self.archive.stat().st_size)
         result = self.run_harness(wrong)
         self.assertNotEqual(result.returncode, 0)
@@ -297,13 +326,165 @@ int main(int argc, char **argv) {{
         self.assertEqual(outside.read_text(), "keep")
 
     def test_release_cli_arguments(self):
-        for args in [("install",), ("install", "ubuntu"), ("install", "alpine", "extra"),
+        for args in [("install",), ("install", "unknown"), ("install", "alpine", "extra"),
                      ("install", "alpine", "--archive"), ("INSTALL", "ALPINE", "--ARCHIVE", "/missing")]:
             result = subprocess.run([str(BINARY), *args], env=self.env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
         result = subprocess.run([str(BINARY), "install", "--help"], env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("install alpine", result.stdout)
+        self.assertIn("install NAME", result.stdout)
+
+    def test_all_distro_profiles(self):
+        for name in ("UBUNTU", "Debian", "ARCH"):
+            with self.subTest(name=name):
+                self.env["TEST_DISTRO"] = name
+                result = self.run_harness(self.archive)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                root = self.roots / name.lower()
+                self.assertEqual((root / "bin/tool").read_bytes(), b"guest\n")
+                self.assertIn("nameserver", (root / "etc/resolv.conf").read_text())
+                if name == "ARCH":
+                    config = (root / "etc/pacman.conf").read_text()
+                    self.assertIn("SigLevel = Required", config)
+                    self.assertIn("DisableSandboxSyscalls", config)
+                    self.assertIn("$arch/$repo", (root / "etc/pacman.d/mirrorlist").read_text())
+                    self.assertIn("mirrors.ustc.edu.cn", (root / "etc/pacman.d/mirrorlist").read_text())
+                else:
+                    config = (root / f"etc/apt/sources.list.d/{name.lower()}.sources").read_text()
+                    self.assertIn("Signed-By:", config)
+                    self.assertIn("noble-security" if name == "UBUNTU" else "trixie-security", config)
+                    self.assertIn("Acquire::https::CaInfo", (root / "etc/apt/apt.conf.d/99pdn").read_text())
+                    self.assertIn(self.cert.read_text().strip(), (root / "etc/ssl/certs/ca-certificates.crt").read_text())
+                    self.assertEqual((root / "etc/apt/apt.conf.d/docker-clean").exists(), name == "UBUNTU")
+                (root / "keep").write_text("keep")
+                self.assertNotEqual(self.run_harness(self.archive).returncode, 0)
+                self.assertEqual((root / "keep").read_text(), "keep")
+        self.assertFalse(list(self.roots.glob(".pdn-*-*")))
+
+    def test_distro_catalogue_and_mirrors(self):
+        result = self.run_harness("available")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("debian", result.stdout)
+        self.assertEqual(self.run_harness("mirrors", "UBUNTU").returncode, 0)
+        self.assertNotEqual(self.run_harness("mirrors", "unknown").returncode, 0)
+        for command in ("list", "LS"):
+            result = subprocess.run([str(BINARY), command, "--AVAILABLE"], env=self.env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in ("alpine", "ubuntu", "debian", "arch"):
+                self.assertIn(name, result.stdout)
+        for name, expected in (("Ubuntu", "ubuntu-cdimage"), ("DEBIAN", "docker-debian-artifacts"), ("arch", "archlinuxarm")):
+            result = subprocess.run([str(BINARY), "mirrors", name], env=self.env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(expected, result.stdout)
+            self.assertNotIn("alpine/v3.24", result.stdout)
+        self.env["TEST_DISTRO"] = "unknown"
+        self.assertNotEqual(self.run_harness().returncode, 0)
+        self.assertFalse(self.roots.exists())
+
+    def test_all_profiles_mirror_fallback_and_collision(self):
+        for name in ("ubuntu", "debian", "arch"):
+            with self.subTest(name=name):
+                self.env.update(TEST_DISTRO=name, TEST_URL=self.url + "/corrupt", TEST_URL_2=self.url + "/archive")
+                result = self.run_harness()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Trying mirror: ustc", result.stdout)
+                root = self.roots / name
+                root.rename(root.with_name(name.upper()))
+                self.assertIn("already exists", self.run_harness().stderr)
+
+    def test_hardlink_aliases_and_limits(self):
+        archive = self.base / "links.tar.gz"
+        make_archive(archive, [("./usr", "dir", ""), ("./usr/bin", "dir", ""),
+                               ("./usr/bin/tool", "file", b"linked"),
+                               ("./usr/bin/alias", "hardlink", "./usr/bin/tool"),
+                               ("./other", "hardlink", "./usr/bin/tool")])
+        target = self.base / "extracted"
+        target.mkdir()
+        result = self.run_harness("extract", archive, cwd=target)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((target / "usr/bin/alias").is_symlink())
+        self.assertEqual((target / "usr/bin/alias").read_bytes(), b"linked")
+        self.assertEqual((target / "other").read_bytes(), b"linked")
+        (target / "usr/bin/tool").write_bytes(b"changed")
+        self.assertEqual((target / "other").read_bytes(), b"changed")
+        small = self.base / "small"
+        small.mkdir()
+        self.assertNotEqual(self.run_harness("extract-small", archive, cwd=small).returncode, 0)
+        for index, link in enumerate(("/host", "../host", "a/../host", "a//host", "a/./host", "same")):
+            bad = self.base / f"link-{index}.tar.gz"
+            make_archive(bad, [("same", "hardlink", link)])
+            self.assertNotEqual(self.run_harness("extract", bad, cwd=small).returncode, 0)
+
+    def test_owner_directory_permissions(self):
+        archive = self.base / "private.tar.gz"
+        with tarfile.open(archive, "w:gz") as output:
+            item = tarfile.TarInfo("private")
+            item.type = tarfile.DIRTYPE
+            item.mode = 0
+            output.addfile(item)
+        result = self.run_harness("extract", archive)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.base / "private").stat().st_mode & 0o700, 0o700)
+
+    def test_arch_initialization_failure_and_interrupt(self):
+        self.env.update(TEST_DISTRO="arch", TEST_INIT_FAIL="1")
+        result = self.run_harness(self.archive)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("keyring initialization failed", result.stderr)
+        self.assertFalse((self.roots / "arch").exists())
+        self.assertFalse(list(self.roots.glob(".pdn-arch-*")))
+        self.env.pop("TEST_INIT_FAIL")
+        self.env["TEST_INIT_SLOW"] = "1"
+        process = subprocess.Popen([str(self.harness), str(self.archive)], env=self.env, cwd=self.base,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            for line in process.stdout:
+                if "Initializing" in line:
+                    time.sleep(0.1)
+                    process.send_signal(signal.SIGINT)
+                    break
+            process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 130)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=10)
+        self.assertFalse((self.roots / "arch").exists())
+        self.assertFalse(list(self.roots.glob(".pdn-arch-*")))
+
+    def test_config_dns_and_certificate_paths(self):
+        self.env["TEST_DISTRO"] = "debian"
+        (self.base / "etc").mkdir()
+        outside = self.base / "outside"
+        outside.write_text("do not overwrite")
+        (self.base / "etc/resolv.conf").symlink_to(outside)
+        result = self.run_harness("configure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(outside.read_text(), "do not overwrite")
+        self.assertFalse((self.base / "etc/resolv.conf").is_symlink())
+        self.assertEqual(self.run_harness("configure").returncode, 0)
+        ca = self.base / "etc/ssl/certs/ca-certificates.crt"
+        ca.unlink()
+        ca.symlink_to(outside)
+        self.assertNotEqual(self.run_harness("configure").returncode, 0)
+        self.assertEqual(outside.read_text(), "do not overwrite")
+        ca.unlink()
+        self.env["PDN_CA_BUNDLE"] = str(self.base / "absent.pem")
+        self.assertNotEqual(self.run_harness("configure").returncode, 0)
+
+    def test_system_certificates_and_bundle_limit(self):
+        self.env["TEST_DISTRO"] = "ubuntu"
+        self.env.pop("PDN_CA_BUNDLE")
+        (self.base / "etc").mkdir()
+        result = self.run_harness("configure")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ca = self.base / "etc/ssl/certs/ca-certificates.crt"
+        self.assertIn("BEGIN CERTIFICATE", ca.read_text())
+        ca.unlink()
+        oversized = self.base / "oversized.pem"
+        oversized.write_bytes(b"x" * (8 * 1024 * 1024 + 1))
+        self.env["PDN_CA_BUNDLE"] = str(oversized)
+        self.assertNotEqual(self.run_harness("configure").returncode, 0)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current project version: **0.3.2**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.4.0**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
@@ -10,72 +10,100 @@ The same executable is built as `pdn` and `proot-distro-nolib`; either supports
 `install`, `mirrors`, `login`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
-## Alpine installation
+## Installing a distribution
 
 ```sh
 export PDN_ROOTFS_DIR=/your/private/linux
+pdn list --available
 pdn install alpine
-pdn login alpine
+pdn install ubuntu
+pdn install debian
+pdn install arch
+pdn login ubuntu
 ```
 
 The default directory remains `$HOME/.local/share/pdn/rootfs`. Commands and
-`alpine` ignore ASCII case. Installation downloads the fixed ARM64 Alpine 3.24.2
-Mini Root Filesystem over verified HTTPS, checks its exact size and compiled-in
-SHA256, extracts it, and configures the v3.24 main and community apk repositories
-from the mirror that supplied the verified archive. DNS defaults to 223.5.5.5 and 1.1.1.1; these
-can be edited in the installed rootfs's `etc/resolv.conf` for your network.
+names ignore ASCII case, including `pdn INSTALL UBUNTU`. All downloads are
+ARM64/AArch64 and have a fixed size and SHA256 compiled into the executable.
 
-Version 0.3.1 tries these mirrors in order: Tsinghua TUNA (`tuna`), USTC (`ustc`),
-Nanjing University (`nju`), Alpine official CDN (`official`), and dotsrc (`dotsrc`).
-Network errors, HTTP errors, size mismatches and SHA256 mismatches reject that
-download and try the next mirror, starting a fresh file. All mirrors must supply
-the same pinned version, architecture, size and hash. Ctrl+C/SIGTERM stop the
-whole operation; they do not trigger another mirror attempt.
+| Name | Pinned base | Compressed size | Rootfs sources in fallback order |
+| --- | --- | --- | --- |
+| `alpine` | Alpine 3.24.2 | 3.8 MiB | tuna, ustc, nju, official, dotsrc |
+| `ubuntu` | Ubuntu Base 24.04.5 LTS (noble) | 28.5 MiB | tuna, ustc, official |
+| `debian` | Debian 13 trixie slim, debuerreotype 20261005 | 28.8 MiB | official, github |
+| `arch` | Arch Linux ARM 2026.08 | 790.9 MiB | tuna, ustc, nju, official |
+
+`arch` is Arch Linux ARM, not the x86-64 Arch Linux distribution. Its full
+upstream filesystem is about 2 GiB unpacked and includes hardware-related
+packages. Allow several GiB of free space for the archive, rootfs and updates.
+Debian's two routes retrieve the same immutable upstream GitHub artifact;
+they are not independent domestic mirrors. Rootfs provenance and checksums
+are recorded in [the source catalogue](pdn-rootfs-sources.md).
 
 ```sh
 pdn mirrors
-pdn install alpine
-pdn install alpine --mirror ustc
-pdn INSTALL ALPINE --MIRROR OFFICIAL
+pdn mirrors ubuntu
+pdn install ubuntu --mirror ustc
+pdn install DEBIAN --mirror OFFICIAL
+pdn install arch --archive /path/to/ArchLinuxARM-2026.08-aarch64-rootfs.tar.gz
 ```
 
-Manual selection tries only that mirror. Mirror names ignore ASCII case. Each
-mirror has an 8-second connection timeout, a 90-second transfer timeout and a
-30-second low-speed threshold at 1 KiB/s. This is fixed-order fallback, not a
-latency or throughput ranking; interrupted downloads are not resumed. Existing
-installed systems and their repository settings are not changed.
+Network, HTTP, size and SHA256 errors reject a download and try the next
+source with a fresh file. Manual `--mirror` selection tries only that source.
+All sources for one distribution must supply identical pinned content.
+Ctrl+C/SIGTERM stop the operation, without switching to another source.
+This is fixed-order fallback, not automatic speed ranking or resumable transfer.
 
-A previously downloaded copy of the same official archive can be used offline:
+Connections time out after 8 seconds; a transfer below 1 KiB/s for 30 seconds
+is stopped. Total transfer limits are 90 seconds for Alpine, 10 minutes for
+Ubuntu/Debian and 30 minutes for Arch. If a dated archive is removed upstream,
+update the catalogue; the installer will not silently accept a new checksum.
 
-```sh
-pdn install alpine --archive /path/to/alpine-minirootfs-3.24.2-aarch64.tar.gz
-```
+`--archive PATH` accepts only the exact pinned archive for that distribution
+and copies it into staging before verification. It cannot be combined with
+`--mirror`. Local installation uses the first listed source's package settings.
+It is not a general importer for arbitrary rootfs archives.
 
-Local archives use TUNA apk repositories as before, and cannot be combined with
-`--mirror`. They are copied into staging before verification. This is not a
-universal archive importer: other versions and modified archives fail the check.
+Installation creates DNS configuration with 223.5.5.5 and 1.1.1.1. Alpine's apk
+repositories and Ubuntu's apt repository follow the successful rootfs mirror.
+Debian uses official Debian and Debian security repositories. Ubuntu/Debian
+seed a CA bundle from Android's system certificates (or `PDN_CA_BUNDLE`) when
+one is absent, and configure apt to use it explicitly with the root sandbox
+user for PRoot compatibility. Debian's container-specific `docker-clean` apt
+hooks are removed. Package signature verification stays enabled.
 
-Existing Alpine directories, symlinks and files (including case variants) are
-never deliberately replaced. An advisory lock excludes simultaneous installs
-through pdn. Extraction occurs in a hidden temporary directory beneath the
-rootfs parent and is renamed to `alpine` only after successful initialization.
-Normal errors, Ctrl+C and SIGTERM clean up staging. SIGKILL or power loss can
-leave `.pdn-alpine-*` directories; after confirming no install is active, these
-may be removed manually. They are not listed as installed distributions.
+Arch writes a pacman mirror list with the selected mirror first and remaining
+sources as fallback, keeps package signature verification, and disables the
+pacman filesystem/syscall sandbox mechanisms unavailable inside PRoot. It runs
+`pacman-key --init` and `pacman-key --populate archlinuxarm` inside the staged
+rootfs before publishing the installation. No host Bash or GnuPG is required.
+Without a supplied temporary directory, key initialization uses the rootfs
+parent for shorter Unix socket paths. For unusually long host paths, set
+`PROOT_TMP_DIR` to a short writable private directory. Upgrade Arch with
+`pacman -Syu`; this installer supplies a pinned starting point for a rolling
+release, not a permanently frozen package repository.
+
+Existing entries, including files, symlinks and case variants, are never
+deliberately replaced. An advisory lock excludes simultaneous installation
+and uninstall operations. Extraction uses `.pdn-NAME-XXXXXX` staging under
+the rootfs parent; the final name appears only after configuration and any
+key initialization succeed. Normal errors, Ctrl+C and SIGTERM clean staging.
+SIGKILL or power loss can leave hidden staging directories, removable after
+confirming that no installation is running.
 
 Extraction rejects absolute/traversing entry paths, writes through symlinks,
-and unsupported device/FIFO entries. Ordinary permissions, sticky bits and
-symlinks are preserved; setuid/setgid bits and host ownership are not restored.
-An interrupted installation never becomes a completed rootfs.
+and device/FIFO entries. Hardlinks become relative symlink aliases because
+Android app domains can prohibit native hardlink creation. Ordinary file
+permissions and sticky bits are preserved; directories receive owner rwx
+access for rootless operation, while setuid/setgid bits and host ownership are
+not restored. A DNS symlink supplied by a distribution is replaced without
+following its target. Unpacked data is bounded at 512 MiB for Alpine, 1 GiB for
+Ubuntu/Debian and 4 GiB for Arch; entries and individual file sizes are bounded.
 
-TLS uses Android's `/system/etc/security/cacerts`. Set `PDN_CA_BUNDLE` to a PEM
-CA file if your host needs another trust source. Certificate and hostname
-verification remain enabled. Host proxy environment variables follow libcurl's
-behavior. No Android package name or service request is needed.
-
-Only Alpine installation is included. Mirror racing, resumable downloads and
-other distro installers remain deferred. Existing local rootfs login still
-works independently of installation.
+HTTPS certificate and hostname verification remain enabled. Downloads use
+Android's `/system/etc/security/cacerts`; `PDN_CA_BUNDLE` optionally supplies a
+PEM trust file. Host proxy settings follow libcurl behavior. No Android package
+name or service request is needed, and existing installed systems are unchanged.
 
 ## Uninstalling a local rootfs
 
@@ -113,7 +141,7 @@ a partially deleted rootfs; correct the problem and repeat uninstall to finish.
 
 ## Local rootfs usage
 
-For distributions other than the built-in Alpine installer, root filesystems
+For distributions outside the built-in catalogue, root filesystems
 must already be extracted into app-accessible directories.
 For example, with `/your/private/linux/Ubuntu/bin/sh` present:
 
@@ -166,7 +194,7 @@ The legacy engine interface remains available as `pdn proot [options] [command]`
 or `proot-distro-nolib [options] [command]`. Bare `pdn` and `pdn --help` show
 manager help. `pdn proot --help` shows the engine's options.
 
-Automatic mirror selection and installers for other distributions are deferred. This release targets ARM64 Android hosts that permit the
+Automatic mirror speed ranking and additional distro installers are deferred. This release targets ARM64 Android hosts that permit the
 existing engine to run; it does not add other operating-system/CPU support.
 
 ## Build in this repository

@@ -2,20 +2,27 @@
 
 Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
 
-## Standalone proot-distro-nolib 0.3.2
+## Standalone proot-distro-nolib 0.4.0
 
 Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
-`proot-distro-nolib` executable. Version 0.3.1 supports `pdn install alpine` with five domestic/international
-mirrors and automatic failure fallback. Use `pdn mirrors` to list them or
-`pdn install alpine --mirror ustc` to select one. Local rootfs login, command
-execution and listing remain available. Set `PDN_ROOTFS_DIR` to the directory containing your rootfs
-directories, then use `pdn login ubuntu` or `pdn login --rootfs /path/to/rootfs`.
-Command and rootfs names ignore ASCII case. Run `make test` for Android
-regression tests. These targets do not install files or build the APK.
-Use `pdn uninstall ubuntu` (alias `remove`) to remove a local rootfs after
-confirmation, including all its user files. `--yes` skips the prompt for app
-integration; exit login sessions first.
-See [standalone usage and build notes](docs/proot-distro-nolib.md).
+`proot-distro-nolib` executable. Install Alpine, Ubuntu, Debian or Arch Linux ARM
+with `pdn install alpine|ubuntu|debian|arch` (choose one name). Run
+`pdn list --available` for versions and download sizes, or `pdn mirrors ubuntu`
+for sources. Installation verifies pinned archives and falls back between
+sources; `--mirror NAME` selects one and `--archive PATH` uses a verified local
+copy. Arch's upstream archive is about 791 MiB.
+
+Set `PDN_ROOTFS_DIR` to your rootfs parent directory, then run `pdn login ubuntu`.
+Local rootfs login, command execution and `list`/`ls` remain available.
+`pdn uninstall ubuntu` (alias `remove`) confirms before deleting the entire
+rootfs including user files; `--yes` skips the prompt for callers with their
+own confirmation. Exit login sessions first. Commands and names ignore ASCII case.
+
+Run `make test` for Android regression tests. These targets do not install files
+or build the APK. The standalone binary requires Android system libc/libdl,
+with no Termux, host Bash or external downloader dependency.
+See [standalone usage and build notes](docs/proot-distro-nolib.md) and
+[rootfs provenance](docs/pdn-rootfs-sources.md).
 
 ## What it does
 
