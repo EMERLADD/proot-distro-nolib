@@ -1,88 +1,60 @@
-name: CI
+name: Build pdn
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+    tags: ['v*']
   pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdn-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  android-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      NDK_VERSION: 26.3.11579264
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
-
-    - name: Set up Java
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'gradle'
-
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: aarch64-linux-android
-        components: rustfmt, clippy
-
-    - name: Configure Cargo for NDK
-      run: |
-        # Replace hardcoded local NDK path with GitHub Runner's NDK path
-        sed -i "s|/home/o/Android/Sdk/ndk/[^/]*|$ANDROID_NDK_LATEST_HOME|g" src/pr-cli/.cargo/config.toml
-        sed -i "s|/home/o/Android/Sdk/ndk/[^/]*|$ANDROID_NDK_LATEST_HOME|g" src/proot-integration-test/.cargo/config.toml
-
-    - name: Run Cargo Format (pr-cli)
-      run: |
-        cd src/pr-cli
-        cargo fmt -- --check
-
-    - name: Run Cargo Format (proot-integration-test)
-      run: |
-        cd src/proot-integration-test
-        cargo fmt -- --check
-
-    - name: Run Cargo Test (pr-cli)
-      run: |
-        cd src/pr-cli
-        cargo test
-
-    - name: Build Proot C Binaries
-      run: |
-        ./scripts/build.sh --arch=arm64 --ndk-path=$ANDROID_NDK_LATEST_HOME
-
-    - name: Build Integration Test Binary
-      run: |
-        cd src/proot-integration-test
-        cargo build --target aarch64-linux-android --release
-
-    - name: Build Rust CLI (pr-cli)
-      run: |
-        cd src/pr-cli
-        cargo build --target aarch64-linux-android --release
-
-    - name: Copy binaries to proot-engine
-      run: |
-        mkdir -p android/proot-engine/src/main/jniLibs/arm64-v8a/
-        cp build/out/arm64/proot android/proot-engine/src/main/jniLibs/arm64-v8a/libproot.so
-        cp build/out/arm64/loader android/proot-engine/src/main/jniLibs/arm64-v8a/libproot-loader.so
-        cp src/pr-cli/target/aarch64-linux-android/release/pr-cli android/proot-engine/src/main/jniLibs/arm64-v8a/libpr-cli.so
-
-    - name: Build Android App & proot-engine AAR
-      run: |
-        cd android
-        ./gradlew assembleDebug
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: android/app/build/outputs/apk/debug/app-debug.apk
-
-    - name: Upload proot-engine AAR
-      uses: actions/upload-artifact@v4
-      with:
-        name: proot-engine
-        path: android/proot-engine/build/outputs/aar/proot-engine-debug.aar
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch talloc source
+        run: git submodule update --init --depth 1 vendor/samba
+      - name: Install build tools and Android NDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make curl xz-utils bzip2 pkg-config
+          sdkmanager "ndk;$NDK_VERSION"
+          ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+          echo "NDK_PATH=$ndk" >> "$GITHUB_ENV"
+          echo "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Build and package
+        run: make package JOBS=2
+      - name: Verify package checksums
+        working-directory: build/packages
+        run: sha256sum -c SHA256SUMS
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdn-android-arm64-${{ github.sha }}
+          path: |
+            build/packages/*.tar.gz
+            build/packages/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build summary
+        run: |
+          {
+            echo '### Android ARM64 build'
+            echo 'Binary dependency checks and release packaging passed.'
+            echo 'Runtime tests require a compatible ARM64 Android host; they were not run on this Linux runner.'
+            echo '```'
+            cat build/packages/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

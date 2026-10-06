@@ -1,0 +1,88 @@
+name: Legacy pr Android App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android
+        components: rustfmt, clippy
+
+    - name: Configure Cargo for NDK
+      run: |
+        # Replace hardcoded local NDK path with GitHub Runner's NDK path
+        sed -i "s|/home/o/Android/Sdk/ndk/[^/]*|$ANDROID_NDK_LATEST_HOME|g" src/pr-cli/.cargo/config.toml
+        sed -i "s|/home/o/Android/Sdk/ndk/[^/]*|$ANDROID_NDK_LATEST_HOME|g" src/proot-integration-test/.cargo/config.toml
+
+    - name: Run Cargo Format (pr-cli)
+      run: |
+        cd src/pr-cli
+        cargo fmt -- --check
+
+    - name: Run Cargo Format (proot-integration-test)
+      run: |
+        cd src/proot-integration-test
+        cargo fmt -- --check
+
+    - name: Run Cargo Test (pr-cli)
+      run: |
+        cd src/pr-cli
+        cargo test
+
+    - name: Build Proot C Binaries
+      run: |
+        ./scripts/build.sh --arch=arm64 --ndk-path=$ANDROID_NDK_LATEST_HOME
+
+    - name: Build Integration Test Binary
+      run: |
+        cd src/proot-integration-test
+        cargo build --target aarch64-linux-android --release
+
+    - name: Build Rust CLI (pr-cli)
+      run: |
+        cd src/pr-cli
+        cargo build --target aarch64-linux-android --release
+
+    - name: Copy binaries to proot-engine
+      run: |
+        mkdir -p android/proot-engine/src/main/jniLibs/arm64-v8a/
+        cp build/out/arm64/proot android/proot-engine/src/main/jniLibs/arm64-v8a/libproot.so
+        cp build/out/arm64/loader android/proot-engine/src/main/jniLibs/arm64-v8a/libproot-loader.so
+        cp src/pr-cli/target/aarch64-linux-android/release/pr-cli android/proot-engine/src/main/jniLibs/arm64-v8a/libpr-cli.so
+
+    - name: Build Android App & proot-engine AAR
+      run: |
+        cd android
+        ./gradlew assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: android/app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Upload proot-engine AAR
+      uses: actions/upload-artifact@v4
+      with:
+        name: proot-engine
+        path: android/proot-engine/build/outputs/aar/proot-engine-debug.aar

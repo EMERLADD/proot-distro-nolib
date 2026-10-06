@@ -16,10 +16,13 @@ endif
 
 export NDK_PATH CC AR JOBS OUT_DIR
 
-.PHONY: build test clean help
+.PHONY: build package test clean help
 
 build:
 	@sh "$(PROJECT_ROOT)/scripts/build-proot-nolib.sh"
+
+package: build
+	@sh "$(PROJECT_ROOT)/scripts/package-proot-nolib.sh"
 
 test: build
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_proot_nolib.py" -v
@@ -32,4 +35,4 @@ clean:
 	rm -rf "$(PROJECT_ROOT)/build/proot-distro-nolib"
 
 help:
-	@printf '%s\n' 'make                 Build the ARM64 Android pdn and engine' 'make test            Build and run Android regression tests' 'make clean           Remove this engine build only' 'make NDK_PATH=...    Select an Android NDK installation' 'Output: $(OUT_DIR)/pdn and proot-distro-nolib'
+	@printf '%s\n' 'make                 Build the ARM64 Android pdn and engine' 'make test            Build and run Android regression tests' 'make package         Build and package binaries, licenses and source' 'make clean           Remove this engine build only' 'make NDK_PATH=...    Select an Android NDK installation' 'Output: $(OUT_DIR)/pdn and proot-distro-nolib'

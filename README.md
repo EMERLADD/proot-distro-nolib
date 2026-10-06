@@ -1,150 +1,249 @@
-# pr
+# proot-distro-nolib
 
-Android app that runs Linux distributions via [proot](https://github.com/proot-me/proot) — no root, no Termux required.
+**基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具，定位类似 Termux 的 proot-distro，但不依赖 Termux 环境及其动态库。**
 
-## Standalone proot-distro-nolib 0.6.0
+面向提供终端或命令执行能力的 Android App：把 `pdn` 放进 App 可执行的目录，就能用简单命令安装、登录和管理 Linux。无需先安装 Termux，也不需要宿主额外提供 Bash、Python、curl 或 tar。
 
-Run `make` to build `build/proot-distro-nolib/arm64/pdn` and the identical
-`proot-distro-nolib` executable. Install Alpine, Ubuntu, Debian or Arch Linux ARM
-with `pdn install alpine|ubuntu|debian|arch` (choose one name). Run
-`pdn list --available` for versions and download sizes, or `pdn mirrors ubuntu`
-for sources. Installation verifies pinned archives and falls back between
-sources; `--mirror NAME` selects one and `--archive PATH` uses a verified local
-copy. Arch's upstream archive is about 791 MiB.
+当前版本：**v0.6.0 · ARM64 Android · 早期测试版**。
 
-Set `PDN_ROOTFS_DIR` to your rootfs parent directory, then run `pdn login ubuntu`.
-Run `pdn exec ubuntu -- /usr/bin/id` to execute a command, or add
-`--bind /sdcard:/mnt/shared` after the distro name to expose a host directory
-in `login` or `exec`. Bindings apply only to that invocation and allow writes
-within the host app permissions. Local rootfs login and `list`/`ls` remain available.
-`pdn uninstall ubuntu` (alias `remove`) confirms before deleting the entire
-rootfs including user files; `--yes` skips the prompt for callers with their
-own confirmation. Exit login sessions first. Commands and names ignore ASCII case.
+> 作者已在 **MT 管理器** 中实际使用，反馈当前功能均正常运行。这是作者第一次制作这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
+>
+> MT 管理器是已验证的宿主环境，不代表所有 Android App 和设备都已测试。
 
-Save defaults with `pdn config ubuntu --bind /sdcard:/mnt/shared`; inspect with
-`pdn config ubuntu --show` or skip with `pdn login ubuntu --no-config`.
-Login/exec support `--user`, `--work-dir`, and repeatable `--env KEY=VALUE`.
-Use `pdn backup ubuntu /sdcard/ubuntu.tar.gz` and
-`pdn restore ubuntu-copy /sdcard/ubuntu.tar.gz` to migrate Linux data to a new
-name. Exit its sessions before backup; saved host settings are excluded.
+## 这是什么
 
-Run `make test` for Android regression tests. These targets do not install files
-or build the APK. The standalone binary requires Android system libc/libdl,
-with no Termux, host Bash or external downloader dependency.
-See [standalone usage and build notes](docs/proot-distro-nolib.md) and
-[rootfs provenance](docs/pdn-rootfs-sources.md).
+从文件格式看，`pdn` 是 **ARM64 Android ELF 可执行文件**；从用途看，它是一个 **命令行 Linux 发行版管理器**，把 PRoot 引擎和常用管理功能整合进同一个程序。
 
-## What it does
+- **脱离 Termux**：运行时只动态依赖 Android 系统的 `libc.so`、`libdl.so`；下载、TLS、解压等组件静态链接。
+- **简单命令**：`pdn install ubuntu` 安装，`pdn login ubuntu` 登录，名称和命令支持 ASCII 大小写。
+- **一个程序管理 Linux**：支持执行命令、挂载目录、保存默认配置、切换 guest 用户、备份恢复和卸载。
+- **适合不同宿主 App**：路径来自环境变量或命令参数，不写死 App 包名。终端输入和 App 按钮调用可以使用同一个程序。
+- **基于 pr 的 Android 适配**：保留其 PRoot、加载器及 Android 系统调用适配，继续保留原有版权与许可证信息。
 
-- Install and run Linux distributions (Alpine, Debian, Ubuntu, and 5 more) on any Android device
-- Native OCI container image support (`docker.io/library/...`)
-- Full package manager support: `apk`, `apt-get`
-- Compile and run C, Rust, and other programs inside the guest
-- targetSdk 35 — Play Store compatible
+`nolib` 表示不依赖 Termux 的动态库，并不是完全不使用任何库。它也不自带图形终端界面；交互终端由宿主 App 提供。仓库保留了 pr 的 Android App/Rust CLI 源码，它们不是本项目独立 `pdn` 的安装前提，也不代表那些组件的功能已经全部移植到 `pdn`。
 
-## The `:proot-engine` Library
+## 运行条件
 
-The core execution environment has been decoupled into a standalone Android Library (`:proot-engine`). Consumer apps (like interactive coding environments, IDEs, or terminal apps) can now integrate a full Linux execution engine via Gradle composite builds without duplicating native binaries or Kotlin bridge code.
+- ARM64 / AArch64 Android；构建目标为 Android API 24 及以上，实际可用性还取决于宿主权限与系统限制。
+- 宿主允许执行程序及 PRoot 所需的进程跟踪、系统调用，并能访问存放 Linux 的目录。
+- Linux rootfs 放在支持 Unix 权限与符号链接的 App 私有目录；`/sdcard` 适合放下载包、备份或共享文件，不适合直接解压 rootfs。
+- 宿主需有网络权限；访问共享存储需要相应权限。
 
-## Supported distributions
+“有终端就能使用”是本项目面向用户的使用方式，不是绕过 Android 权限的保证。对于执行位置受限的 App，开发者可能需要通过 APK 的 `nativeLibraryDir` 部署程序并设置 `PROOT_LOADER`。参见 [Android 加载器说明](docs/targetsdk35-compatibility.md)。PRoot 也不是安全隔离边界，不提供真正的 root 权限。
 
-Alpine (latest & edge), Debian (stable & testing), Ubuntu, Arch Linux, Fedora, OpenSUSE, Manjaro, Rocky Linux
+## 获取与安装
 
-## How it works
+优先从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 下载独立的 **`pdn`**，或下载包含源码和许可材料的完整发布包。`pdn` 是成品可执行文件，不需要先解压 rootfs 或自行编译。原始文件和完整包的 SHA256 均随版本提供。
 
-**proot** uses Linux `ptrace()` to intercept syscalls and translate filesystem paths, creating a virtual root filesystem without actual root privileges.
+也可以获取开发中的构建：打开 [Build pdn 工作流](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml)，选择成功运行记录，在 **Artifacts** 下载 `pdn-android-arm64-提交号`。下载产物通常需要登录 GitHub；自动构建产物有保留期限，不等同于长期 Release。
 
-The project consists of three layers:
-- **Patched proot** (C) — Handles Android-specific seccomp filters, SELinux, and W^X restrictions.
-- **pr-cli** (Rust) — High-performance, zero-copy CLI that replaces the original `proot-distro.sh` bash script. Supports native OCI extraction and robust quoting.
-- **Android APK / Library** (Kotlin + Compose) — The `:proot-engine` exposes a clean Kotlin API (`ProotHost`, `ProotLauncher`), while `:app` provides a Jetpack Compose terminal UI with soft-keyboard resize support.
+解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.0-android-arm64.tar.gz`。里面同时提供：
 
-### Android compatibility
+- `pdn`：建议使用的命令名。
+- `proot-distro-nolib`：与 `pdn` 内容相同，任选一个即可，不必两个都放进 bin。
+- `proot-loader`：有外部加载器需求的宿主可使用；普通场景先使用内嵌加载器。
 
-Android enforces several restrictions on app processes:
-- **W^X (Write-XOR-Execute)**: Prevents executing files in app-writable directories
-- **SELinux**: Blocks certain filesystem operations
-- **Zygote seccomp**: Blocks 18+ syscalls via BPF filter
+将 `pdn` 放进宿主允许执行的 bin 目录，在该目录执行：
 
-Our engine handles all of these:
-- SIGSYS handlers intercept blocked syscalls and emulate them in userspace
-- The `PROOT_LOADER` mechanism uses `nativeLibraryDir` to bypass W^X
-- Fake root (`--change-id=0:0`) makes `dpkg` and `apt-get` work without real root
-- `CLONE_VM`/`CLONE_VFORK` stripping enables Rust's `cargo build` to work inside proot
-
-## Building
-
-### Prerequisites
-
-- Android SDK with NDK r27c (auto-downloaded by build script)
-- Rust toolchain with `aarch64-linux-android` target
-- Java 17+
-
-### Build steps
-
-```bash
-# 1. Build proot C binaries
-scripts/build.sh --arch=arm64
-
-# 2. Build test binary (guest-side)
-cd src/proot-integration-test && cargo build --target aarch64-linux-android --release
-
-# 3. Build pr-cli (host-side)
-cd src/pr-cli && cargo build --target aarch64-linux-android --release
-
-# 4. Copy binaries to the proot-engine library
-cp build/out/arm64/proot android/proot-engine/src/main/jniLibs/arm64-v8a/libproot.so
-cp build/out/arm64/loader android/proot-engine/src/main/jniLibs/arm64-v8a/libproot-loader.so
-cp src/pr-cli/target/aarch64-linux-android/release/pr-cli \
-   android/proot-engine/src/main/jniLibs/arm64-v8a/libpr-cli.so
-
-# 5. Build Android App and Engine AAR
-cd android && ./gradlew assembleDebug
+```sh
+chmod 755 pdn
+./pdn version
 ```
 
-## Testing
+如果 bin 已经在 `PATH` 中，就可以直接输入 `pdn`。共享存储可能禁止执行文件，单纯 `chmod` 不能改变这个限制。
 
-### On-device (requires connected Android device)
+### 以 MT 管理器为例
 
-```bash
-# Install Alpine or Debian via the app UI, then:
-adb shell run-as id.or.oo.pr files/usr/bin/pr-cli test alpine
-adb shell run-as id.or.oo.pr files/usr/bin/pr-cli test debian
+下载 Release 中的 `pdn`，用 MT 管理器复制到：
+
+```text
+/data/user/0/bin.mt.plus/files/term/bin/pdn
 ```
 
-**37 tests** across 8 suites: distro, clone, readlink, gcc, rust, git, pipe, general
+这是 MT 管理器自己的终端 bin 目录。假设文件下载在 `/sdcard/Download/pdn`，也可以在 **MT 管理器的终端**执行：
 
-### Host-side (pr-cli unit tests)
-
-```bash
-cd src/pr-cli && cargo test
+```sh
+cp /sdcard/Download/pdn /data/user/0/bin.mt.plus/files/term/bin/pdn
+chmod 755 /data/user/0/bin.mt.plus/files/term/bin/pdn
+pdn version
+pdn install alpine
+pdn login alpine
 ```
 
-## Project structure
+如果下载位置不同，请修改 `cp` 的源路径。更新时退出旧 Linux 会话，再替换程序并重新赋予执行权限；已有 Linux 不需要重装。若提示找不到 `pdn`，先用完整路径运行 `/data/user/0/bin.mt.plus/files/term/bin/pdn version`，检查终端 PATH。
 
+该路径只作为 MT 管理器示例，没有硬编码进 `pdn`；其他 App 应使用自己的可执行目录。原始 `pdn` 是便捷下载项，转发发布时请同时保留完整包中的对应源码与许可证。
+
+## 快速开始
+
+默认 Linux 存储目录是 `$HOME/.local/share/pdn/rootfs`。也可以先指定宿主可访问的私有目录：
+
+```sh
+export PDN_ROOTFS_DIR="$HOME/linux"
+pdn list --available
+pdn install alpine
+pdn login alpine
 ```
-src/proot/                  # Patched proot C source
-src/pr-cli/                 # Rust CLI (install, login, OCI pull)
-src/proot-integration-test/ # Guest-side test binary (TAP output)
-android/proot-engine/       # Standalone Android Library AAR (Engine)
-android/app/                # Thin Android UI shell (Compose)
-scripts/                    # Host-side build scripts
-docs/                       # Technical documentation
+
+也支持：
+
+```sh
+pdn install Ubuntu
+pdn install debian
+pdn install arch
+pdn ls
+pdn login ubuntu
 ```
 
-## Documentation
+退出 Linux 后执行管理操作。已有 rootfs 可以放到 `$PDN_ROOTFS_DIR/名字/`，或者使用 `pdn login --rootfs /完整/rootfs/路径`，不需要重新安装。
 
-| Document | Description |
-|----------|-------------|
-| [`docs/important-notes.md`](docs/important-notes.md) | Critical constraints, seccomp handlers, caveats — read first |
-| [`docs/superpowers/specs/2026-09-13-proot-engine-library-design.md`](docs/superpowers/specs/2026-09-13-proot-engine-library-design.md) | Architecture of the extracted `:proot-engine` library |
-| [`docs/proot-improvement.md`](docs/proot-improvement.md) | Our proot fork vs upstream and Termux (29 sections) |
-| [`docs/targetsdk35-compatibility.md`](docs/targetsdk35-compatibility.md) | How targetSdk 35 works (PROOT_LOADER mechanism) |
-| [`docs/rust-toolchain-support.md`](docs/rust-toolchain-support.md) | vfork/CLONE_VM fix, link2symlink readlink fix |
-| [`docs/integration-tests.md`](docs/integration-tests.md) | Integration test suite (37/37 pass) |
+### 支持的发行版与下载
 
-## Credits
+| 名称 | 固定版本 | 架构 |
+| --- | --- | --- |
+| Alpine | 3.24.2 | ARM64 |
+| Ubuntu Base | 24.04.5 LTS | ARM64 |
+| Debian slim | 13 trixie，20261005 | ARM64 |
+| Arch Linux ARM | 2026.08 | ARM64 |
 
-- [proot](https://github.com/proot-me/proot) — upstream proot v5.4.0 (GPL-2.0)
-- [termux-proot](https://github.com/termux/termux-proot) — Termux's proot fork with Android patches (GPL-2.0)
-- [proot-distro](https://github.com/termux/termux-packages/tree/master/packages/proot-distro) — distro plugins (GPL-3.0)
+下载会检查固定大小和 SHA256。部分发行版有国内外多个源，失败时按顺序切换；目前还没有延迟测速排名和断点续传。Debian 的两个入口属于同一个上游 GitHub 资源，不是两个独立镜像站。Arch 压缩包约 791 MiB，请预留数 GiB 空间。
+
+```sh
+pdn mirrors ubuntu
+pdn install ubuntu --mirror tuna
+pdn install alpine --archive /路径/对应固定版本的rootfs.tar.gz
+```
+
+`install --archive` 仍要求匹配内置版本的校验值；它不是任意归档导入。来源和校验值见 [rootfs 来源目录](docs/pdn-rootfs-sources.md)。
+
+### 执行、挂载与默认配置
+
+```sh
+pdn exec ubuntu -- /usr/bin/id
+pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
+pdn login ubuntu --bind /sdcard:/mnt/shared
+pdn config ubuntu --bind /sdcard:/mnt/shared --work-dir /root --env LANG=C.UTF-8
+pdn login ubuntu
+```
+
+`--bind` / `-b` 可以重复指定；guest 修改挂载文件会直接修改宿主文件。临时挂载只对当前会话有效，`config` 保存的挂载会在后续登录与执行时自动加载。
+
+```sh
+pdn config ubuntu --show
+pdn login ubuntu --no-config
+pdn config ubuntu --clear
+pdn login ubuntu --user root --work-dir /tmp --env EXAMPLE='two words'
+```
+
+`config` 每次保存会替换整套默认配置。命令行上的用户、工作目录与环境变量覆盖默认值，挂载则追加；`--user` 使用 guest 中已有的用户名或数字 UID，可带数字 GID。默认是模拟 root，不会创建用户。
+
+### 备份与恢复
+
+先退出该 Linux 的会话：
+
+```sh
+pdn backup ubuntu /sdcard/ubuntu.tar.gz
+pdn restore ubuntu-copy /sdcard/ubuntu.tar.gz
+pdn login ubuntu-copy
+```
+
+备份文件必须在源 rootfs 之外，恢复必须使用新名字；两者都不会覆盖已有目标。备份保留 Linux 文件数据和 PRoot 内部链接的迁移关系，排除宿主启动配置、临时 loader、运行时目录内容及特殊节点。换 App 后请重新设置挂载目录。
+
+目录会补齐 owner rwx 权限，不恢复宿主所有者和 setuid/setgid；这是一份适合无 root 环境迁移的 rootfs 备份。详细边界、归档限制和中断处理见 [完整手册](docs/proot-distro-nolib.md)。
+
+### 指令索引
+
+| 指令 | 用途 |
+| --- | --- |
+| `install` | 安装内置发行版 |
+| `mirrors` | 查看 rootfs 下载源 |
+| `list` / `ls` | 查看已安装系统；`--available` 查看可安装版本 |
+| `login` | 交互登录，也支持 `-- COMMAND` |
+| `exec` | 执行指定 guest 命令 |
+| `config` | 保存、查看、清除默认启动参数 |
+| `backup` / `restore` | 备份与恢复到新名字 |
+| `uninstall` / `remove` | 确认后删除系统及其中全部数据；`--yes` 跳过确认 |
+| `version` / `help` | 查看版本、帮助 |
+| `proot` | 直接使用底层 PRoot 参数 |
+
+## 本地构建
+
+独立 `pdn` 构建不需要 Java、Gradle 或 Rust。需要 Git、Make、Clang/LLVM 工具、curl、tar、xz/bzip2、pkg-config 和 Android NDK。第一次构建需联网下载带固定校验值的依赖源码。
+
+```sh
+git clone https://github.com/EMERLADD/proot-distro-nolib.git
+cd proot-distro-nolib
+git submodule update --init --depth 1 vendor/samba
+make NDK_PATH=/你的/Android/NDK/目录
+```
+
+在 Linux x86_64 主机上，使用 NDK 自带的 LLVM 工具，例如：
+
+```sh
+export NDK_PATH="$HOME/Android/Sdk/ndk/26.3.11579264"
+export PATH="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+make NDK_PATH="$NDK_PATH"
+```
+
+在 ARM64 Android 本机编译时，需要能在 Android 上运行的 Clang/LLVM 工具，再使用 NDK 的 sysroot；不能直接运行上面的 Linux x86_64 编译器。构建工具可以来自 Termux，但产物运行不依赖 Termux。
+
+输出位于 `build/proot-distro-nolib/arm64/`。构建会检查 ELF 动态依赖、RPATH 和残留的宿主路径；不安装 App，也不改写宿主 bin。
+
+```sh
+make help
+make test
+make package
+make clean
+```
+
+`make test` 必须在允许 PRoot 运行的 ARM64 Android 环境执行，还需要 Python 3 和仓库测试使用的 BusyBox fixture。v0.6.0 已通过 93 项本地 Android 测试；Ubuntu/Debian/Arch/Alpine 的核心链路已验证，不代表所有设备兼容性。
+
+`make package` 先编译，再打包已提交的源码和产物。打包前需提交项目文件，确保源码对应当前提交；输出在 `build/packages/`。更换编译器、NDK 或依赖编译参数时先 `make clean`，避免复用旧静态库。
+
+## GitHub 自动构建
+
+工作流文件：[`.github/workflows/ci.yml`](.github/workflows/ci.yml)。推送到 `main`、推送 `v*` 标签、Pull Request 或手动 **Run workflow** 都会触发。
+
+流程使用 Ubuntu 24.04 与固定 NDK `26.3.11579264`：
+
+1. 获取仓库及构建所需的 talloc 子模块源码。
+2. 从固定来源下载、校验并静态编译依赖。
+3. 编译 ARM64 `pdn` 与 loader，检查动态依赖及宿主路径。
+4. 打包二进制、许可证、使用材料和对应源码，生成 SHA256。
+5. 上传 Actions artifact，保留 30 天。
+
+Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运行测试通过**。流程不会自动修改仓库可见性或发布 GitHub Release。
+
+原 pr App 的构建保留在 [Legacy pr Android App](.github/workflows/legacy-pr.yml)，仅手动触发；它不属于独立 `pdn` 的默认构建流程。
+
+## 发布材料与源码
+
+发布包包含：
+
+| 文件 | 内容 |
+| --- | --- |
+| `pdn`、`proot-distro-nolib`、`proot-loader` | ARM64 可执行程序与可选 loader |
+| `SHA256SUMS` | 包内三个程序的校验值 |
+| `BUILD-INFO.txt` | 项目版本、源码提交号、talloc 来源提交号 |
+| `README.md`、`CHANGELOG.md`、`docs/` | 项目介绍、更新记录和详细使用说明 |
+| `LICENSE`、`licenses/` | 项目许可证映射与第三方许可文本 |
+| `source.tar.gz` | 对应仓库源码、构建所需的 talloc 源码，以及四个依赖的原始源码归档 |
+
+发布包外另有 `SHA256SUMS` 校验整个 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
+
+转发二进制时请一起保留这些材料、对应源码与第三方许可证，不要只留下一个改名后的程序。项目继承上游的许可证，不把所有组件统一宣称为 MIT；具体范围见 [LICENSE](LICENSE) 和源文件中的声明。
+
+## 来源与致谢
+
+- [oonid/pr](https://github.com/oonid/pr)：本项目基底，提供 Android PRoot 适配及原有 App/CLI 实现。
+- [PRoot](https://github.com/proot-me/proot)、[Termux PRoot](https://github.com/termux/proot)：PRoot 引擎及 Android 相关改动；本仓库引擎源代码沿用 GPL-2.0-or-later 声明。
+- [Termux proot-distro](https://github.com/termux/proot-distro)：使用方式与发行版管理思路的参考；独立 `pdn` 不要求安装它。
+- [talloc / Samba](https://www.samba.org/)、[curl](https://curl.se/)、[Mbed TLS](https://github.com/Mbed-TLS/mbedtls)、[libarchive](https://www.libarchive.org/)、[zlib](https://zlib.net/)：构建中使用的组件。talloc 源文件声明 LGPL-3.0-or-later；其余组件许可随发布包附带。
+
+`nolib` 指运行时脱离 Termux，不抹去代码来源或上游贡献。原作者版权、许可证和 `pdn version` 中的基底信息继续保留。
+
+## 反馈
+
+欢迎提交 [Issue](https://github.com/EMERLADD/proot-distro-nolib/issues)，描述宿主 App、Android 版本、`pdn version`、复现命令和错误输出即可。不要贴密码、Token、设备序列号或其他隐私信息。
+
+想法、建议、文档改进也欢迎。当前暂不支持 OCI/Docker 镜像、跨架构模拟、自动镜像测速或后台会话管理，后续按实际需求逐步完善。
