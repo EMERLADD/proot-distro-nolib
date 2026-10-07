@@ -75,9 +75,36 @@ pdn login alpine
 
 该路径只作为 MT 管理器示例，没有硬编码进 `pdn`；其他 App 应使用自己的可执行目录。原始 `pdn` 是便捷下载项，转发发布时请同时保留完整包中的对应源码与许可证。
 
+## ARM64 下载源
+
+四个发行版均内置 `official` 源。Alpine、Ubuntu、Arch 默认先尝试国内镜像，
+失败后回退官方；Debian 默认使用官方 Docker rootfs 构建源。
+
+| 发行版 | 官方来源 |
+| --- | --- |
+| Alpine | [Alpine CDN](https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/) |
+| Ubuntu | [Ubuntu Base](https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/) |
+| Debian | [debuerreotype 官方 Docker 构建](https://github.com/debuerreotype/docker-debian-artifacts) |
+| Arch | [Arch Linux ARM 官方镜像](https://fl.us.mirror.archlinuxarm.org/os/multi/) |
+
+```sh
+pdn mirrors alpine
+pdn install alpine --mirror official
+```
+
+指定 `--mirror official` 后只使用该源。所有来源下载同一个固定 ARM64 版本，
+校验预设文件大小和 SHA256，通过后才解压；不会改用未经校验的 `latest` 包。
+Kotlin 接入时调用 `pdn.install("alpine", mirror = "official")`。
+
 ## 嵌入 Android App
 
 发布产物同时提供可直接下载的 `libpdn.so` 和 `libproot-loader.so`。将两者放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
+
+`PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。
+
+示例 App 提供 Alpine 软件安装面板：输入包名或点选常用软件，点击安装即可；自动更新索引，并可查看已安装软件和执行日志。界面通过 Kotlin `exec()` 接口调用 Linux 内的 `apk`。
+
+实测：通过 GUI 在 Alpine 中安装 `curl`，随后在 Alpine 中执行 `curl -v https://example.com/` 可正常访问。图形界面安装、Linux 程序运行和 HTTPS 访问已跑通。
 
 目录安排、Gradle 打包配置、Kotlin API、安装/执行命令和 PTY 接入示例见 [Android App 接入教程](docs/android-embedding.md)。正式转发这些文件时同时提供完整发布包中的对应源码和许可材料。
 

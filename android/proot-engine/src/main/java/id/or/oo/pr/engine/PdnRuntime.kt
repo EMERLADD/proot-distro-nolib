@@ -38,6 +38,63 @@ class PdnRuntime(
         "--work-dir", "/workspace",
     )
 
+    private fun distroName(name: String): String {
+        require(Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*").matches(name)) { "Invalid distro name: $name" }
+        return name
+    }
+
+    fun version(): ProcessBuilder = processBuilder(listOf("version"))
+
+    fun list(available: Boolean = false): ProcessBuilder =
+        processBuilder(if (available) listOf("list", "--available") else listOf("list"))
+
+    fun mirrors(name: String? = null): ProcessBuilder =
+        processBuilder(if (name == null) listOf("mirrors") else listOf("mirrors", distroName(name)))
+
+    fun install(name: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
+        val args = mutableListOf("install", distroName(name))
+        require(mirror == null || archive == null) { "Choose either a mirror or a local archive" }
+        if (mirror != null) {
+            require(mirror.isNotBlank() && !mirror.startsWith("-")) { "A mirror name is required" }
+            args += listOf("--mirror", mirror)
+        }
+        if (archive != null) args += listOf("--archive", archive.absolutePath)
+        return processBuilder(args)
+    }
+
+    fun remove(name: String): ProcessBuilder = processBuilder(listOf("remove", distroName(name), "--yes"))
+
+    fun login(name: String, user: String = "root"): ProcessBuilder =
+        processBuilder(listOf("login", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3))
+
+    fun login(rootfs: File, user: String = "root"): ProcessBuilder = processBuilder(loginArguments(rootfs, user))
+
+    fun exec(name: String, command: List<String>, user: String = "root"): ProcessBuilder {
+        require(command.isNotEmpty()) { "A guest command is required" }
+        return processBuilder(listOf("exec", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3)
+            + listOf("--") + command)
+    }
+
+    fun exec(rootfs: File, command: List<String>, user: String = "root"): ProcessBuilder {
+        require(command.isNotEmpty()) { "A guest command is required" }
+        return processBuilder(listOf("exec") + loginArguments(rootfs, user).drop(1) + listOf("--") + command)
+    }
+
+    fun backup(name: String, archive: File): ProcessBuilder =
+        processBuilder(listOf("backup", distroName(name), archive.absolutePath))
+
+    fun restore(name: String, archive: File): ProcessBuilder =
+        processBuilder(listOf("restore", distroName(name), archive.absolutePath))
+
+    fun config(name: String): ProcessBuilder = processBuilder(listOf("config", distroName(name), "--show"))
+
+    fun clearConfig(name: String): ProcessBuilder = processBuilder(listOf("config", distroName(name), "--clear"))
+
+    fun saveConfig(name: String, options: List<String>): ProcessBuilder {
+        require(options.isNotEmpty()) { "Configuration options are required" }
+        return processBuilder(listOf("config", distroName(name)) + options)
+    }
+
     fun prepare() {
         for (binary in listOf(executable, loader)) {
             if (!binary.isFile || !binary.canExecute()) {

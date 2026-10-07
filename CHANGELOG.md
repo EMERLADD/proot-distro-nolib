@@ -2,14 +2,18 @@
 
 ## 未发布
 
+- Alpine 增加图形软件安装、索引更新和已安装软件查询，使用 Kotlin `exec()`，显示进度及真实退出状态。
+- Kotlin `PdnRuntime` 增加安装、登录、执行、删除、列表、镜像查询、备份恢复及配置读写方法，返回可配置的 `ProcessBuilder`。
+- 安装方法支持显式官方源和离线归档；核实四个发行版已有官方 ARM64 源，补充下载源文档及回归检查。
 - Android 示例 App 接入独立 PDN，使用宿主提供的程序、数据、缓存和项目路径。
 - 加入终端字号设置、键盘避让及测量行列数后启动，移除旧工作区页面。
 - 修复显式 root 身份重复参数警告；目录报错补充实际路径、来源变量和系统原因。
 - 发布输出增加 `libpdn.so`、`libproot-loader.so` 和 jniLibs 布局，提供 Android 接入教程。
 
-验证：83 项 PDN 回归通过；前端行覆盖率 99.14%，安装器 98.76%。
-宿主路径封装 12 项单元测试通过，PdnRuntime 行覆盖率 97.7%；APK 构建与签名校验通过。
-rish 的 Android shell 中已实测版本输出和 Alpine 安装，登录仍待确认。
+验证：84 项 PDN 回归通过；前端行覆盖率 99.14%，安装器 98.76%。
+宿主路径、API 及 Alpine 软件安装封装 20 项单元测试通过，PdnRuntime 行覆盖率 98.68%，AlpinePackages 100%；APK 构建与签名校验通过。
+实机通过 GUI 在 Alpine 中安装 curl，随后 `curl -v https://example.com/` 访问成功。
+rish 的 Android shell 中已实测版本输出和 Alpine 安装，rish 登录仍待确认。
 
 ## v0.6.0 — 2026-10-06
 

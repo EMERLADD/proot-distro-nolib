@@ -185,6 +185,7 @@ fun OutputConsoleContent(
     distroName: String,
     isRunning: Boolean,
     outputLines: List<String>,
+    exitCode: Int? = null,
     onClose: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
@@ -221,9 +222,10 @@ fun OutputConsoleContent(
                 )
                 if (!isRunning) {
                     Text(
-                        "Completed",
+                        when (exitCode) { 0 -> "操作成功"; null -> "已结束"; else -> "操作失败" },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (exitCode != null && exitCode != 0)
+                            MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
                 }
             }

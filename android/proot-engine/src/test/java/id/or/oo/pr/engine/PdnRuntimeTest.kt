@@ -121,4 +121,82 @@ class PdnRuntimeTest {
         assertEquals(runtime.loader.absolutePath, builder.environment()["PROOT_LOADER"])
         assertFalse(builder.redirectErrorStream())
     }
+
+    @Test fun convenienceApiKeepsArgvAndWorkspace() {
+        val host = host()
+        binaries(host)
+        val pdn = PdnRuntime(host)
+        assertEquals(pdn.command(listOf("install", "alpine")), pdn.install("alpine").command())
+        assertEquals(pdn.command(listOf("remove", "alpine", "--yes")), pdn.remove("alpine").command())
+        val root = File(pdn.rootfsDir, "alpine")
+        val login = listOf("login", "alpine") + pdn.loginArguments(root).drop(3)
+        assertEquals(pdn.command(login), pdn.login("alpine").command())
+        assertEquals(pdn.command(pdn.loginArguments(root, "1000:1000")), pdn.login(root, "1000:1000").command())
+        val command = listOf("/bin/printf", "%s", "two words", "", "\$HOME", "a'\"b")
+        val expected = listOf("exec") + login.drop(1) + listOf("--") + command
+        assertEquals(pdn.command(expected), pdn.exec("alpine", command).command())
+        assertEquals(pdn.command(listOf("exec") + pdn.loginArguments(root, "1000:1000").drop(1)
+            + listOf("--") + command), pdn.exec(root, command, "1000:1000").command())
+        assertEquals(host.cacheDir.absolutePath, pdn.install("alpine").environment()["PROOT_TMP_DIR"])
+    }
+
+    @Test fun convenienceApiRejectsOptionsAndEmptyCommands() {
+        val pdn = PdnRuntime(host())
+        for (name in listOf("", ".hidden", "../alpine", "--rootfs", "alpine ubuntu", "a\u0000b")) {
+            assertThrows(IllegalArgumentException::class.java) { pdn.install(name) }
+            assertThrows(IllegalArgumentException::class.java) { pdn.remove(name) }
+            assertThrows(IllegalArgumentException::class.java) { pdn.login(name) }
+            assertThrows(IllegalArgumentException::class.java) { pdn.exec(name, listOf("/bin/true")) }
+        }
+        assertThrows(IllegalArgumentException::class.java) { pdn.exec("alpine", emptyList()) }
+        assertThrows(IllegalArgumentException::class.java) { pdn.exec(File("/rootfs"), emptyList()) }
+    }
+
+    @Test fun execStartsProcessPreservingArgumentsAndExitCode() {
+        val host = host()
+        binaries(host)
+        val shell = if (File("/system/bin/sh").isFile) "/system/bin/sh" else "/bin/sh"
+        File(host.nativeLibDir, "libpdn.so").writeText(
+            "#!$shell\nprintf '%s\\n' \"\$@\"\nexit 7\n"
+        )
+        val pdn = PdnRuntime(host)
+        val args = listOf("/bin/printf", "%s", "two words", "", "\$HOME")
+        val builder = pdn.exec("alpine", args).redirectErrorStream(true)
+        val process = builder.start()
+        process.outputStream.close()
+        val lines = process.inputStream.bufferedReader().use { it.readLines() }
+        assertEquals(builder.command().drop(1), lines)
+        assertEquals(7, process.waitFor())
+    }
+
+    @Test fun managementApiBuildsCommandsAndRejectsConflictingSources() {
+        val host = host()
+        binaries(host)
+        val pdn = PdnRuntime(host)
+        val archive = File(temporary.root, "backup with spaces.tar.gz")
+        val cases = listOf(
+            pdn.version() to listOf("version"),
+            pdn.list() to listOf("list"),
+            pdn.list(available = true) to listOf("list", "--available"),
+            pdn.mirrors() to listOf("mirrors"),
+            pdn.mirrors("ubuntu") to listOf("mirrors", "ubuntu"),
+            pdn.install("alpine", mirror = "official") to listOf("install", "alpine", "--mirror", "official"),
+            pdn.install("alpine", archive = archive) to listOf("install", "alpine", "--archive", archive.absolutePath),
+            pdn.backup("alpine", archive) to listOf("backup", "alpine", archive.absolutePath),
+            pdn.restore("restored", archive) to listOf("restore", "restored", archive.absolutePath),
+            pdn.config("alpine") to listOf("config", "alpine", "--show"),
+            pdn.clearConfig("alpine") to listOf("config", "alpine", "--clear"),
+            pdn.saveConfig("alpine", listOf("--user", "1000:1000")) to listOf("config", "alpine", "--user", "1000:1000"),
+        )
+        for ((builder, args) in cases) assertEquals(pdn.command(args), builder.command())
+        assertThrows(IllegalArgumentException::class.java) { pdn.install("alpine", "official", archive) }
+        assertThrows(IllegalArgumentException::class.java) { pdn.install("alpine", "") }
+        assertThrows(IllegalArgumentException::class.java) { pdn.saveConfig("alpine", emptyList()) }
+        assertThrows(IllegalArgumentException::class.java) { pdn.mirrors("--help") }
+        assertThrows(IllegalArgumentException::class.java) { pdn.backup("../x", archive) }
+        assertThrows(IllegalArgumentException::class.java) { pdn.restore("../x", archive) }
+        assertThrows(IllegalArgumentException::class.java) { pdn.config("../x") }
+        assertThrows(IllegalArgumentException::class.java) { pdn.clearConfig("../x") }
+        assertThrows(IllegalArgumentException::class.java) { pdn.saveConfig("../x", listOf("--user", "root")) }
+    }
 }

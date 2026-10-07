@@ -16,8 +16,8 @@
 
 `libpdn.so` 与 `pdn` 内容相同，仍是可执行程序，不是提供 JNI 导出函数的共享库。
 通过 `ProcessBuilder` 或 PTY 的 `execve` 调用，不使用 `System.loadLibrary("pdn")`。
-PDN 和 loader 应来自同一次构建。当前没有独立发布的 AAR，也没有 `install()`
-这样的 PDN C/JNI 接口；下面的 Kotlin 封装负责组装路径、环境和参数数组。
+PDN 和 loader 应来自同一次构建。当前未在 GitHub 独立发布 AAR，可本地构建引擎 AAR。`install()`、`exec()`
+等方法属于 Kotlin 封装，负责组装路径、环境和参数数组，PDN 没有 C/JNI 方法接口。
 
 ## 放进 APK
 
@@ -64,12 +64,27 @@ App/JNI 示例时使用 API 28 及以上。宿主的其他代码可以要求更�
 
 - [ProotHost](../android/proot-engine/src/main/java/id/or/oo/pr/engine/ProotHost.kt)：宿主目录契约。
 - [PdnRuntime](../android/proot-engine/src/main/java/id/or/oo/pr/engine/PdnRuntime.kt)：准备目录、生成 argv/environment 和 ProcessBuilder。
+- [AlpinePackages](../android/proot-engine/src/main/java/id/or/oo/pr/engine/AlpinePackages.kt)：通过 exec 接口安装软件、更新索引和查询软件。
 
-仓库内可使用 `:proot-engine` 模块。其他项目可把这两份 Kotlin 源码引入自己的
+仓库内可使用 `:proot-engine` 模块。其他项目可把这三份 Kotlin 源码引入自己的
 模块并保留许可材料；仅使用 `PdnRuntime` 的进程接口不需要 PTY JNI 或终端 UI。
+
+也可以构建 `:proot-engine:assembleDebug`，把
+`android/proot-engine/build/outputs/aar/proot-engine-debug.aar` 放到宿主的 `app/libs/`：
+
+```kotlin
+dependencies {
+    implementation(files("libs/proot-engine-debug.aar"))
+}
+```
+
+宿主需启用 Kotlin 支持，并保留上面的 ARM64、SDK、原生库解压及网络权限配置。
+AAR 已包含原生程序，不要再重复放同名 `.so`；引擎 AAR 不包含终端 UI 模块。
+
 
 ```kotlin
 import android.content.Context
+import id.or.oo.pr.engine.AlpinePackages
 import id.or.oo.pr.engine.PdnRuntime
 import id.or.oo.pr.engine.ProotHost
 import java.io.File
@@ -111,6 +126,12 @@ PDN 核心使用 `PDN_ROOTFS_DIR` 和显式参数决定数据位置；`APP_*` �
 
 ## 安装与执行 API
 
+`PdnRuntime` 提供 `install(name)`、`remove(name)`、`login(name, user)` 和
+`exec(name, command, user)`，均返回尚未启动的 `ProcessBuilder`。调用 `.start()`
+才会启动进程，可先配置合并输出或重定向。`remove()` 使用 `--yes`，调用前由
+App 确认删除。`login` 和 `exec` 也接受完整 rootfs `File`，默认把项目目录挂载到
+`/workspace` 并设为工作目录；默认 guest 身份为 `root`。
+
 用独立参数数组调用，不把输入内容拼成整条 shell 命令。所有等待进程和读取
 输出的操作放到工作线程。下面是基础的合并输出调用，回调在 IO 线程执行：
 
@@ -119,12 +140,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 suspend fun runPdn(
-    runtime: PdnRuntime,
-    arguments: List<String>,
+    builder: ProcessBuilder,
     onLine: (String) -> Unit,
 ): Int = withContext(Dispatchers.IO) {
-    val process = runtime.processBuilder(arguments)
-        .redirectErrorStream(true)
+    val process = builder.redirectErrorStream(true)
         .start()
     try {
         process.outputStream.close()
@@ -141,27 +160,78 @@ suspend fun runPdn(
 调用示例，放在 coroutine 或其他宿主任务中：
 
 ```kotlin
-val runtime = createRuntime(context)
-val installStatus = runPdn(runtime, listOf("install", "alpine"), onLine)
+val pdn = createRuntime(context)
+val installStatus = runPdn(pdn.install("alpine"), onLine)
 check(installStatus == 0) { "Installation failed: $installStatus" }
 
-val rootfs = File(runtime.rootfsDir, "alpine")
-val status = runPdn(runtime, listOf(
-    "exec", "--rootfs", rootfs.absolutePath,
-    "--bind", "${runtime.projectDir.absolutePath}:/workspace",
-    "--work-dir", "/workspace",
-    "--", "/bin/sh", "-c", "printf '%s\\n' \"\$1\"",
-    "pdn-task", "two words",
-), onLine)
+val status = runPdn(pdn.exec("alpine", listOf(
+    "/bin/printf", "%s", "two words",
+)), onLine)
+
+val shellStatus = runPdn(pdn.exec("alpine", listOf(
+    "/bin/sh", "-c", "pwd; ls -la /workspace",
+)), onLine)
 ```
+
+其他常用方法：
+
+```kotlin
+pdn.version()
+pdn.list()
+pdn.list(available = true)
+pdn.mirrors("alpine")
+pdn.install("alpine", mirror = "official")
+pdn.install("alpine", archive = File(context.filesDir, "alpine.tar.gz"))
+pdn.backup("alpine", File(context.filesDir, "backup.tar.gz"))
+pdn.restore("alpine-copy", File(context.filesDir, "backup.tar.gz"))
+pdn.config("alpine")
+pdn.saveConfig("alpine", listOf("--user", "1000:1000", "--work-dir", "/home"))
+pdn.clearConfig("alpine")
+```
+
+这些方法同样返回 `ProcessBuilder`，不会自动启动或等待。`config()` 查询 JSON；
+`saveConfig()` 的选项列表直接传给核心，替换全部保存选项；`clearConfig()` 清除。
+登录与执行封装显式指定默认 root 身份和 `/workspace`，优先于保存配置；要使用
+配置中的身份、工作目录或其他启动参数，可调用 `processBuilder()`。
 
 `status` 保留 guest 命令的退出码。安装、执行等命令的输出仍是文本，没有
 统一的事件 JSON 协议；`config --show` 才是配置 JSON。示例合并 stdout/stderr，
 需要分别读取时由宿主并行消费两个流，避免阻塞。
 
-删除前先由 App 在界面确认，然后调用 `listOf("remove", "alpine", "--yes")`。
+交互登录可用 `pdn.login("alpine")` 构建进程；需要终端交互时使用下面的 PTY
+接口，将 `pdn.login(File(pdn.rootfsDir, "alpine")).command()` 交给同一宿主的
+`launcher.startCustomSession(arguments, rows, columns)`；完整路径避免宿主默认
+rootfs 父目录与自定义目录不同。
+`processBuilder(arguments)` 保留为通用入口，用于更多挂载、环境变量等高级参数。
+
+删除前先由 App 在界面确认，然后调用 `pdn.remove("alpine")`。
 后台 Service、任务取消、超时及完整进程树回收由宿主负责；这份基础示例没有
 实现完整任务管理，也不保证 coroutine 取消能立即中断阻塞的流读取。
+
+## Alpine 图形安装示例
+
+示例 App 的 Alpine 卡片下提供“Alpine 软件”面板。先通过界面安装 Alpine，
+再输入 `git curl` 等包名或点选常用软件，点击“安装软件”。安装前自动更新索引；
+“更新索引”和“已安装软件”也可以单独点击。执行时禁用重复操作并显示日志，
+退出码为零才显示成功，不打开终端或要求输入命令。
+
+已实测通过该界面安装 `curl`，随后在 Alpine 中执行
+`curl -v https://example.com/` 可正常访问。此记录验证 GUI 安装流程及安装后
+Linux 程序的 HTTPS 访问；curl 的访问测试是在 Alpine 内执行。
+
+面板通过 `AlpinePackages` 调用上面的 `PdnRuntime.exec()`：
+
+```kotlin
+val packages = AlpinePackages(pdn, File(pdn.rootfsDir, "alpine"))
+val status = runPdn(packages.install("git curl"), onLine)
+val updateStatus = runPdn(packages.update(), onLine)
+val listStatus = runPdn(packages.installed(), onLine)
+```
+
+安装在 guest 中执行 `/bin/sh -c`，先 `apk update`，成功后执行 `apk add`。
+包名作为独立位置参数传入，不拼入 shell 表达式；输入只接受包名，拒绝命令、
+选项及路径。包名允许字母、数字及 `+`、`_`、`.`、`-`，多个包用空白分隔。
+软件版本约束和本地 `.apk` 文件安装需通过通用接口接入。
 
 ## 交互终端与 PTY
 

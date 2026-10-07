@@ -235,6 +235,22 @@ int main(int argc, char **argv) {{
             result = subprocess.run([str(BINARY), *args], env=self.env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
 
+    def test_all_distros_include_official_source(self):
+        domains = {
+            "alpine": "https://dl-cdn.alpinelinux.org/alpine",
+            "ubuntu": "https://cdimage.ubuntu.com",
+            "debian": "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts",
+            "arch": "https://fl.us.mirror.archlinuxarm.org",
+        }
+        for name, domain in domains.items():
+            with self.subTest(name=name):
+                result = subprocess.run([str(BINARY), "mirrors", name], env=self.env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                official = [line.split() for line in result.stdout.splitlines()
+                            if line.split() and line.split()[0] == "official"]
+                self.assertEqual(official, [["official", domain]])
+
     def test_download_validation(self):
         output = self.base / "download"
         for endpoint in ("/archive", "/redirect"):
