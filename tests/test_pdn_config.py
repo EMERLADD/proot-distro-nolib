@@ -39,6 +39,15 @@ class PdnConfigTests(unittest.TestCase):
             self.assertEqual(self.invoke("login", "ubuntu", "-u", user).returncode, 2)
         self.good(self.invoke("login", "ubuntu", "-u", "alice", input="pwd\nexit\n"), "/home/alice\n")
 
+    def test_explicit_root_has_no_duplicate_identity_warning(self):
+        for user in ("root", "0", "0:0"):
+            with self.subTest(user=user):
+                result = self.invoke("exec", "ubuntu", "--user", user, "--",
+                                     "/bin/sh", "-c", '/bin/busybox id -u; /bin/busybox id -g; echo "$HOME:$USER"')
+                self.good(result, "0\n0\n/root:root\n")
+                self.assertEqual(result.stderr, "")
+
+
     def test_workdir_for_interactive_and_command(self):
         (self.root / "work dir").mkdir()
         self.good(self.invoke("exec", "ubuntu", "-w", "/work dir", "--", "/bin/busybox", "pwd"), "/work dir\n")

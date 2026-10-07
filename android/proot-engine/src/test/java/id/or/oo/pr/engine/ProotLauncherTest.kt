@@ -8,6 +8,7 @@ import java.lang.reflect.Method
 class ProotLauncherTest {
 
     private val fakeHost = object : ProotHost {
+        override val nativeLibDir = File("/fake/native")
         override val prefixDir = File("/fake/prefix")
         override val homeDir = File("/fake/home")
         override val packageName = "id.or.oo.test"
@@ -37,6 +38,8 @@ class ProotLauncherTest {
         assertEquals("1", envMap["PROOT_NO_SECCOMP"])
         assertEquals("/fake/cache", envMap["PROOT_TMP_DIR"])
         assertEquals("/fake/cache", envMap["TMPDIR"])
+        assertEquals("/fake/prefix/var/lib/pdn/rootfs", envMap["PDN_ROOTFS_DIR"])
+        assertTrue(envMap["PROOT_LOADER"]?.endsWith("/libproot-loader.so") == true)
         assertEquals("xterm-256color", envMap["TERM"])
         assertEquals("en_US.UTF-8", envMap["LANG"])
     }

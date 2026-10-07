@@ -6,7 +6,7 @@
 
 当前版本：**v0.6.0 · ARM64 Android · 早期测试版**。
 
-> 作者已在 **MT 管理器** 中实际使用，反馈当前功能均正常运行。这是作者第一次制作这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
+> 我在 **MT 管理器** 里实际用过，目前功能正常。这是我第一次做这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
 >
 > MT 管理器是已验证的宿主环境，不代表所有 Android App 和设备都已测试。
 
@@ -16,7 +16,7 @@
 
 - **脱离 Termux**：运行时只动态依赖 Android 系统的 `libc.so`、`libdl.so`；下载、TLS、解压等组件静态链接。
 - **简单命令**：`pdn install ubuntu` 安装，`pdn login ubuntu` 登录，名称和命令支持 ASCII 大小写。
-- **一个程序管理 Linux**：支持执行命令、挂载目录、保存默认配置、切换 guest 用户、备份恢复和卸载。
+- **一个程序管理 Linux**：支持执行命令、挂载目录、保存默认配置、切换 guest 账号、备份恢复和卸载。
 - **适合不同宿主 App**：路径来自环境变量或命令参数，不写死 App 包名。终端输入和 App 按钮调用可以使用同一个程序。
 - **基于 pr 的 Android 适配**：保留其 PRoot、加载器及 Android 系统调用适配，继续保留原有版权与许可证信息。
 
@@ -29,7 +29,7 @@
 - Linux rootfs 放在支持 Unix 权限与符号链接的 App 私有目录；`/sdcard` 适合放下载包、备份或共享文件，不适合直接解压 rootfs。
 - 宿主需有网络权限；访问共享存储需要相应权限。
 
-“有终端就能使用”是本项目面向用户的使用方式，不是绕过 Android 权限的保证。对于执行位置受限的 App，开发者可能需要通过 APK 的 `nativeLibraryDir` 部署程序并设置 `PROOT_LOADER`。参见 [Android 加载器说明](docs/targetsdk35-compatibility.md)。PRoot 也不是安全隔离边界，不提供真正的 root 权限。
+“有终端就能使用”是本项目预期的使用方式，不是绕过 Android 权限的保证。对于执行位置受限的 App，开发者可能需要通过 APK 的 `nativeLibraryDir` 部署程序并设置 `PROOT_LOADER`。参见 [Android 加载器说明](docs/targetsdk35-compatibility.md)。PRoot 也不是安全隔离边界，不提供真正的 root 权限。
 
 ## 获取与安装
 
@@ -42,6 +42,7 @@
 - `pdn`：建议使用的命令名。
 - `proot-distro-nolib`：与 `pdn` 内容相同，任选一个即可，不必两个都放进 bin。
 - `proot-loader`：有外部加载器需求的宿主可使用；普通场景先使用内嵌加载器。
+- `jniLibs/arm64-v8a/libpdn.so`、`libproot-loader.so`：供 APK 打包使用，分别与 `pdn`、`proot-loader` 内容相同。
 
 将 `pdn` 放进宿主允许执行的 bin 目录，在该目录执行：
 
@@ -73,6 +74,12 @@ pdn login alpine
 如果下载位置不同，请修改 `cp` 的源路径。更新时退出旧 Linux 会话，再替换程序并重新赋予执行权限；已有 Linux 不需要重装。若提示找不到 `pdn`，先用完整路径运行 `/data/user/0/bin.mt.plus/files/term/bin/pdn version`，检查终端 PATH。
 
 该路径只作为 MT 管理器示例，没有硬编码进 `pdn`；其他 App 应使用自己的可执行目录。原始 `pdn` 是便捷下载项，转发发布时请同时保留完整包中的对应源码与许可证。
+
+## 嵌入 Android App
+
+发布产物同时提供可直接下载的 `libpdn.so` 和 `libproot-loader.so`。将两者放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
+
+目录安排、Gradle 打包配置、Kotlin API、安装/执行命令和 PTY 接入示例见 [Android App 接入教程](docs/android-embedding.md)。正式转发这些文件时同时提供完整发布包中的对应源码和许可材料。
 
 ## 快速开始
 
@@ -135,7 +142,7 @@ pdn config ubuntu --clear
 pdn login ubuntu --user root --work-dir /tmp --env EXAMPLE='two words'
 ```
 
-`config` 每次保存会替换整套默认配置。命令行上的用户、工作目录与环境变量覆盖默认值，挂载则追加；`--user` 使用 guest 中已有的用户名或数字 UID，可带数字 GID。默认是模拟 root，不会创建用户。
+`config` 每次保存会替换整套默认配置。命令行上的账号、工作目录与环境变量覆盖默认值，挂载则追加；`--user` 使用 guest 中已有的账号名或数字 UID，可带数字 GID。默认是模拟 root，不会创建账号。
 
 ### 备份与恢复
 
@@ -223,13 +230,14 @@ Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运�
 | 文件 | 内容 |
 | --- | --- |
 | `pdn`、`proot-distro-nolib`、`proot-loader` | ARM64 可执行程序与可选 loader |
-| `SHA256SUMS` | 包内三个程序的校验值 |
+| `jniLibs/arm64-v8a/` | APK 使用的 `libpdn.so` 与匹配的 `libproot-loader.so` |
+| `SHA256SUMS` | 包内程序及两个 APK 原生库文件名产物的校验值 |
 | `BUILD-INFO.txt` | 项目版本、源码提交号、talloc 来源提交号 |
 | `README.md`、`CHANGELOG.md`、`docs/` | 项目介绍、更新记录和详细使用说明 |
 | `LICENSE`、`licenses/` | 项目许可证映射与第三方许可文本 |
 | `source.tar.gz` | 对应仓库源码、构建所需的 talloc 源码，以及四个依赖的原始源码归档 |
 
-发布包外另有 `SHA256SUMS` 校验整个 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
+发布目录还提供独立的 `pdn`、`proot-loader`、`libpdn.so`、`libproot-loader.so`；外部 `SHA256SUMS` 同时校验这些文件和完整 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
 
 转发二进制时请一起保留这些材料、对应源码与第三方许可证，不要只留下一个改名后的程序。项目继承上游的许可证，不把所有组件统一宣称为 MIT；具体范围见 [LICENSE](LICENSE) 和源文件中的声明。
 

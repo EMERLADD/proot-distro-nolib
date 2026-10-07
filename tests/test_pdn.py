@@ -235,11 +235,53 @@ class PdnTests(unittest.TestCase):
         self.assertFalse((self.root / ".pdn-tmp").exists())
         self.env["PROOT_TMP_DIR"] = ""
         self.assertEqual(self.invoke("login", "ubuntu").returncode, 2)
+
         self.env["TMPDIR"] = str(temp)
         self.good(self.invoke("login", "ubuntu", "--", "/bin/sh", "-c", "echo tmp"), "tmp\n")
         self.env["TMPDIR"] = ""
         (self.root / ".pdn-tmp").write_text("not directory")
         self.assertEqual(self.invoke("login", "ubuntu").returncode, 2)
+
+    def test_temp_errors_explain_missing_file_and_permissions(self):
+        temp = self.base / "missing temp"
+        self.env["PROOT_TMP_DIR"] = str(temp)
+        result = self.invoke("login", "ubuntu")
+        self.assertEqual(result.returncode, 2)
+        for text in (str(temp), "PROOT_TMP_DIR", "No such file or directory", "mkdir -p"):
+            self.assertIn(text, result.stderr)
+        temp.write_text("keep")
+        result = self.invoke("login", "ubuntu")
+        self.assertIn("Not a directory", result.stderr)
+        self.assertEqual(temp.read_text(), "keep")
+        temp.unlink()
+        temp.mkdir(mode=0o500)
+        if not os.access(temp, os.W_OK):
+            result = self.invoke("login", "ubuntu")
+            self.assertIn("Permission denied", result.stderr)
+            self.assertIn("writable", result.stderr)
+        temp.chmod(0o700)
+        self.good(self.invoke("exec", "ubuntu", "--", "/bin/busybox", "echo", "ok"), "ok\n")
+        self.env.pop("PROOT_TMP_DIR")
+        self.env["TMPDIR"] = str(self.base / "missing fallback")
+        self.assertIn("selected by TMPDIR", self.invoke("login", "ubuntu").stderr)
+
+    def test_default_temp_creation_and_broken_link_errors(self):
+        temp = self.root / ".pdn-tmp"
+        self.root.chmod(0o500)
+        try:
+            if not os.access(self.root, os.W_OK):
+                result = self.invoke("login", "ubuntu")
+                for text in (str(temp), "rootfs/.pdn-tmp", "Permission denied"):
+                    self.assertIn(text, result.stderr)
+        finally:
+            self.root.chmod(0o700)
+        temp.symlink_to("missing temp target")
+        result = self.invoke("login", "ubuntu")
+        self.assertEqual(result.returncode, 2)
+        for text in (str(temp), "rootfs/.pdn-tmp", "No such file or directory", "mkdir -p"):
+            self.assertIn(text, result.stderr)
+        temp.unlink()
+        self.good(self.invoke("exec", "ubuntu", "--", "/bin/busybox", "echo", "recovered"), "recovered\n")
 
     def test_frontend_relocation_and_help(self):
         renamed = self.base / "pdn"

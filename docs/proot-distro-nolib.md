@@ -26,6 +26,32 @@ The default directory remains `$HOME/.local/share/pdn/rootfs`. Commands and
 names ignore ASCII case, including `pdn INSTALL UBUNTU`. All downloads are
 ARM64/AArch64 and have a fixed size and SHA256 compiled into the executable.
 
+### Directory errors in Android shell
+
+The current working directory does not select the rootfs location. When
+`HOME=/`, the default location is under `/.local/share/pdn/rootfs`, which
+may not be writable. Set `PDN_ROOTFS_DIR` to a location writable by the
+current user. Installation creates this parent directory itself; do not
+pre-create the distribution directory such as `linux/alpine`.
+
+An explicitly supplied `PROOT_TMP_DIR` or `TMPDIR` must already exist and
+be writable and searchable. Login does not create those explicit paths.
+When neither variable is set, it creates `.pdn-tmp` inside the selected
+rootfs. Directory failures report the selected path, source variable,
+system error and errno; missing temporary directories include a `mkdir -p`
+hint. Creating a rootfs directory does not create a separate temporary
+directory.
+
+For an Android shell that can write to `/data/local/tmp`, for example:
+
+```sh
+export PDN_ROOTFS_DIR=/data/local/tmp/pdn-test/linux
+export PROOT_TMP_DIR=/data/local/tmp/pdn-test/tmp
+mkdir -p "$PROOT_TMP_DIR"
+pdn install alpine
+pdn login alpine
+```
+
 | Name | Pinned base | Compressed size | Rootfs sources in fallback order |
 | --- | --- | --- | --- |
 | `alpine` | Alpine 3.24.2 | 3.8 MiB | tuna, ustc, nju, official, dotsrc |

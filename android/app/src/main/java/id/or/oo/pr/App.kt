@@ -33,7 +33,7 @@ class App : Application(), ProotHost {
 
 
 
-    val nativeLibDir: File
+    override val nativeLibDir: File
         get() = File(applicationInfo.nativeLibraryDir)
 
     override fun onCreate() {

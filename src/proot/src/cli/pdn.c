@@ -53,6 +53,17 @@ static const char *nonempty(const char *name)
     return value && *value ? value : NULL;
 }
 
+static int temp_error(const char *path, const char *source, int code)
+{
+    fprintf(stderr, "pdn: temporary directory unavailable: %s: %s (errno=%d)\n",
+            path, strerror(code), code);
+    fprintf(stderr, "pdn: temporary directory selected by %s.\n", source);
+    if (code == ENOENT)
+        fputs("pdn: create this directory with mkdir -p before retrying.\n", stderr);
+    fputs("pdn: set PROOT_TMP_DIR to an existing writable directory with search permission.\n", stderr);
+    return 2;
+}
+
 static int help(void)
 {
     puts("pdn - proot-distro-nolib\n"
@@ -255,13 +266,18 @@ int pdn_login(int argc, char *const argv[])
         options.binds[i] = binding;
     }
     tmp = nonempty("PROOT_TMP_DIR");
-    if (!tmp) tmp = nonempty("TMPDIR");
+    const char *temp_source = "PROOT_TMP_DIR";
+    if (!tmp) { tmp = nonempty("TMPDIR"); temp_source = "TMPDIR"; }
+    if (!tmp) temp_source = "rootfs/.pdn-tmp";
     temp = tmp ? realpath(tmp, NULL) : join(root, ".pdn-tmp");
-    if (!temp || (!tmp && mkdir(temp, 0700) < 0 && errno != EEXIST) ||
-        !directory(temp) || access(temp, W_OK | X_OK) < 0) {
-        result = fail("temporary directory unavailable", tmp ? tmp : ".pdn-tmp");
-        goto done;
+    if (!temp) { result = temp_error(tmp, temp_source, errno); goto done; }
+    if (!tmp && mkdir(temp, 0700) < 0 && errno != EEXIST) {
+        result = temp_error(temp, temp_source, errno); goto done;
     }
+    struct stat temp_stat;
+    if (stat(temp, &temp_stat) < 0) { result = temp_error(temp, temp_source, errno); goto done; }
+    if (!S_ISDIR(temp_stat.st_mode)) { result = temp_error(temp, temp_source, ENOTDIR); goto done; }
+    if (access(temp, W_OK | X_OK) < 0) { result = temp_error(temp, temp_source, errno); goto done; }
     setenv("PROOT_TMP_DIR", temp, 1);
     if (!nonempty("PROOT_NO_SECCOMP")) setenv("PROOT_NO_SECCOMP", "1", 1);
     unsetenv("LD_PRELOAD");
@@ -278,7 +294,7 @@ int pdn_login(int argc, char *const argv[])
     if (!args) { result = fail("out of memory", argv[1]); goto done; }
     args[n++] = argv[0];
     args[n++] = "-0";
-    if (options.user) { args[n++] = "-i"; args[n++] = identity.ids; }
+    if (options.user && strcmp(identity.ids, "0:0")) { args[n++] = "-i"; args[n++] = identity.ids; }
     args[n++] = "--link2symlink";
     args[n++] = "-L";
     args[n++] = "--kernel-release=6.17.0-pr";

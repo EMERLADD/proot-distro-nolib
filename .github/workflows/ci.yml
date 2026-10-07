@@ -45,6 +45,9 @@ jobs:
           name: pdn-android-arm64-${{ github.sha }}
           path: |
             build/packages/*.tar.gz
+            build/packages/*.so
+            build/packages/pdn
+            build/packages/proot-loader
             build/packages/SHA256SUMS
           if-no-files-found: error
           retention-days: 30

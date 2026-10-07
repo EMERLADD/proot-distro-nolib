@@ -32,6 +32,16 @@ static int error(const char *message)
     return -1;
 }
 
+static int rootfs_error(const char *action, const char *path, int code)
+{
+    const char *configured = getenv("PDN_ROOTFS_DIR");
+    fprintf(stderr, "pdn: cannot %s rootfs directory '%s': %s (errno=%d)\n",
+            action, path, strerror(code), code);
+    fprintf(stderr, "pdn: rootfs location selected by %s; set PDN_ROOTFS_DIR to a writable directory.\n",
+            configured && *configured ? "PDN_ROOTFS_DIR" : "$HOME/.local/share/pdn/rootfs");
+    return -1;
+}
+
 static int mkdirs(char *path)
 {
     char *p;
@@ -497,10 +507,14 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
         free(base); return error("local archive not found") != 0;
     }
     cwd = open(".", O_DIRECTORY | O_CLOEXEC);
-    if (cwd < 0 || mkdirs(base) < 0 || chdir(base) < 0) { error("cannot access rootfs directory"); goto done; }
+    if (cwd < 0) { error(strerror(errno)); goto done; }
+    if (mkdirs(base) < 0) { rootfs_error("create", base, errno); goto done; }
+    if (chdir(base) < 0) { rootfs_error("enter", base, errno); goto done; }
     basefd = open(".", O_DIRECTORY | O_CLOEXEC);
+    if (basefd < 0) { rootfs_error("open", base, errno); goto done; }
     lock = open(".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (basefd < 0 || lock < 0 || flock(lock, LOCK_EX | LOCK_NB) < 0) {
+    if (lock < 0) { rootfs_error("create install lock in", base, errno); goto done; }
+    if (flock(lock, LOCK_EX | LOCK_NB) < 0) {
         error("cannot acquire install lock; another install may be running"); goto done;
     }
     if (exists_distro(distro.name)) { error("rootfs already exists; no files changed"); goto done; }

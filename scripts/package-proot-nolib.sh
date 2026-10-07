@@ -26,6 +26,7 @@ BUNDLE=$STAGE/$NAME
 SOURCE=$STAGE/proot-distro-nolib-source
 mkdir -p "$BUNDLE/licenses" "$BUNDLE/docs" "$SOURCE"
 cp "$OUT_DIR/pdn" "$OUT_DIR/proot-distro-nolib" "$OUT_DIR/proot-loader" "$OUT_DIR/SHA256SUMS" "$BUNDLE/"
+cp -R "$OUT_DIR/jniLibs" "$BUNDLE/"
 cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/CHANGELOG.md" "$PROJECT_ROOT/LICENSE" "$BUNDLE/"
 cp -R "$PROJECT_ROOT/docs/." "$BUNDLE/docs/"
 cp "$OUT_DIR/licenses/"* "$BUNDLE/licenses/"
@@ -44,5 +45,7 @@ done
 cp "$BUNDLE/BUILD-INFO.txt" "$SOURCE/BUILD-INFO.txt"
 tar -czf "$BUNDLE/source.tar.gz" -C "$STAGE" proot-distro-nolib-source
 tar -czf "$PACKAGE_DIR/$NAME.tar.gz" -C "$STAGE" "$NAME"
-(cd "$PACKAGE_DIR" && sha256sum "$NAME.tar.gz" > SHA256SUMS)
+cp "$OUT_DIR/pdn" "$OUT_DIR/proot-loader" "$PACKAGE_DIR/"
+cp "$OUT_DIR/jniLibs/arm64-v8a/libpdn.so" "$OUT_DIR/jniLibs/arm64-v8a/libproot-loader.so" "$PACKAGE_DIR/"
+(cd "$PACKAGE_DIR" && sha256sum "$NAME.tar.gz" pdn proot-loader libpdn.so libproot-loader.so > SHA256SUMS)
 printf 'Packaged: %s/%s.tar.gz\n' "$PACKAGE_DIR" "$NAME"

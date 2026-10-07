@@ -4,6 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val termuxNativeLibsDir = providers.gradleProperty("termuxNativeLibsDir").orNull
+val termlibSourceDir = providers.gradleProperty("termlibSourceDir").orNull
+    ?.let { file(it) } ?: file("../../vendor/termlib")
+
 android {
     namespace = "org.connectbot.terminal"
     compileSdk = 36
@@ -15,8 +19,8 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
-        externalNativeBuild {
-            cmake {}
+        if (termuxNativeLibsDir == null) {
+            externalNativeBuild { cmake {} }
         }
     }
 
@@ -27,14 +31,18 @@ android {
     }
 
     sourceSets["main"].java.srcDirs(
-        file("../../vendor/termlib/lib/src/main/java")
+        file("$termlibSourceDir/lib/src/main/java")
     )
 
-    externalNativeBuild {
-        cmake {
-            path = file("../../vendor/termlib/lib/src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    if (termuxNativeLibsDir == null) {
+        externalNativeBuild {
+            cmake {
+                path = file("$termlibSourceDir/lib/src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
+    } else {
+        sourceSets["main"].jniLibs.setSrcDirs(listOf(file("$termuxNativeLibsDir/termlib")))
     }
 
     compileOptions {

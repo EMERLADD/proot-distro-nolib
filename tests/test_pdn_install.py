@@ -279,12 +279,55 @@ int main(int argc, char **argv) {{
     def test_input_errors(self):
         self.env.pop("PDN_ROOTFS_DIR")
         self.assertNotEqual(self.run_harness(self.archive).returncode, 0)
+
         self.env["PDN_ROOTFS_DIR"] = str(self.roots)
         self.assertNotEqual(self.run_harness(self.base / "missing").returncode, 0)
         bad = self.base / "file"
         bad.write_text("x")
         self.env["PDN_ROOTFS_DIR"] = str(bad / "child")
         self.assertNotEqual(self.run_harness(self.archive).returncode, 0)
+
+    def test_rootfs_errors_show_path_source_and_reason(self):
+        bad = self.base / "not a directory"
+        bad.write_text("keep")
+        for target, action in ((bad / "child", "create"), (bad, "enter")):
+            with self.subTest(target=target):
+                self.env["PDN_ROOTFS_DIR"] = str(target)
+                result = self.run_harness(self.archive)
+                self.assertNotEqual(result.returncode, 0)
+                for text in (str(target), "Not a directory", "PDN_ROOTFS_DIR", action):
+                    self.assertIn(text, result.stderr)
+                self.assertNotIn("Installing", result.stdout)
+        self.assertEqual(bad.read_text(), "keep")
+
+    def test_home_root_error_explains_default_location(self):
+        if os.access("/", os.W_OK) or os.access("/.local/share/pdn/rootfs", os.W_OK):
+            self.skipTest("default root directory is writable")
+        env = dict(self.env, HOME="/")
+        env.pop("PDN_ROOTFS_DIR")
+        result = subprocess.run([str(BINARY), "install", "alpine"], env=env,
+                                capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        for text in ("/.local/share/pdn/rootfs", "$HOME", "PDN_ROOTFS_DIR", "writable"):
+            self.assertIn(text, result.stderr)
+        self.assertRegex(result.stderr, "Permission denied|Read-only file system")
+        self.assertNotIn("Installing", result.stdout)
+
+    def test_unwritable_rootfs_reports_permission_not_contention(self):
+        self.roots.mkdir(parents=True, mode=0o500)
+        if os.access(self.roots, os.W_OK):
+            self.skipTest("rootfs directory is writable")
+        before = len(self.requests)
+        try:
+            result = self.run_harness()
+            self.assertNotEqual(result.returncode, 0)
+            for text in (str(self.roots), "Permission denied", "install lock", "PDN_ROOTFS_DIR"):
+                self.assertIn(text, result.stderr)
+            self.assertNotIn("another install", result.stderr)
+            self.assertNotIn("Installing", result.stdout)
+            self.assertEqual(len(self.requests), before)
+        finally:
+            self.roots.chmod(0o700)
 
     def test_interrupt_cleanup(self):
         self.env["TEST_URL"] = self.url + "/slow"

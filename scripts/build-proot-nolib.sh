@@ -66,5 +66,9 @@ if LC_ALL=C grep -aiE 'termux|/data/data/|/data/user/|/home/' \
 fi
 cp -R "$PDN_DEPS/licenses" "$OUT_DIR/"
 cp "$OUT_DIR/proot-distro-nolib" "$OUT_DIR/pdn"
-(cd "$OUT_DIR" && sha256sum proot-distro-nolib pdn proot-loader > SHA256SUMS)
+mkdir -p "$OUT_DIR/jniLibs/arm64-v8a"
+cp "$OUT_DIR/pdn" "$OUT_DIR/jniLibs/arm64-v8a/libpdn.so"
+cp "$OUT_DIR/proot-loader" "$OUT_DIR/jniLibs/arm64-v8a/libproot-loader.so"
+(cd "$OUT_DIR" && sha256sum proot-distro-nolib pdn proot-loader \
+    jniLibs/arm64-v8a/libpdn.so jniLibs/arm64-v8a/libproot-loader.so > SHA256SUMS)
 echo "Built: $OUT_DIR/proot-distro-nolib"

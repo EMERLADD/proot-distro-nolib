@@ -12,6 +12,23 @@ class ProotLauncher(private val host: ProotHost) {
     val prefixDir: File
         get() = host.prefixDir
 
+    fun startPdnSession(
+        rootfs: File,
+        user: String = "root",
+        rows: Int = 24,
+        cols: Int = 80,
+    ): Session? {
+        val runtime = PdnRuntime(host)
+        return try {
+            runtime.prepare()
+            val args = runtime.command(runtime.loginArguments(rootfs, user))
+            startCustomSession(args, rows, cols)
+        } catch (e: Exception) {
+            Log.e(TAG, "Cannot start pdn session", e)
+            null
+        }
+    }
+
     fun startSession(
         distroName: String,
         user: String = "root",
@@ -48,6 +65,8 @@ class ProotLauncher(private val host: ProotHost) {
         rows: Int = 24,
         cols: Int = 80,
     ): Session? {
+        require(args.isNotEmpty()) { "An executable is required" }
+        require(args.all { '\u0000' !in it }) { "Arguments cannot contain NUL" }
         val envVars = buildEnvVars()
         val masterFd = PtyNative.forkPty(args[0], args.toTypedArray(), envVars, rows, cols)
         if (masterFd < 0) {
@@ -60,41 +79,15 @@ class ProotLauncher(private val host: ProotHost) {
     }
 
     fun runCommand(
-        command: String,
+        arguments: List<String>,
         rows: Int = 24,
         cols: Int = 80,
     ): Session? {
-        val prCli = File(prefixDir, "bin/pr-cli")
-        val envVars = buildEnvVars()
-        val args = arrayOf(prCli.absolutePath, *command.split(" ").toTypedArray())
-
-        val masterFd = PtyNative.forkPty(args[0], args, envVars, rows, cols)
-        if (masterFd < 0) {
-            Log.e(TAG, "forkPty failed for command: $command")
-            return null
-        }
-
-        Log.i(TAG, "PTY command started: $command, masterFd=$masterFd")
-        return Session(masterFd)
+        return startCustomSession(PdnRuntime(host).command(arguments), rows, cols)
     }
 
     private fun buildEnvVars(): Array<String> {
-        val binDir = File(prefixDir, "bin")
-        val homeDir = host.homeDir
-        val prefix = prefixDir.absolutePath
-
-        return arrayOf(
-            "APP_PREFIX", prefix,
-            "APP_HOME", homeDir.absolutePath,
-            "APP_PACKAGE", host.packageName,
-            "PATH", "${binDir.absolutePath}:/system/bin:/system/xbin",
-            "HOME", homeDir.absolutePath,
-            "PROOT_NO_SECCOMP", "1",
-            "PROOT_TMP_DIR", host.cacheDir.absolutePath,
-            "TERM", "xterm-256color",
-            "LANG", "en_US.UTF-8",
-            "TMPDIR", host.cacheDir.absolutePath,
-        )
+        return PdnRuntime(host).environment().flatMap { listOf(it.key, it.value) }.toTypedArray()
     }
 
     class Session(val masterFd: Int) {

@@ -1,6 +1,63 @@
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    jacoco
+}
+
+jacoco { toolVersion = "0.8.12" }
+
+val pdnClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+    include("id/or/oo/pr/engine/PdnRuntime*.class")
+}
+val pdnExecution = layout.buildDirectory.file("jacoco/testDebugUnitTest.exec")
+
+val pdnCoverageReport = tasks.register<JacocoReport>("pdnCoverageReport") {
+    dependsOn("testDebugUnitTest")
+    classDirectories.setFrom(pdnClasses)
+    sourceDirectories.setFrom(files("src/main/java"))
+    executionData.setFrom(pdnExecution)
+    reports { xml.required.set(true); html.required.set(true) }
+}
+
+tasks.register<JacocoCoverageVerification>("pdnCoverage") {
+    dependsOn(pdnCoverageReport)
+    classDirectories.setFrom(pdnClasses)
+    executionData.setFrom(pdnExecution)
+    violationRules {
+        rule {
+            limit { counter = "LINE"; minimum = "0.80".toBigDecimal() }
+        }
+    }
+}
+
+val termuxNativeLibsDir = providers.gradleProperty("termuxNativeLibsDir").orNull
+
+val pdnProgramsDir = rootProject.file("../build/proot-distro-nolib/arm64")
+val generatedJniLibsDir = layout.buildDirectory.dir("generated/pdnJniLibs")
+if (termuxNativeLibsDir == null) {
+    val stagePdnPrograms = tasks.register<Sync>("stagePdnPrograms") {
+        from("src/main/jniLibs") {
+            exclude("**/libpdn.so", "**/libproot-loader.so")
+        }
+        from(pdnProgramsDir.resolve("pdn")) {
+            into("arm64-v8a")
+            rename { "libpdn.so" }
+        }
+        from(pdnProgramsDir.resolve("proot-loader")) {
+            into("arm64-v8a")
+            rename { "libproot-loader.so" }
+        }
+        into(generatedJniLibsDir)
+        doFirst {
+            check(pdnProgramsDir.resolve("pdn").isFile && pdnProgramsDir.resolve("proot-loader").isFile) {
+                "Build pdn and its loader first with scripts/build-proot-nolib.sh"
+            }
+        }
+    }
+    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(stagePdnPrograms) }
 }
 
 android {
@@ -12,9 +69,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a") }
         
-        externalNativeBuild {
-            cmake {
-                cFlags += "-Wall -Wextra"
+        if (termuxNativeLibsDir == null) {
+            externalNativeBuild {
+                cmake { cFlags += "-Wall -Wextra" }
             }
         }
     }
@@ -26,11 +83,16 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    if (termuxNativeLibsDir == null) {
+        sourceSets["main"].jniLibs.setSrcDirs(listOf(generatedJniLibsDir.get().asFile))
+        externalNativeBuild {
+            cmake {
+                path("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
+    } else {
+        sourceSets["main"].jniLibs.setSrcDirs(listOf(file("$termuxNativeLibsDir/engine")))
     }
 
     compileOptions {
