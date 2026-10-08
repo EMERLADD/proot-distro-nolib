@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current project version: **0.6.0**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.6.1**, based on **PRoot 5.4.0-pr**.
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.

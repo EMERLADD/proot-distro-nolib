@@ -43,8 +43,7 @@ struct distro {
 #endif
 #ifndef DEBIAN_MIRRORS
 #define DEBIAN_MIRRORS \
-    {"official", "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts", "https://raw.githubusercontent.com" DEBIAN_FILE, "https://deb.debian.org"}, \
-    {"github", "https://github.com/debuerreotype/docker-debian-artifacts", "https://github.com/debuerreotype/docker-debian-artifacts/raw/cf1f4a45447842b45e9952e0f018ae734a7341c7/trixie/slim/oci/blobs/rootfs.tar.gz", "https://deb.debian.org"}
+    {"official", "https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts", "https://raw.githubusercontent.com" DEBIAN_FILE, "https://deb.debian.org"}
 #endif
 #ifndef ARCH_MIRRORS
 #define ARCH_MIRRORS \

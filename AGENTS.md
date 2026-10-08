@@ -192,6 +192,14 @@ Commit message policy:
 - Keep subject/body informative, with wrapped body lines (target <= 72 cols).
 - Avoid migration-marketing phrasing; describe technical changes directly.
 
+### Version and delivery policy
+
+- Default version updates increment the patch component (e.g. 0.6.0 to 0.6.1).
+- Keep the PDN version, download User-Agent, current-version documentation and tests consistent.
+- When updating App version metadata, increment versionName's patch component and versionCode.
+- Commit completed project changes by default and push to the current branch's established remote unless instructed otherwise.
+- Honor explicit instructions to skip APK builds, including when changing App version metadata.
+
 ### Coverage gate policy
 
 - Preserve or improve test coverage on touched code.

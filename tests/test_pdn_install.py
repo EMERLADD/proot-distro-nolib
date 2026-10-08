@@ -251,6 +251,18 @@ int main(int argc, char **argv) {{
                             if line.split() and line.split()[0] == "official"]
                 self.assertEqual(official, [["official", domain]])
 
+    def test_debian_has_one_rootfs_source(self):
+        result = subprocess.run([str(BINARY), "mirrors", "debian"], env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = [line.split()[0] for line in result.stdout.splitlines()[1:] if line.strip()]
+        self.assertEqual(names, ["official"])
+        result = subprocess.run([str(BINARY), "install", "debian", "--mirror", "github"],
+                                env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown mirror", result.stderr)
+        self.assertFalse(self.roots.exists())
+
     def test_download_validation(self):
         output = self.base / "download"
         for endpoint in ("/archive", "/redirect"):
