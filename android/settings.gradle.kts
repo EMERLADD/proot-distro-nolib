@@ -15,6 +15,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "pr"
-include(":app")
 include(":proot-engine")
-include(":termlib")
+if (!providers.gradleProperty("pdnEngineOnly").orNull.toBoolean()) {
+    include(":app")
+    include(":termlib")
+}

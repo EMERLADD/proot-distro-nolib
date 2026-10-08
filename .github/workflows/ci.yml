@@ -30,12 +30,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y make curl xz-utils bzip2 pkg-config
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "platforms;android-36" "build-tools;35.0.0" "cmake;3.22.1"
           ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
           echo "NDK_PATH=$ndk" >> "$GITHUB_ENV"
           echo "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
       - name: Build and package
         run: make package JOBS=2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build Android AAR
+        working-directory: android
+        run: sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
+      - name: Package and verify AAR
+        run: |
+          python3 -m unittest discover -s tests -p test_release_packaging.py -v
+          python3 scripts/package-aar.py android/proot-engine/build/outputs/aar/proot-engine-debug.aar
       - name: Verify package checksums
         working-directory: build/packages
         run: sha256sum -c SHA256SUMS
@@ -46,6 +57,7 @@ jobs:
           path: |
             build/packages/*.tar.gz
             build/packages/*.so
+            build/packages/*.aar
             build/packages/pdn
             build/packages/proot-loader
             build/packages/SHA256SUMS
@@ -61,3 +73,24 @@ jobs:
             cat build/packages/SHA256SUMS
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: android-arm64
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: pdn-android-arm64-${{ github.sha }}
+          path: build/packages
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: sh scripts/publish-release.sh

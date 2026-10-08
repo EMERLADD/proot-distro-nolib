@@ -2,6 +2,7 @@
 
 ## v0.6.2 — 2026-10-08
 
+- 补发 v0.6.1 / v0.6.2 Release；后续版本自动发布配套 AAR、`.so`、原始 ELF、完整源码包与 SHA256，拒绝 AAR 与原生附件版本混用。
 - 新增可选 JSONL 操作事件：阶段、下载及归档进度、错误建议和最终结果；不混入 Linux stdout/stderr。
 - 增加 Java `PdnOperations`、`PdnListener`、`PdnEvent`、`PdnResult`，Kotlin 默认参数提供 Java 重载。
 - 区分 PDN 管理/启动错误、guest 非零退出、信号终止与协议异常；保留实际进程退出码。

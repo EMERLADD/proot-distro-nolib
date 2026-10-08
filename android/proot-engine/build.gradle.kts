@@ -66,6 +66,7 @@ if (termuxNativeLibsDir == null) {
 android {
     namespace = "id.or.oo.pr.engine"
     compileSdk = 36
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         minSdk = 28

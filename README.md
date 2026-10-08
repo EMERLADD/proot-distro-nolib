@@ -107,7 +107,7 @@ Java/Kotlin 可以通过 `PdnRuntime` 生成安装、执行等操作，再用 `P
 已进入 Alpine，并在交互终端成功执行 `apk add nano`。独立工程和构建方式见
 [AAR 验证 App](examples/aar-probe/README.md)。
 
-发布产物同时提供可直接下载的 `libpdn.so` 和 `libproot-loader.so`。将两者放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
+每个 Release 同时提供 `pdn-engine-版本号.aar`、`libpdn.so`、`libproot-loader.so` 和原始 ELF `pdn`、`proot-loader`。AAR 是非插桩 Debug 引擎构建，包含封装 API 和 ARM64 原生程序；宿主需提供 Kotlin 标准库。也可以单独将两个 `.so` 放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
 
 `PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。
 
@@ -253,9 +253,13 @@ make clean
 2. 从固定来源下载、校验并静态编译依赖。
 3. 编译 ARM64 `pdn` 与 loader，检查动态依赖及宿主路径。
 4. 打包二进制、许可证、使用材料和对应源码，生成 SHA256。
-5. 上传 Actions artifact，保留 30 天。
+5. 单独构建引擎 AAR，逐字节核对其中的 PDN 和 loader 与原始 ELF，更新附件 SHA256。
+6. 上传 Actions artifact，保留 30 天。
+7. `main` 推送包含尚未发布的版本号时，自动创建对应 `v版本号` 标签和预发布 Release；同版本已发布时跳过，下一次发布先递增补丁版本号。`v*` 标签推送也可以发布，但标签必须与代码版本一致。
 
-Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运行测试通过**。流程不会自动修改仓库可见性或发布 GitHub Release。
+Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运行测试通过**。Pull Request 和手动构建只生成附件；发布步骤仅在 `main` 或版本标签推送后执行。
+
+仅构建引擎时，在 `android/` 执行 `sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar`，无需配置 GUI 和终端库模块；先按上文构建原生 PDN 与 loader。
 
 原 pr App 的构建保留在 [Legacy pr Android App](.github/workflows/legacy-pr.yml)，仅手动触发；它不属于独立 `pdn` 的默认构建流程。
 
@@ -273,7 +277,7 @@ Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运�
 | `LICENSE`、`licenses/` | 项目许可证映射与第三方许可文本 |
 | `source.tar.gz` | 对应仓库源码、构建所需的 talloc 源码，以及四个依赖的原始源码归档 |
 
-发布目录还提供独立的 `pdn`、`proot-loader`、`libpdn.so`、`libproot-loader.so`；外部 `SHA256SUMS` 同时校验这些文件和完整 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
+发布目录还提供独立的 `pdn-engine-版本号.aar`、`pdn`、`proot-loader`、`libpdn.so`、`libproot-loader.so`；外部 `SHA256SUMS` 同时校验 AAR、原始 ELF、两个 `.so` 和完整 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
 
 转发二进制时请一起保留这些材料、对应源码与第三方许可证，不要只留下一个改名后的程序。项目继承上游的许可证，不把所有组件统一宣称为 MIT；具体范围见 [LICENSE](LICENSE) 和源文件中的声明。
 
