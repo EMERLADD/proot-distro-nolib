@@ -10,6 +10,18 @@
 >
 > MT 管理器是已验证的宿主环境，不代表所有 Android App 和设备都已测试。
 
+## 已实测的三条接入路径
+
+2026-10-09，使用 GitHub Release **v0.6.4** 的原件完成设备测试：
+
+| 接入方式 | 实际运行环境 | 结果 |
+| --- | --- | --- |
+| 原始 ELF | rish / Shizuku 的 Android shell，UID 2000 | **28/28 通过** |
+| AAR | 独立 App，仅导入 AAR 与 Kotlin 标准库 | **19/19 通过** |
+| 直接打包 `.so` | 独立 App，直接启动 ELF，自行读取事件及接入 PTY | **24/24 通过** |
+
+三条路径均验证 Alpine 安装、登录/执行和启动错误分类；两种 APK 还验证初始化、事件回调、工作区及终端交互。APK 测试在 Android 14（SDK 34）的普通 `untrusted_app` 进程中执行，targetSdk 为 35；包内 PDN/loader 与 Release 原件逐字节一致。详细记录见 [实测范围与测试方法](docs/pdn-error-testing.md)，接入工程见 [AAR 示例](examples/aar-probe/README.md) 和 [.so 示例](examples/so-probe/README.md)。
+
 ## 这是什么
 
 从文件格式看，`pdn` 是 **ARM64 Android ELF 可执行文件**；从用途看，它是一个 **命令行 Linux 发行版管理器**，把 PRoot 引擎和常用管理功能整合进同一个程序。

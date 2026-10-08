@@ -5,7 +5,8 @@
 - PRoot 启动、loader、初始 guest shell、ELF interpreter 和实际登录 shell 的启动失败提供具体错误码、原始 errno 和建议。
 - 启动子进程通过独立管道把失败原因交给父进程；JSONL 由父进程输出，避免子进程失败时重复 started/result 或打乱 sequence。
 - 已进入 guest 的命令非零退出、126/127 和信号终止仍保留 `guest_exit`；不通过 stderr 文案判断错误，也不把权限拒绝直接断言为 SELinux/seccomp 原因。
-- 保持事件协议 v1 和 Java/Kotlin 接口兼容；生成配套 AAR、`.so` 和原始 ELF，未构建 App APK。
+- 保持事件协议 v1 和 Java/Kotlin 接口兼容；生成配套 AAR、`.so` 和原始 ELF，补测两种独立接入 APK，未重建原 pr App。
+- 使用 Release 原件完成三条设备验收：rish 原始 ELF 28/28、独立 AAR APK 19/19、直接 `.so` APK 24/24。两种 APK 在 Android 14 的普通 App 进程中运行，targetSdk 35；初始化、安装、执行、事件与 PTY 交互均通过。
 
 
 验证：211 项原生测试，209 项通过、2 项因环境限制跳过；其中启动测试 41 项全部通过，包含真实 musl 登录和受控 loader 系统调用。54 项 JVM 测试与 6 项发布打包检查通过。新增/修改原生可执行行覆盖率 95.05%，事件模块 98.09%，Java/Kotlin 96.11%；AAR 原生文件与对应 ELF 逐字节一致。故障注入、实测范围和加载后的诊断边界见 [错误验证](docs/pdn-error-testing.md)。
