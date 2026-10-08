@@ -18,6 +18,7 @@ import id.or.oo.pr.engine.PdnRuntime
 import id.or.oo.pr.engine.PdnEvent
 import id.or.oo.pr.engine.PdnListener
 import id.or.oo.pr.engine.PdnOperations
+import id.or.oo.pr.engine.PdnHostException
 import id.or.oo.pr.engine.PdnResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -345,6 +346,13 @@ private suspend fun runPdnCommand(
         throw e
     } catch (e: InterruptedException) {
         throw e
+    } catch (e: PdnHostException) {
+        stdout.finish()
+        stderr.finish()
+        line("宿主错误类型：${e.code}")
+        line("错误：${e.message}")
+        line("建议：${e.suggestion}")
+        null
     } catch (e: Exception) {
         stdout.finish()
         stderr.finish()

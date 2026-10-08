@@ -30,6 +30,8 @@ test: build
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_install.py" -v
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_archive.py" -v
 	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_config.py" -v
+	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_events.py" -v
+	@PROOT_NOLIB_BINARY="$(OUT_DIR)/proot-distro-nolib" $(PYTHON) "$(PROJECT_ROOT)/tests/test_pdn_system_errors.py" -v
 
 clean:
 	rm -rf "$(PROJECT_ROOT)/build/proot-distro-nolib"

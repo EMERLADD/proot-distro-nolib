@@ -1,6 +1,6 @@
 # PDN 事件接口与 AAR
 
-PDN 0.6.2 提供协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
+PDN 0.6.3 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
 
 ## 调用关系
 
@@ -68,7 +68,19 @@ val result = runInterruptible(Dispatchers.IO) {
 
 `error` 是诊断事件，不是最终结果。例如第一个镜像下载失败产生错误，第二个镜像成功后，最终结果仍然是 `success`。成功结果不会携带此前失败镜像的错误。界面只在最终失败时显示 `code`、`message`、`suggestion`，详细日志仍从 stderr 读取。
 
-目录类错误给出对应环境变量和检查建议；安装阶段区分 `download_failed`、`verification_failed`、`extraction_failed`、`configuration_failed`。底层 PRoot 的部分错误仍归为 `manager_failed` 并要求查看 stderr。这版未提供完整后台任务管理或进程树取消接口。
+目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。底层 PRoot 的部分错误仍归为 `manager_failed` 并要求查看 stderr。这版未提供完整后台任务管理或进程树取消接口。
+
+Java 宿主的缓存、事件文件、进程启动、流读写及清理错误抛出 `PdnHostException`，它继承 `IOException`，保留原始 `cause`，新增 `getCode()` 与 `getSuggestion()`。原有 `catch (IOException)` 继续有效；参数错误、线程中断及监听器自身抛出的异常保持原有行为。清理失败不会覆盖前面的异常，而是通过 `getSuppressed()` 附加。
+
+```java
+try {
+    PdnResult result = operations.run(pdn.install("alpine"), listener);
+} catch (PdnHostException failure) {
+    String code = failure.getCode();
+    String advice = failure.getSuggestion();
+    Throwable cause = failure.getCause();
+}
+```
 
 ## 原生 JSONL 协议
 
@@ -109,7 +121,7 @@ proot-engine-*.aar
 ├─ classes.jar
 │   └─ id/or/oo/pr/engine/
 │      ├─ ProotHost / PdnRuntime / AlpinePackages
-│      ├─ PdnOperations / PdnListener / PdnEvent / PdnResult
+│      ├─ PdnOperations / PdnListener / PdnEvent / PdnResult / PdnHostException
 │      └─ 现有 ProotLauncher / PtyNative 兼容接口
 ├─ jni/arm64-v8a/
 │  ├─ libpdn.so

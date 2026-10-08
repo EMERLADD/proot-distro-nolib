@@ -9,6 +9,8 @@ import test_pdn as pdn
 class PdnConfigTests(unittest.TestCase):
     invoke = pdn.PdnTests.invoke
     good = pdn.PdnTests.good
+    invoke_events = pdn.PdnTests.invoke_events
+    error_code = pdn.PdnTests.error_code
 
     def setUp(self):
         pdn.PdnTests.setUp(self)
@@ -17,6 +19,41 @@ class PdnConfigTests(unittest.TestCase):
         (self.root / "etc/passwd").write_text(
             "root:x:0:0:root:/root:/bin/sh\n"
             "alice:x:1234:2345:Alice:/home/alice:/bin/sh\n")
+
+    def test_config_error_classification(self):
+        config = self.root / ".pdn-config"
+        for contents in ("broken", "PDN1\nu:zz\n", "PDN1\ne:31\n", "PDN1\nu:2d31\n"):
+            with self.subTest(contents=contents):
+                config.write_text(contents)
+                self.error_code("config_invalid", "config", "ubuntu", "--show")
+        config.unlink()
+        config.symlink_to("etc/passwd")
+        for action in ("--show", "--clear", "--env"):
+            arguments = (action, "X=y") if action == "--env" else (action,)
+            self.error_code("config_unsafe", "config", "ubuntu", *arguments)
+        config.unlink()
+        os.mkfifo(config)
+        self.error_code("config_unsafe", "config", "ubuntu", "--show")
+        config.unlink()
+        self.error_code("user_invalid", "config", "ubuntu", "--user", "-1")
+        self.error_code("user_invalid", "config", "ubuntu", "--user", "missing")
+        (self.root / "etc/passwd").write_text("broken passwd row\n")
+        self.error_code("user_invalid", "exec", "ubuntu", "--user", "alice", "--", "/bin/sh")
+
+    @unittest.skipIf(os.geteuid() == 0, "requires unprivileged file access")
+    def test_config_file_permission_classification(self):
+        config = self.root / ".pdn-config"
+        config.write_text("PDN1\n")
+        config.chmod(0)
+        try:
+            self.error_code("file_permission", "config", "ubuntu", "--show")
+        finally:
+            config.chmod(0o600)
+        self.root.chmod(0o500)
+        try:
+            self.error_code("file_permission", "config", "ubuntu", "--env", "X=y")
+        finally:
+            self.root.chmod(0o755)
 
     def test_environment_values_are_exact_and_last_wins(self):
         value = " a'b\"c; $(echo BAD)\nX=Y "

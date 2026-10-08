@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONObject;
 import org.json.JSONException;
 import org.json.JSONTokener;
@@ -27,7 +28,16 @@ public final class PdnOperations {
     private static final int MAX_RECORDS = 10000;
     private static final long MAX_BYTES = 8L * 1024 * 1024;
     private final PdnRuntime runtime;
-    public PdnOperations(PdnRuntime runtime) { this.runtime = Objects.requireNonNull(runtime); }
+    private final ProcessStarter starter;
+    interface ProcessStarter { Process start(ProcessBuilder builder) throws IOException; }
+    public PdnOperations(PdnRuntime runtime) { this(runtime, ProcessBuilder::start); }
+    PdnOperations(PdnRuntime runtime, ProcessStarter starter) {
+        this.runtime = Objects.requireNonNull(runtime);
+        this.starter = Objects.requireNonNull(starter);
+    }
+    private static PdnHostException hostFailure(String code, String message, String suggestion, Throwable cause) {
+        return new PdnHostException(code, message, suggestion, cause);
+    }
 
     public PdnResult run(ProcessBuilder original, PdnListener listener) throws IOException, InterruptedException {
         Objects.requireNonNull(original);
@@ -42,9 +52,20 @@ public final class PdnOperations {
         builder.environment().clear();
         builder.environment().putAll(original.environment());
         File cache = new File(runtime.environment().get("PROOT_TMP_DIR"));
-        if (!cache.isDirectory() && !cache.mkdirs()) throw new IOException("Cannot prepare operation cache");
-        File file = Files.createTempFile(cache.toPath(), "pdn-events-", ".jsonl",
-                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))).toFile();
+        try {
+            if (!cache.isDirectory() && !cache.mkdirs()) throw new IOException("Cannot prepare operation cache");
+        } catch (IOException | SecurityException failure) {
+            throw hostFailure("host_cache_failed", "Cannot prepare operation cache",
+                    "Check that the operation cache path is a writable directory", failure);
+        }
+        File file;
+        try {
+            file = Files.createTempFile(cache.toPath(), "pdn-events-", ".jsonl",
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))).toFile();
+        } catch (IOException | SecurityException failure) {
+            throw hostFailure("host_event_channel_failed", "Cannot create operation event channel",
+                    "Check cache permissions and available storage", failure);
+        }
         String id = UUID.randomUUID().toString();
         builder.environment().put("PDN_EVENT_FILE", file.getAbsolutePath());
         builder.environment().put("PDN_OPERATION_ID", id);
@@ -53,9 +74,23 @@ public final class PdnOperations {
         Thread stderr = null;
         BlockingQueue<Chunk> queue = new ArrayBlockingQueue<>(32);
         Throwable primaryFailure = null;
-        try (RandomAccessFile events = new RandomAccessFile(file, "r")) {
-            process = builder.start();
-            process.getOutputStream().close();
+        RandomAccessFile events = null;
+        try {
+            try { events = new RandomAccessFile(file, "r"); }
+            catch (IOException | SecurityException failure) {
+                throw hostFailure("host_event_channel_failed", "Cannot open operation event channel",
+                        "Check cache permissions and available storage", failure);
+            }
+            try { process = starter.start(builder); }
+            catch (IOException | SecurityException failure) {
+                throw hostFailure("host_process_start_failed", "Cannot start operation process",
+                        "Check that the native executable exists and can be executed", failure);
+            }
+            try { process.getOutputStream().close(); }
+            catch (IOException failure) {
+                throw hostFailure("host_output_failed", "Cannot close operation input stream",
+                        "Retry the operation and check the native process", failure);
+            }
             stdout = reader(process, process.getInputStream(), false, queue);
             stderr = reader(process, process.getErrorStream(), true, queue);
             Tail tail = new Tail(id, events);
@@ -64,7 +99,8 @@ public final class PdnOperations {
             while (process.isAlive() || completedStreams < 2 || !queue.isEmpty()) {
                 if (!process.isAlive()) {
                     if (drainDeadline == 0) drainDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-                    if (System.nanoTime() > drainDeadline) throw new IOException("Operation streams did not finish after process exit");
+                    if (System.nanoTime() > drainDeadline) throw hostFailure("host_output_failed", "Operation streams did not finish after process exit",
+                            "Retry the operation and check for stalled output readers", null);
                 }
                 tail.read(listener);
                 Chunk chunk = queue.poll(10, TimeUnit.MILLISECONDS);
@@ -85,15 +121,24 @@ public final class PdnOperations {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
             throw failure;
         } finally {
-            IOException cleanupFailure = cleanup(process, stdout, stderr);
+            Throwable cleanupFailure = cleanup(process, stdout, stderr);
+            if (events != null) {
+                try { events.close(); }
+                catch (IOException | SecurityException failure) {
+                    if (cleanupFailure == null) cleanupFailure = failure;
+                    else cleanupFailure.addSuppressed(failure);
+                }
+            }
             try { Files.deleteIfExists(file.toPath()); }
-            catch (IOException failure) {
+            catch (IOException | SecurityException failure) {
                 if (cleanupFailure == null) cleanupFailure = failure;
                 else cleanupFailure.addSuppressed(failure);
             }
             if (cleanupFailure != null) {
-                if (primaryFailure == null) throw cleanupFailure;
-                primaryFailure.addSuppressed(cleanupFailure);
+                PdnHostException structured = hostFailure("host_cleanup_failed", "Cannot clean up operation resources",
+                        "Check cache permissions and retry after stopping the native process", cleanupFailure);
+                if (primaryFailure == null) throw structured;
+                primaryFailure.addSuppressed(structured);
             }
         }
     }
@@ -115,7 +160,8 @@ public final class PdnOperations {
                 }
                 queue.put(new Chunk(stderr, null, null));
             } catch (IOException failure) {
-                try { queue.put(new Chunk(stderr, null, new IOException("Cannot read operation stream", failure))); }
+                try { queue.put(new Chunk(stderr, null, hostFailure("host_output_failed", "Cannot read operation stream",
+                        "Retry the operation and check the native process output", failure))); }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
@@ -142,12 +188,13 @@ public final class PdnOperations {
             if (thread != null) thread.interrupt();
         }
         Thread closer = null;
+        AtomicReference<IOException> closeFailure = new AtomicReference<>();
         if (process != null) {
             Process target = process;
             closer = new Thread(() -> {
-                try { target.getInputStream().close(); } catch (IOException ignored) { }
-                try { target.getErrorStream().close(); } catch (IOException ignored) { }
-                try { target.getOutputStream().close(); } catch (IOException ignored) { }
+                try { target.getInputStream().close(); } catch (IOException caught) { recordCloseFailure(closeFailure, caught); }
+                try { target.getErrorStream().close(); } catch (IOException caught) { recordCloseFailure(closeFailure, caught); }
+                try { target.getOutputStream().close(); } catch (IOException caught) { recordCloseFailure(closeFailure, caught); }
             }, "pdn-stream-cleanup");
             closer.setDaemon(true);
             closer.start();
@@ -161,8 +208,17 @@ public final class PdnOperations {
             }
             if (thread.isAlive()) failure = new IOException("Operation streams did not stop during cleanup");
         }
+        IOException closing = closeFailure.get();
+        if (failure == null) failure = closing;
+        else if (closing != null) failure.addSuppressed(closing);
         if (interrupted) Thread.currentThread().interrupt();
         return failure;
+    }
+
+    private static void recordCloseFailure(AtomicReference<IOException> failures, IOException failure) {
+        IOException existing = failures.get();
+        if (existing == null) failures.set(failure);
+        else existing.addSuppressed(failure);
     }
 
     private static final class Chunk {
@@ -187,11 +243,11 @@ public final class PdnOperations {
         Tail(String id, RandomAccessFile file) { this.id = id; this.file = file; }
         void read(PdnListener listener) throws IOException {
             if (invalid) return;
-            if (file.length() < file.getFilePointer() || file.length() > MAX_BYTES) { invalid = true; return; }
+            if (length() < position() || length() > MAX_BYTES) { invalid = true; return; }
             byte[] buffer = new byte[4096];
-            long remaining = file.length() - file.getFilePointer();
+            long remaining = length() - position();
             while (remaining > 0) {
-                int size = file.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                int size = readBytes(buffer, (int) Math.min(buffer.length, remaining));
                 if (size == -1) { invalid = true; return; }
                 remaining -= size;
                 for (int index = 0; index < size; index++) {
@@ -208,6 +264,23 @@ public final class PdnOperations {
                     }
                 }
             }
+        }
+
+        long length() throws IOException {
+            try { return file.length(); }
+            catch (IOException failure) { throw channelFailure(failure); }
+        }
+        long position() throws IOException {
+            try { return file.getFilePointer(); }
+            catch (IOException failure) { throw channelFailure(failure); }
+        }
+        int readBytes(byte[] buffer, int size) throws IOException {
+            try { return file.read(buffer, 0, size); }
+            catch (IOException failure) { throw channelFailure(failure); }
+        }
+        PdnHostException channelFailure(IOException failure) {
+            return hostFailure("host_event_channel_failed", "Cannot read operation event channel",
+                    "Check cache permissions and available storage", failure);
         }
 
         PdnEvent parse() throws CharacterCodingException, JSONException {

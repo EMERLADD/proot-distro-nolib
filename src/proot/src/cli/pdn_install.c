@@ -29,9 +29,46 @@ static void cancel_install(int signal_number)
 
 static int error(const char *message)
 {
-    pdn_events_error(message);
+    if (!pdn_events_has_error()) pdn_events_error(message);
     fprintf(stderr, "pdn: %s\n", message);
     return -1;
+}
+
+static int problem(const char *code, const char *message)
+{
+    const char *advice = "Check the selected archive and destination, then retry";
+    if (!strcmp(code, "resolution_failed") || !strcmp(code, "connection_failed") ||
+        !strcmp(code, "download_timeout") || !strcmp(code, "http_error") || !strcmp(code, "download_failed"))
+        advice = "Check network access or choose another mirror with pdn mirrors";
+    else if (!strcmp(code, "tls_failed")) advice = "Check the trusted CA bundle and system clock, or choose another HTTPS mirror";
+    else if (!strcmp(code, "distro_unknown")) advice = "Run pdn list --available and select a supported distro";
+    else if (!strcmp(code, "mirror_invalid")) advice = "Run pdn mirrors and select a listed mirror";
+    else if (!strcmp(code, "operation_busy")) advice = "Wait for the current operation to finish, then retry";
+    else if (!strcmp(code, "lock_failed")) advice = "Check rootfs locking support and permissions, then retry";
+    else if (!strcmp(code, "rootfs_exists")) advice = "Preserve the existing rootfs or select a fresh rootfs directory";
+    else if (!strcmp(code, "archive_size_mismatch") || !strcmp(code, "archive_checksum_mismatch"))
+        advice = "Download the exact pinned rootfs archive from a listed mirror";
+    else if (!strcmp(code, "archive_limit_exceeded")) advice = "Select an archive within the configured extraction limits";
+    else if (!strcmp(code, "keyring_initialization_failed")) advice = "Check the package keyring initialization output and retry installation";
+    pdn_events_problem(code, message, advice);
+    return error(message);
+}
+
+static int system_error(const char *code, const char *message, int saved_errno)
+{
+    pdn_events_system_problem(code, message, "Check the reported cause and retry", saved_errno);
+    return error(message);
+}
+
+static int archive_problem(struct archive *archive, int writing)
+{
+    const char *message = archive_error_string(archive);
+    int code = archive_errno(archive);
+    if (!message) message = writing ? "cannot write extracted data" : "corrupt archive";
+    if (writing && (!strncmp(message, "Cannot extract through symlink ", 31) ||
+                    !strcmp(message, "Path contains '..'") || !strcmp(message, "Path is absolute")))
+        return problem("archive_unsafe", message);
+    return system_error(writing ? "extraction_failed" : "archive_corrupt", message, code);
 }
 
 static int rootfs_error(const char *action, const char *path, int code)
@@ -40,8 +77,12 @@ static int rootfs_error(const char *action, const char *path, int code)
     const char *kind = code == EACCES || code == EPERM ? "directory_permission" :
                        code == EROFS ? "directory_read_only" :
                        code == ENOTDIR ? "directory_not_directory" :
-                       code == ENOENT ? "directory_missing" : "directory_unavailable";
+                       code == ENOENT ? "directory_missing" :
+                       code == ENOSPC || code == EDQUOT ? "storage_full" :
+                       code == ENOMEM ? "out_of_memory" : "directory_unavailable";
     pdn_events_problem(kind, "Cannot access rootfs directory",
+                       !strcmp(kind, "storage_full") ? "Free storage or quota in the selected rootfs location, then retry" :
+                       !strcmp(kind, "out_of_memory") ? "Free memory and retry" :
                        "Set PDN_ROOTFS_DIR to a writable directory");
     fprintf(stderr, "pdn: cannot %s rootfs directory '%s': %s (errno=%d)\n",
             action, path, strerror(code), code);
@@ -76,8 +117,11 @@ static int exists_distro(const char *name)
     DIR *dir = opendir(".");
     struct dirent *entry;
     int found = 0;
-    if (!dir) return 1;
-    while ((entry = readdir(dir))) {
+    if (!dir) return system_error("file_io_failed", "cannot inspect installed rootfs names", errno);
+    for (;;) {
+        errno = 0;
+        entry = readdir(dir);
+        if (!entry) { if (errno) found = system_error("file_io_failed", "cannot inspect installed rootfs names", errno); break; }
         if (!strcasecmp(entry->d_name, name)) { found = 1; break; }
     }
     closedir(dir);
@@ -88,6 +132,9 @@ struct transfer {
     FILE *file;
     size_t size;
     int percent;
+    int write_errno;
+    int write_failed;
+    int too_large;
     const struct distro *distro;
 };
 
@@ -95,8 +142,12 @@ static size_t receive(void *data, size_t size, size_t count, void *context)
 {
     struct transfer *transfer = context;
     size_t bytes = size * count;
-    if (cancelled || bytes > transfer->distro->size - transfer->size) return 0;
+    if (cancelled) return 0;
+    if (bytes > transfer->distro->size - transfer->size) { transfer->too_large = 1; return 0; }
+    size_t requested = bytes;
+    errno = 0;
     bytes = fwrite(data, 1, bytes, transfer->file);
+    if (bytes != requested) { transfer->write_errno = errno; transfer->write_failed = 1; }
     transfer->size += bytes;
     return bytes;
 }
@@ -127,11 +178,11 @@ static int download(const struct distro *distro, const char *url, const char *pa
     pdn_events_stage("downloading");
     pdn_events_progress(0, (long long)distro->size);
     transfer.file = fopen(path, "wb");
-    if (!transfer.file) return error(strerror(errno));
+    if (!transfer.file) return system_error("file_io_failed", strerror(errno), errno);
     curl = curl_easy_init();
-    if (!curl) { fclose(transfer.file); return error("cannot initialize HTTPS"); }
+    if (!curl) { fclose(transfer.file); return problem("download_failed", "cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.2");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.3");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -153,8 +204,25 @@ static int download(const struct distro *distro, const char *url, const char *pa
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &transfer);
     status = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
-    if (fclose(transfer.file) != 0 && status == CURLE_OK) status = CURLE_WRITE_ERROR;
-    if (status != CURLE_OK) return error(*details ? details : curl_easy_strerror(status));
+    if (fclose(transfer.file) != 0) {
+        transfer.write_errno = errno;
+        transfer.write_failed = 1;
+        if (status == CURLE_OK) status = CURLE_WRITE_ERROR;
+    }
+    if (status != CURLE_OK) {
+        const char *message = *details ? details : curl_easy_strerror(status);
+        if (transfer.write_failed) return system_error("file_io_failed", message, transfer.write_errno);
+        if (transfer.too_large || status == CURLE_FILESIZE_EXCEEDED)
+            return problem("archive_size_mismatch", message);
+        const char *code = status == CURLE_COULDNT_RESOLVE_HOST || status == CURLE_COULDNT_RESOLVE_PROXY ? "resolution_failed" :
+            status == CURLE_COULDNT_CONNECT ? "connection_failed" :
+            status == CURLE_OPERATION_TIMEDOUT ? "download_timeout" :
+            status == CURLE_SSL_CONNECT_ERROR || status == CURLE_PEER_FAILED_VERIFICATION ||
+            status == CURLE_SSL_CERTPROBLEM || status == CURLE_SSL_CIPHER ||
+            status == CURLE_SSL_CACERT_BADFILE || status == CURLE_SSL_ISSUER_ERROR ? "tls_failed" :
+            status == CURLE_HTTP_RETURNED_ERROR ? "http_error" : "download_failed";
+        return problem(code, message);
+    }
     pdn_events_progress((long long)transfer.size, (long long)distro->size);
     return 0;
 }
@@ -165,19 +233,25 @@ static int copy_archive(const struct distro *distro, const char *source, const c
     char buffer[65536];
     size_t size, total = 0;
     int result = 0;
-    if (!input) return error("cannot open local archive");
+    const char *message = "cannot copy local archive or archive is too large";
+    if (!input) return system_error("file_io_failed", "cannot open local archive", errno);
     output = fopen(destination, "wb");
-    if (!output) { fclose(input); return error("cannot stage local archive"); }
-    while ((size = fread(buffer, 1, sizeof(buffer), input)) > 0) {
-        if (cancelled || (total += size) > distro->size || fwrite(buffer, 1, size, output) != size) {
-            result = -1; break;
-        }
+    if (!output) { int saved = errno; fclose(input); return system_error("file_io_failed", "cannot stage local archive", saved); }
+    for (;;) {
+        errno = 0;
+        size = fread(buffer, 1, sizeof(buffer), input);
+        int saved = errno;
+        if (ferror(input)) { system_error("file_io_failed", message, saved); result = -1; break; }
+        if (!size) break;
+        if (cancelled) { result = -1; break; }
+        if ((total += size) > distro->size) { problem("archive_size_mismatch", message); result = -1; break; }
+        errno = 0;
+        if (fwrite(buffer, 1, size, output) != size) { system_error("file_io_failed", message, errno); result = -1; break; }
     }
-    if (ferror(input)) result = -1;
     fclose(input);
-    if (fclose(output) != 0) result = -1;
-    if (result) return error("cannot copy local archive or archive is too large");
-    return 0;
+    if (fclose(output) != 0) { if (!result) system_error("file_io_failed", message, errno); result = -1; }
+    if (result && !pdn_events_has_error()) return error(message);
+    return result;
 }
 
 static int verify(const struct distro *distro, const char *path)
@@ -187,11 +261,12 @@ static int verify(const struct distro *distro, const char *path)
     struct stat st;
     size_t i;
     pdn_events_stage("verifying");
-    if (stat(path, &st) < 0 || st.st_size != (off_t)distro->size) return error("incorrect archive size");
+    if (stat(path, &st) < 0) return system_error("file_io_failed", "incorrect archive size", errno);
+    if (st.st_size != (off_t)distro->size) return problem("archive_size_mismatch", "incorrect archive size");
     if (mbedtls_md_file(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), path, digest) != 0)
-        return error("cannot hash archive");
+        return problem("archive_hash_failed", "cannot hash archive");
     for (i = 0; i < sizeof(digest); i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
-    if (strcmp(hex, distro->sha256) != 0) return error("SHA256 mismatch; archive rejected");
+    if (strcmp(hex, distro->sha256) != 0) return problem("archive_checksum_mismatch", "SHA256 mismatch; archive rejected");
     return 0;
 }
 
@@ -211,7 +286,7 @@ int pdn_mirrors(const char *name)
 {
     size_t i, j;
     struct distro distro;
-    if (name && find_distro(name, &distro) < 0) return error("unknown distro; run pdn list --available") != 0;
+    if (name && find_distro(name, &distro) < 0) return problem("distro_unknown", "unknown distro; run pdn list --available") != 0;
     for (i = 0; i < sizeof(distro_names) / sizeof(distro_names[0]); i++) {
         if (name && strcasecmp(name, distro_names[i])) continue;
         find_distro(distro_names[i], &distro);
@@ -231,9 +306,11 @@ static int download_mirrors(const struct distro *distro, const struct mirror *mi
         if (cancelled) return -1;
         printf("Trying mirror: %s\n", mirrors[i].name);
         fflush(stdout);
-        if (download(distro, mirrors[i].url, path) == 0 && !cancelled && verify(distro, path) == 0)
+        if (download(distro, mirrors[i].url, path) == 0 && !cancelled && verify(distro, path) == 0) {
+            pdn_events_clear_error();
             return (int)i;
-        if (unlink(path) < 0 && errno != ENOENT) return error("cannot remove failed download");
+        }
+        if (unlink(path) < 0 && errno != ENOENT) return system_error("file_io_failed", "cannot remove failed download", errno);
         if (cancelled) return -1;
         if (selected >= 0) break;
         if (i + 1 < count) fprintf(stderr, "Mirror %s failed; trying the next source.\n", mirrors[i].name);
@@ -262,10 +339,10 @@ static int convert_hardlink(struct archive_entry *entry)
     const char *name = safe_archive_path(archive_entry_pathname(entry)), *p;
     size_t depth = 0;
     char *relative;
-    if (!target || !name || !strcmp(target, name)) return error("unsafe archive hardlink");
+    if (!target || !name || !strcmp(target, name)) return problem("archive_unsafe", "unsafe archive hardlink");
     for (p = name; *p; p++) if (*p == '/') depth++;
     relative = malloc(depth * 3 + strlen(target) + 1);
-    if (!relative) return error("out of memory");
+    if (!relative) return problem("out_of_memory", "out of memory");
     relative[0] = '\0';
     while (depth--) strcat(relative, "../");
     strcat(relative, target);
@@ -286,13 +363,14 @@ static int extract(const struct distro *distro, const char *path)
     la_int64_t offset, total = 0;
     int status, result = -1, entries = 0;
     pdn_events_stage("extracting");
+    if (!input || !output) { problem("out_of_memory", "out of memory"); goto done; }
     archive_read_support_filter_gzip(input);
     archive_read_support_format_tar(input);
     archive_write_disk_set_options(output, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_TIME |
         ARCHIVE_EXTRACT_SECURE_SYMLINKS | ARCHIVE_EXTRACT_SECURE_NODOTDOT |
         ARCHIVE_EXTRACT_SECURE_NOABSOLUTEPATHS | ARCHIVE_EXTRACT_NO_OVERWRITE);
     if (archive_read_open_filename(input, path, 65536) != ARCHIVE_OK) {
-        error(archive_error_string(input)); goto done;
+        archive_problem(input, 0); goto done;
     }
     while ((status = archive_read_next_header(input, &entry)) == ARCHIVE_OK) {
         mode_t type = archive_entry_filetype(entry);
@@ -300,29 +378,32 @@ static int extract(const struct distro *distro, const char *path)
         if (++entries > 100000 || archive_entry_size(entry) < 0 ||
             archive_entry_size(entry) > 256 * 1024 * 1024 ||
             (total += archive_entry_size(entry)) > distro->extracted_limit) {
-            error("archive exceeds extraction limits"); goto done;
+            problem("archive_limit_exceeded", "archive exceeds extraction limits"); goto done;
         }
         if (type != AE_IFREG && type != AE_IFDIR && type != AE_IFLNK &&
-            !archive_entry_hardlink(entry)) { error("unsupported archive entry"); goto done; }
+            !archive_entry_hardlink(entry)) { problem("archive_unsupported", "unsupported archive entry"); goto done; }
+        const char *name = archive_entry_pathname(entry);
+        if (name && (!strcmp(name, ".") || !strcmp(name, "./")) && type == AE_IFDIR) continue;
+        if (!safe_archive_path(name)) { problem("archive_unsafe", "unsafe archive path"); goto done; }
         if (archive_entry_hardlink(entry) && convert_hardlink(entry) < 0) goto done;
         archive_entry_set_perm(entry, (archive_entry_perm(entry) & 01777) | (type == AE_IFDIR ? 0700 : 0));
         if (archive_write_header(output, entry) != ARCHIVE_OK) {
-            error(archive_error_string(output)); goto done;
+            archive_problem(output, 1); goto done;
         }
         while ((status = archive_read_data_block(input, &block, &size, &offset)) == ARCHIVE_OK) {
             if (cancelled || archive_write_data_block(output, block, size, offset) != ARCHIVE_OK) {
-                error("cannot write extracted data"); goto done;
+                archive_problem(output, 1); goto done;
             }
         }
-        if (status != ARCHIVE_EOF || archive_write_finish_entry(output) != ARCHIVE_OK) {
-            error("corrupt archive or incomplete write"); goto done;
-        }
+        if (status != ARCHIVE_EOF) { archive_problem(input, 0); goto done; }
+        if (archive_write_finish_entry(output) != ARCHIVE_OK) { archive_problem(output, 1); goto done; }
     }
-    if (status != ARCHIVE_EOF) { error(archive_error_string(input)); goto done; }
+    if (status != ARCHIVE_EOF) { archive_problem(input, 0); goto done; }
     result = 0;
 done:
-    archive_read_free(input);
-    if (archive_write_free(output) != ARCHIVE_OK) result = -1;
+    if (input) archive_read_free(input);
+    if (output && archive_write_close(output) != ARCHIVE_OK) { if (!pdn_events_has_error()) archive_problem(output, 1); result = -1; }
+    if (output) archive_write_free(output);
     return result;
 }
 
@@ -331,16 +412,20 @@ static int write_config(int parent, const char *name, const char *text)
     int fd = openat(parent, name, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
     size_t size = strlen(text);
     int result;
-    if (fd < 0) return -1;
+    if (fd < 0) return system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno);
+    errno = 0;
     result = write(fd, text, size) == (ssize_t)size ? 0 : -1;
-    if (close(fd) < 0) result = -1;
+    if (result < 0) system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno);
+    if (close(fd) < 0) { if (!result) system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno); result = -1; }
     return result;
 }
 
 static int open_directory_at(int parent, const char *name)
 {
-    if (mkdirat(parent, name, 0755) < 0 && errno != EEXIST) return -1;
-    return openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (mkdirat(parent, name, 0755) < 0 && errno != EEXIST) return system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno);
+    int fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno);
+    return fd;
 }
 
 static int append_certificate(FILE *output, const char *path, size_t *total)
@@ -349,13 +434,18 @@ static int append_certificate(FILE *output, const char *path, size_t *total)
     FILE *input = fopen(path, "rb");
     size_t count;
     int result = 0;
-    if (!input) return -1;
-    while ((count = fread(buffer, 1, sizeof(buffer), input)) > 0) {
-        if ((*total += count) > 8 * 1024 * 1024 || fwrite(buffer, 1, count, output) != count) {
-            result = -1; break;
-        }
+    if (!input) return system_error("rootfs_configuration_failed", "cannot read certificate bundle", errno);
+    for (;;) {
+        errno = 0;
+        count = fread(buffer, 1, sizeof(buffer), input);
+        int saved = errno;
+        if (ferror(input)) { system_error("rootfs_configuration_failed", "cannot read certificate bundle", saved); result = -1; break; }
+        if (!count) break;
+        if ((*total += count) > 8 * 1024 * 1024) { problem("rootfs_configuration_failed", "certificate bundle exceeds limit"); result = -1; break; }
+        errno = 0;
+        if (fwrite(buffer, 1, count, output) != count) { system_error("rootfs_configuration_failed", "cannot write certificate bundle", errno); result = -1; break; }
     }
-    if (ferror(input) || fputc('\n', output) == EOF) result = -1;
+    if (fputc('\n', output) == EOF) { if (!result) system_error("rootfs_configuration_failed", "cannot write certificate bundle", errno); result = -1; }
     fclose(input);
     return result;
 }
@@ -377,14 +467,14 @@ static int seed_certificates(int etc)
         goto done;
     }
     fd = openat(certs, "ca-certificates.crt", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
-    if (fd < 0) goto done;
+    if (fd < 0) { system_error("rootfs_configuration_failed", "cannot create certificate bundle", errno); goto done; }
     output = fdopen(fd, "wb");
-    if (!output) { close(fd); goto done; }
+    if (!output) { int saved = errno; close(fd); system_error("rootfs_configuration_failed", "cannot open certificate bundle", saved); goto done; }
     if (bundle && *bundle) {
         if (append_certificate(output, bundle, &total) < 0) goto done;
     } else {
         directory = opendir("/system/etc/security/cacerts");
-        if (!directory) goto done;
+        if (!directory) { system_error("rootfs_configuration_failed", "cannot read system certificates", errno); goto done; }
         while ((entry = readdir(directory))) {
             char path[512];
             if (entry->d_name[0] == '.') continue;
@@ -395,7 +485,7 @@ static int seed_certificates(int etc)
     result = total ? 0 : -1;
  done:
     if (directory) closedir(directory);
-    if (output && fclose(output) != 0) result = -1;
+    if (output && fclose(output) != 0) { if (!result) system_error("rootfs_configuration_failed", "cannot write certificate bundle", errno); result = -1; }
     if (certs >= 0) close(certs);
     if (ssl >= 0) close(ssl);
     return result;
@@ -408,11 +498,12 @@ static int configure(const struct distro *distro, const struct mirror *mirror)
     int etc = open("etc", O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC), config = -1, extra = -1, result = -1, length;
     struct stat st;
     pdn_events_stage("configuring");
-    if (etc < 0) return error("missing etc directory");
+    if (etc < 0) return system_error("rootfs_configuration_failed", "missing etc directory", errno);
     if (!strcmp(distro->name, "alpine")) {
         length = snprintf(repositories, sizeof(repositories), "%s/v3.24/main\n%s/v3.24/community\n", base, base);
         config = openat(etc, "apk", O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-        if (length < 0 || (size_t)length >= sizeof(repositories) || config < 0) goto done;
+        if (config < 0) { system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno); goto done; }
+        if (length < 0 || (size_t)length >= sizeof(repositories)) { problem("rootfs_configuration_failed", "rootfs network configuration exceeds limit"); goto done; }
         result = write_config(config, "repositories", repositories);
     } else if (!strcmp(distro->name, "arch")) {
         config = open_directory_at(etc, "pacman.d");
@@ -457,17 +548,21 @@ static int configure(const struct distro *distro, const struct mirror *mirror)
         close(extra);
         extra = open_directory_at(config, "apt.conf.d");
         if (extra < 0) goto done;
-        if (!ubuntu && unlinkat(extra, "docker-clean", 0) < 0 && errno != ENOENT) goto done;
+        if (!ubuntu && unlinkat(extra, "docker-clean", 0) < 0 && errno != ENOENT) { system_error("rootfs_configuration_failed", "cannot write rootfs network configuration", errno); goto done; }
         result = write_config(extra, "99pdn", "APT::Sandbox::User \"root\";\nAcquire::https::CaInfo \"/etc/ssl/certs/ca-certificates.crt\";\n");
     }
-    if (result == 0 && fstatat(etc, "resolv.conf", &st, AT_SYMLINK_NOFOLLOW) == 0 && S_ISLNK(st.st_mode))
-        result = unlinkat(etc, "resolv.conf", 0);
+    if (result == 0) {
+        int status = fstatat(etc, "resolv.conf", &st, AT_SYMLINK_NOFOLLOW);
+        if (status < 0 && errno != ENOENT) result = system_error("rootfs_configuration_failed", "cannot inspect rootfs DNS configuration", errno);
+        else if (status == 0 && S_ISLNK(st.st_mode) && unlinkat(etc, "resolv.conf", 0) < 0)
+            result = system_error("rootfs_configuration_failed", "cannot replace rootfs DNS symlink", errno);
+    }
     if (result == 0) result = write_config(etc, "resolv.conf", "nameserver 223.5.5.5\nnameserver 1.1.1.1\n");
  done:
     if (extra >= 0) close(extra);
     if (config >= 0) close(config);
     close(etc);
-    if (result != 0) return error("cannot write rootfs network configuration");
+    if (result != 0) return pdn_events_has_error() ? error("cannot write rootfs network configuration") : problem("rootfs_configuration_failed", "cannot write rootfs network configuration");
     return 0;
 }
 
@@ -478,7 +573,7 @@ static int initialize_arch(void)
     char *root = realpath(".", NULL), *temp = realpath("../..", NULL);
     int status;
     pid_t child, waited;
-    if (!root || !temp) { free(root); free(temp); return error("cannot resolve staging rootfs"); }
+    if (!root || !temp) { free(root); free(temp); return problem("keyring_initialization_failed", "cannot resolve staging rootfs"); }
     pdn_events_stage("initializing");
     puts("Initializing Arch Linux ARM package keys...");
     fflush(stdout);
@@ -492,13 +587,13 @@ static int initialize_arch(void)
         _exit(pdn_login(8, args));
     }
     free(root); free(temp);
-    if (child < 0) return error("cannot start keyring initialization");
+    if (child < 0) return problem("keyring_initialization_failed", "cannot start keyring initialization");
     do {
         waited = waitpid(child, &status, 0);
         if (waited < 0 && errno == EINTR && cancelled) kill(child, SIGTERM);
     } while (waited < 0 && errno == EINTR);
     if (waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        return error("Arch keyring initialization failed");
+        return problem("keyring_initialization_failed", "Arch keyring initialization failed");
     return 0;
 }
 
@@ -506,7 +601,7 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
 {
     struct distro distro;
     pdn_events_stage("preparing");
-    if (find_distro(name, &distro) < 0) return error("unknown distro; run pdn list --available") != 0;
+    if (find_distro(name, &distro) < 0) return problem("distro_unknown", "unknown distro; run pdn list --available") != 0;
     const struct mirror *mirrors = distro.mirrors;
     size_t count = 0, i;
     while (count < 5 && mirrors[count].name) count++;
@@ -514,37 +609,54 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
     if (mirror_name) {
         for (i = 0; i < count; i++)
             if (!strcasecmp(mirror_name, mirrors[i].name)) { selected = (int)i; break; }
-        if (selected < 0) return error("unknown mirror; run pdn mirrors") != 0;
+        if (selected < 0) return problem("mirror_invalid", "unknown mirror; run pdn mirrors") != 0;
     }
+    errno = 0;
     char *base = pdn_rootfs_base(), *archive = NULL;
+    int base_errno = errno;
     char stage[64];
     snprintf(stage, sizeof(stage), ".pdn-%s-XXXXXX", distro.name);
     int cwd = -1, basefd = -1, lock = -1, staged = 0, result = 1;
     struct sigaction action = {0}, old_int, old_term;
     cancelled = 0;
-    if (!base || !*base) { free(base); return error("set PDN_ROOTFS_DIR or HOME") != 0; }
+    if (!base || !*base) {
+        int missing = !base && base_errno == ENOMEM;
+        free(base);
+        return problem(missing ? "out_of_memory" : "directory_missing", "set PDN_ROOTFS_DIR or HOME") != 0;
+    }
     if (local_archive && !(archive = realpath(local_archive, NULL))) {
-        free(base); return error("local archive not found") != 0;
+        int saved = errno; free(base); return system_error("file_io_failed", "local archive not found", saved) != 0;
     }
     cwd = open(".", O_DIRECTORY | O_CLOEXEC);
-    if (cwd < 0) { error(strerror(errno)); goto done; }
+    if (cwd < 0) { system_error("file_io_failed", strerror(errno), errno); goto done; }
     if (mkdirs(base) < 0) { rootfs_error("create", base, errno); goto done; }
     if (chdir(base) < 0) { rootfs_error("enter", base, errno); goto done; }
     basefd = open(".", O_DIRECTORY | O_CLOEXEC);
     if (basefd < 0) { rootfs_error("open", base, errno); goto done; }
     lock = open(".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (lock < 0) { rootfs_error("create install lock in", base, errno); goto done; }
-    if (flock(lock, LOCK_EX | LOCK_NB) < 0) {
-        error("cannot acquire install lock; another install may be running"); goto done;
+    if (lock < 0) {
+        int saved = errno;
+        rootfs_error("create install lock in", base, saved);
+        pdn_events_system_problem("lock_failed", "Cannot create install lock", "Check the rootfs directory and retry", saved);
+        goto done;
     }
-    if (exists_distro(distro.name)) { error("rootfs already exists; no files changed"); goto done; }
-    if (!mkdtemp(stage)) { error("cannot create installation directory"); goto done; }
+    if (flock(lock, LOCK_EX | LOCK_NB) < 0) {
+        int saved = errno;
+        if (saved == EWOULDBLOCK || saved == EAGAIN)
+            problem("operation_busy", "cannot acquire install lock; another install may be running");
+        else system_error("lock_failed", "cannot acquire install lock; another install may be running", saved);
+        goto done;
+    }
+    int existing = exists_distro(distro.name);
+    if (existing < 0) goto done;
+    if (existing) { problem("rootfs_exists", "rootfs already exists; no files changed"); goto done; }
+    if (!mkdtemp(stage)) { system_error("file_io_failed", "cannot create installation directory", errno); goto done; }
     staged = 1;
     action.sa_handler = cancel_install;
     sigemptyset(&action.sa_mask);
     sigaction(SIGINT, &action, &old_int);
     sigaction(SIGTERM, &action, &old_term);
-    if (chdir(stage) < 0) goto restore;
+    if (chdir(stage) < 0) { system_error("file_io_failed", "cannot enter installation directory", errno); goto restore; }
     printf("Installing %s %s (ARM64)...\n", distro.name, distro.version);
     fflush(stdout);
     if (archive) {
@@ -556,18 +668,26 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
     free(archive);
     archive = realpath("rootfs.tar.gz", NULL);
     puts("Verifying SHA256...");
-    if (!archive || verify(&distro, archive) != 0 || cancelled) goto restore;
-    if (mkdir("rootfs", 0700) < 0 || chdir("rootfs") < 0) goto restore;
+    if (!archive) { system_error("file_io_failed", "cannot resolve staged archive", errno); goto restore; }
+    if (verify(&distro, archive) != 0 || cancelled) goto restore;
+    if (mkdir("rootfs", 0700) < 0 || chdir("rootfs") < 0) { system_error("file_io_failed", "cannot create extracted rootfs", errno); goto restore; }
     puts("Extracting rootfs...");
     if (extract(&distro, archive) != 0 || configure(&distro, &mirrors[downloaded]) != 0 || cancelled) goto restore;
     if (!strcmp(distro.name, "arch") && initialize_arch() < 0) goto restore;
-    if (cancelled || fchdir(basefd) < 0) goto restore;
-    if (exists_distro(distro.name)) { error("rootfs appeared during installation; refusing to replace it"); goto restore; }
+    if (cancelled) goto restore;
+    if (fchdir(basefd) < 0) { system_error("publish_failed", "cannot enter rootfs directory", errno); goto restore; }
+    existing = exists_distro(distro.name);
+    if (existing < 0) goto restore;
+    if (existing) { problem("rootfs_exists", "rootfs appeared during installation; refusing to replace it"); goto restore; }
     pdn_events_stage("publishing");
     {
         char source[sizeof(stage) + 8];
         snprintf(source, sizeof(source), "%s/rootfs", stage);
-        if (rename(source, distro.name) < 0) { error("cannot finish installation"); goto restore; }
+        if (rename(source, distro.name) < 0) {
+            if (errno == EEXIST) problem("rootfs_exists", "cannot finish installation");
+            else system_error("publish_failed", "cannot finish installation", errno);
+            goto restore;
+        }
     }
     printf("%s installed. Run: pdn login %s\n", distro.name, distro.name);
     result = 0;

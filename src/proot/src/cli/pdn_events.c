@@ -104,7 +104,8 @@ static void copy(char *target, size_t capacity, const char *source)
 static void unexpected_exit(void)
 {
     if (!finished) {
-        pdn_events_problem("manager_failed", "Operation stopped before normal completion", "Read stderr for details and retry the operation");
+        if (!pdn_events_has_error())
+            pdn_events_problem("manager_failed", "Operation stopped before normal completion", "Read stderr for details and retry the operation");
         pdn_events_finish(1);
     }
 }
@@ -180,8 +181,44 @@ void pdn_events_problem(const char *code, const char *message, const char *advic
     send(&record);
 }
 
+int pdn_events_has_error(void) { return *error_code != 0; }
+
+void pdn_events_clear_error(void)
+{
+    *error_code = *error_message = *suggestion = 0;
+}
+
+void pdn_events_system_problem(const char *fallback, const char *message, const char *advice, int saved_errno)
+{
+    int previous_errno = errno;
+    const char *code = fallback;
+    if (saved_errno == EACCES || saved_errno == EPERM) {
+        code = "file_permission";
+        advice = "Check access permissions and select a permitted location";
+    } else if (saved_errno == EROFS) {
+        code = "file_read_only";
+        advice = "Select a writable filesystem for this operation";
+    } else if (saved_errno == ENOSPC || saved_errno == EDQUOT) {
+        code = "storage_full";
+        advice = "Free storage or quota in the selected location, then retry";
+    } else if (saved_errno == ENOENT) {
+        code = "file_missing";
+        advice = "Check that the selected file and its parent directory exist";
+    } else if (saved_errno == ENOMEM) {
+        code = "out_of_memory";
+        advice = "Free memory and retry";
+    }
+    char detail[513];
+    if (saved_errno)
+        snprintf(detail, sizeof(detail), "%s: %s (errno=%d)", message, strerror(saved_errno), saved_errno);
+    else snprintf(detail, sizeof(detail), "%s", message);
+    pdn_events_problem(code, detail, advice);
+    errno = previous_errno;
+}
+
 void pdn_events_error(const char *message)
 {
+    if (pdn_events_has_error()) return;
     const char *code = "manager_failed", *advice = "Read stderr for details and correct the operation settings";
     if (!strcmp(stage, "downloading")) { code = "download_failed"; advice = "Check network access or choose another listed mirror"; }
     else if (!strcmp(stage, "verifying")) { code = "verification_failed"; advice = "Retry with a listed mirror or the exact pinned archive"; }

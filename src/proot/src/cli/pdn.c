@@ -28,12 +28,38 @@ static int fail(const char *message, const char *value)
     return 2;
 }
 
+static int coded_fail(const char *code, const char *message, const char *value)
+{
+    fprintf(stderr, "pdn: %s: %s\n", message, value);
+    const char *advice = !strcmp(code, "operation_busy") ? "Wait for the operation to finish or exit the rootfs sessions, then retry" :
+        !strcmp(code, "lock_failed") ? "Check filesystem locking support and permissions; inspect stderr" :
+        !strcmp(code, "out_of_memory") ? "Free memory and retry" :
+        !strcmp(code, "name_ambiguous") ? "Use --rootfs with an explicit path or choose distinct rootfs names" :
+        !strcmp(code, "directory_missing") ? "Install the distro or select an existing rootfs parent directory" :
+        "Check the selected paths and retry";
+    pdn_events_problem(code, message, advice);
+    return 2;
+}
+
+static const char *directory_code(int code, const char *missing)
+{
+    if (code == ENOENT) return missing;
+    if (code == ENOTDIR) return "directory_not_directory";
+    if (code == EACCES || code == EPERM) return "directory_permission";
+    if (code == EROFS) return "directory_read_only";
+    return NULL;
+}
+
 static int root_error(const char *message, const char *value, int code)
 {
     fprintf(stderr, "pdn: %s: %s\n", message, value);
-    pdn_events_problem(code == ENOENT ? "rootfs_missing" : code == ENOTDIR ? "not_directory" :
-        (code == EACCES || code == EPERM) ? "directory_permission" : code == EROFS ? "directory_read_only" : "directory_unavailable",
-        message, "Check PDN_ROOTFS_DIR or --rootfs; install the distro and select an accessible Linux rootfs directory");
+    const char *classification = directory_code(code, "rootfs_missing");
+    char detail[1024];
+    snprintf(detail, sizeof(detail), "%s: %s", value, message);
+    if (classification)
+        pdn_events_problem(classification, detail, "Check PDN_ROOTFS_DIR or --rootfs; install the distro and select an accessible Linux rootfs directory");
+    else pdn_events_system_problem("directory_unavailable", detail,
+        "Check PDN_ROOTFS_DIR or --rootfs; install the distro and select an accessible Linux rootfs directory", code);
     return 2;
 }
 
@@ -74,9 +100,13 @@ static int temp_error(const char *path, const char *source, int code)
     if (code == ENOENT)
         fputs("pdn: create this directory with mkdir -p before retrying.\n", stderr);
     fputs("pdn: set PROOT_TMP_DIR to an existing writable directory with search permission.\n", stderr);
-    pdn_events_problem(code == ENOENT ? "directory_missing" : code == ENOTDIR ? "not_directory" : (code == EACCES || code == EROFS) ? "directory_not_writable" : "directory_unavailable",
-        strerror(code), code == ENOENT ? "Create the selected temporary directory with mkdir -p, then retry" :
-        "Set PROOT_TMP_DIR to an existing writable directory with search permission");
+    const char *classification = directory_code(code, "directory_missing");
+    char detail[1024];
+    const char *advice = code == ENOENT ? "Create the selected temporary directory with mkdir -p, then retry" :
+        "Set PROOT_TMP_DIR to an existing writable directory with search permission";
+    snprintf(detail, sizeof(detail), "%s: %s", path, strerror(code));
+    if (classification) pdn_events_problem(classification, detail, advice);
+    else pdn_events_system_problem("directory_unavailable", detail, advice, code);
     return 2;
 }
 
@@ -151,21 +181,39 @@ static int parse_bind(const char *spec, char **binding)
     if (spec[strlen(spec) - 1] == '!' || (colon && colon[-1] == '!'))
         return fail("bind ! suffix is unsupported", spec);
     host = colon ? strndup(spec, (size_t)(colon - spec)) : strdup(spec);
-    if (!host) return fail("out of memory", "bind");
+    if (!host) return coded_fail("out_of_memory", "out of memory", "bind");
     resolved = realpath(host, NULL);
+    int saved = errno;
     free(host);
-    if (!resolved) return fail("bind host unavailable", spec);
+    if (!resolved) {
+        fprintf(stderr, "pdn: bind host unavailable: %s\n", spec);
+        char detail[1024];
+        snprintf(detail, sizeof(detail), "%s: %s", spec, strerror(saved));
+        if (saved == ENOENT) pdn_events_problem("bind_source_missing", detail, "Select an existing accessible bind source");
+        else pdn_events_system_problem("bind_source_unavailable", detail, "Select an existing accessible bind source", saved);
+        return 2;
+    }
     if (strchr(resolved, ':') || resolved[strlen(resolved) - 1] == '!') {
         free(resolved);
         return fail("bind host contains unsupported syntax", spec);
     }
-    if (stat(resolved, &st) < 0 || (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))) {
+    if (stat(resolved, &st) < 0) {
+        int saved = errno;
         free(resolved);
-        return fail("bind host must be a directory or regular file", spec);
+        fprintf(stderr, "pdn: bind host must be a directory or regular file: %s\n", spec);
+        char detail[1024];
+        snprintf(detail, sizeof(detail), "%s: %s", spec, strerror(saved));
+        if (saved == ENOENT) pdn_events_problem("bind_source_missing", detail, "Select an existing accessible bind source");
+        else pdn_events_system_problem("bind_source_unavailable", detail, "Select an existing accessible bind source", saved);
+        return 2;
+    }
+    if (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode)) {
+        free(resolved);
+        return coded_fail("bind_source_unavailable", "bind host must be a directory or regular file", spec);
     }
     result = asprintf(binding, "%s:%s", resolved, colon ? colon + 1 : resolved);
     free(resolved);
-    if (result < 0) { *binding = NULL; return fail("out of memory", "bind"); }
+    if (result < 0) { *binding = NULL; return coded_fail("out_of_memory", "out of memory", "bind"); }
     return 0;
 }
 
@@ -186,14 +234,31 @@ static int resolve_root(int argc, char *const argv[], char **root, int *command)
         requested = argv[2];
         if (!valid_name(requested)) return fail("invalid name", requested);
         base = pdn_rootfs_base();
-        if (!base) return fail("set PDN_ROOTFS_DIR or HOME", requested);
+        if (!base) return coded_fail(nonempty("PDN_ROOTFS_DIR") || nonempty("HOME") ? "out_of_memory" : "invalid_argument", "set PDN_ROOTFS_DIR or HOME", requested);
         dir = opendir(base);
-        if (!dir) { result = root_error(strerror(errno), base, errno); free(base); return result; }
-        while ((entry = readdir(dir))) {
+        if (!dir) {
+            int saved = errno;
+            if (saved == ENOENT) result = coded_fail("directory_missing", strerror(saved), base);
+            else result = root_error(strerror(saved), base, saved);
+            free(base);
+            return result;
+        }
+        for (;;) {
+            errno = 0;
+            entry = readdir(dir);
+            if (!entry) {
+                if (errno) {
+                    int saved = errno;
+                    result = root_error(strerror(saved), base, saved);
+                    closedir(dir); free(candidate); free(base);
+                    return result;
+                }
+                break;
+            }
             if (!equal(entry->d_name, requested)) continue;
             if (candidate) {
                 closedir(dir); free(candidate); free(base);
-                return fail("ambiguous name; use --rootfs", requested);
+                return coded_fail("name_ambiguous", "ambiguous name; use --rootfs", requested);
             }
             candidate = join(base, entry->d_name);
         }
@@ -202,11 +267,15 @@ static int resolve_root(int argc, char *const argv[], char **root, int *command)
         if (!candidate) return root_error("rootfs not found", requested, ENOENT);
         *command = 3;
     }
-    if (!candidate) return fail("out of memory", requested);
+    if (!candidate) return coded_fail("out_of_memory", "out of memory", requested);
     *root = realpath(candidate, NULL);
+    int saved = errno;
     free(candidate);
-    if (!*root) return root_error(strerror(errno), requested, errno);
-    if (!directory(*root) || !strcmp(*root, "/")) result = fail("rootfs must be a Linux directory other than /", requested);
+    if (!*root) return root_error(strerror(saved), requested, saved);
+    struct stat st;
+    if (stat(*root, &st) < 0) result = root_error("rootfs must be a Linux directory other than /", requested, errno);
+    else if (!S_ISDIR(st.st_mode)) result = coded_fail("directory_not_directory", "rootfs must be a Linux directory other than /", requested);
+    else if (!strcmp(*root, "/")) result = fail("rootfs must be a Linux directory other than /", requested);
     return result;
 }
 
@@ -258,8 +327,20 @@ int pdn_login(int argc, char *const argv[])
         goto done;
     }
     rootfd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (rootfd < 0 || flock(rootfd, (config && action != 1 ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
-        result = fail("rootfs unavailable or locked by another operation", root);
+    if (rootfd < 0) {
+        result = root_error("rootfs unavailable or locked by another operation", root, errno);
+        goto done;
+    }
+    if (flock(rootfd, (config && action != 1 ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
+        int saved = errno;
+        if (saved == EWOULDBLOCK || saved == EAGAIN)
+            result = coded_fail("operation_busy", "rootfs unavailable or locked by another operation", root);
+        else {
+            fprintf(stderr, "pdn: rootfs unavailable or locked by another operation: %s\n", root);
+            pdn_events_system_problem("lock_failed", "Cannot lock the selected rootfs",
+                "Check filesystem locking support and permissions; inspect stderr", saved);
+            result = 2;
+        }
         goto done;
     }
     if (config && action == 2) { result = pdn_options_clear(rootfd); goto done; }
@@ -307,7 +388,7 @@ int pdn_login(int argc, char *const argv[])
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("TMPDIR", "/tmp", 1);
     args = calloc((size_t)argc + (size_t)options.bind_count * 2 + (size_t)options.env_count + 48, sizeof(*args));
-    if (!args) { result = fail("out of memory", argv[1]); goto done; }
+    if (!args) { result = coded_fail("out_of_memory", "out of memory", argv[1]); goto done; }
     args[n++] = argv[0];
     args[n++] = "-0";
     if (options.user && strcmp(identity.ids, "0:0")) { args[n++] = "-i"; args[n++] = identity.ids; }
@@ -360,13 +441,13 @@ static int list(void)
     char *base = pdn_rootfs_base();
     struct dirent **entries;
     int count, i;
-    if (!base) return fail("set PDN_ROOTFS_DIR or HOME", "list");
+    if (!base) return coded_fail(nonempty("PDN_ROOTFS_DIR") || nonempty("HOME") ? "out_of_memory" : "invalid_argument", "set PDN_ROOTFS_DIR or HOME", "list");
     count = scandir(base, &entries, NULL, alphasort);
     if (count < 0) {
         int saved = errno;
         free(base);
         if (saved == ENOENT) { puts("No local rootfs found."); return 0; }
-        return fail(strerror(saved), "rootfs directory");
+        return root_error(strerror(saved), "rootfs directory", saved);
     }
     for (i = 0; i < count; i++) {
         char *path = join(base, entries[i]->d_name);

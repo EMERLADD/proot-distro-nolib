@@ -61,6 +61,50 @@ class InstallTests(unittest.TestCase):
 #define ARCH_SHA256 ALPINE_SHA256
 #define ARCH_MIRRORS ALPINE_MIRRORS
 #include "{PROJECT / 'src/proot/src/cli/pdn_events.h'}"
+#include <curl/curl.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdarg.h>
+#include <string.h>
+#include <mbedtls/md.h>
+#include <archive.h>
+#include <sys/file.h>
+static int test_flock(int fd, int operation) {{
+    const char *fault = getenv("TEST_FLOCK_ERRNO");
+    if (fault) {{ errno = atoi(fault); return -1; }}
+    return flock(fd, operation);
+}}
+static CURLcode test_curl_perform(CURL *curl) {{
+    const char *fault = getenv("TEST_CURL_CODE");
+    return fault ? (CURLcode)atoi(fault) : curl_easy_perform(curl);
+}}
+static size_t test_fwrite(const void *data, size_t size, size_t count, FILE *file) {{
+    const char *fault = getenv("TEST_WRITE_ERRNO");
+    if (fault) {{ errno = atoi(fault); return 0; }}
+    return fwrite(data, size, count, file);
+}}
+static int test_fclose(FILE *file) {{
+    int result = fclose(file);
+    const char *fault = getenv("TEST_CLOSE_ERRNO");
+    if (!result && fault) {{ errno = atoi(fault); return EOF; }}
+    return result;
+}}
+static int test_openat(int parent, const char *name, int flags, ...) {{
+    mode_t mode = 0;
+    if (flags & O_CREAT) {{ va_list args; va_start(args, flags); mode = va_arg(args, int); va_end(args); }}
+    if (getenv("TEST_CONFIG_FAIL") && !strcmp(name, "repositories")) {{ errno = EIO; return -1; }}
+    return openat(parent, name, flags, mode);
+}}
+#define curl_easy_perform test_curl_perform
+#define fwrite test_fwrite
+#define fclose test_fclose
+#define openat test_openat
+#define flock test_flock
+#define mbedtls_md_file(info, path, digest) (getenv("TEST_HASH_FAIL") ? -1 : mbedtls_md_file(info, path, digest))
+#define rename(source, destination) (getenv("TEST_PUBLISH_FAIL") ? (errno = EIO, -1) : rename(source, destination))
+#define archive_write_data_block(out, data, size, offset) (getenv("TEST_EXTRACT_FAIL") ? (archive_set_error(out, EIO, "injected extraction write failure"), ARCHIVE_FATAL) : archive_write_data_block(out, data, size, offset))
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
 int pdn_login(int argc, char *const argv[]) {{
     if (getenv("TEST_INIT_SLOW")) sleep(5);
@@ -75,6 +119,7 @@ char *pdn_rootfs_base(void) {{
     return base ? strdup(base) : NULL;
 }}
 static int harness_main(int argc, char **argv) {{
+    if (argc == 3 && !strcmp(argv[1], "root-error")) return rootfs_error("create", "/fixture/rootfs", atoi(argv[2])) != 0;
     const char *name = getenv("TEST_DISTRO");
     struct distro distro;
     if (!name) name = "alpine";
@@ -85,7 +130,7 @@ static int harness_main(int argc, char **argv) {{
     if (argc == 3 && !strcmp(argv[1], "extract-small")) {{ distro.extracted_limit = 1; return extract(&distro, argv[2]) != 0; }}
     if (argc == 3 && !strcmp(argv[1], "extract")) return extract(&distro, argv[2]) != 0;
     if (argc == 3 && !strcmp(argv[1], "verify")) return verify(&distro, argv[2]) != 0;
-    if (argc == 4 && !strcmp(argv[1], "download")) return download(&distro, argv[2], argv[3]) != 0;
+    if (argc == 4 && !strcmp(argv[1], "download")) {{ if (getenv("TEST_TIMEOUT")) distro.timeout = 1; return download(&distro, argv[2], argv[3]) != 0; }}
     if (argc == 2 && !strcmp(argv[1], "configure")) return configure(&distro, &distro.mirrors[0]) != 0;
     if (argc == 3 && !strcmp(argv[1], "mirror")) return pdn_install(name, NULL, argv[2]);
     return pdn_install(name, argc == 2 ? argv[1] : NULL, NULL);
@@ -194,6 +239,151 @@ int main(int argc, char **argv) {{
 
     def event_records(self, path, result, outcome):
         return assert_events(self, path, "install", "install-fixture_1", result.returncode, outcome)
+
+    def assert_error_code(self, path, result, code):
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        events = self.event_records(path, result, "manager_error")
+        self.assertEqual(events[-1]["code"], code, events)
+        return events
+
+    def test_download_actual_https_error_categories(self):
+        import socket
+        with socket.socket() as endpoint:
+            endpoint.bind(("127.0.0.1", 0))
+            closed_port = endpoint.getsockname()[1]
+        cases = [(self.url + "/missing", "http_error"),
+                 (f"https://127.0.0.1:{closed_port}/", "connection_failed"),
+                 (self.url.replace("localhost", "127.0.0.1") + "/archive", "tls_failed"),
+                 (self.url + "/large", "archive_size_mismatch")]
+        for url, code in cases:
+            with self.subTest(code=code):
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("download", url, self.base / "download"), code)
+        self.env["TEST_TIMEOUT"] = "1"
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness("download", self.url + "/slow", self.base / "download"), "download_timeout")
+
+    def test_download_injected_curl_categories(self):
+        for injected, code in ((6, "resolution_failed"), (56, "download_failed")):
+            with self.subTest(injected_curl_code=injected):
+                self.env["TEST_CURL_CODE"] = str(injected)
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("download", self.url + "/archive", self.base / "download"), code)
+                self.assertEqual(self.requests, [])
+
+    def test_injected_io_hash_extract_publish_categories(self):
+        for injected, code in ((13, "file_permission"), (30, "file_read_only"), (28, "storage_full"), (5, "file_io_failed"), (0, "file_io_failed")):
+            with self.subTest(injected_write_errno=injected):
+                self.env["TEST_WRITE_ERRNO"] = str(injected)
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("download", self.url + "/archive", self.base / "download"), code)
+        self.env.pop("TEST_WRITE_ERRNO")
+        for injected, code in ((28, "storage_full"), (5, "file_io_failed"), (0, "file_io_failed")):
+            with self.subTest(injected_close_errno=injected):
+                self.env["TEST_CLOSE_ERRNO"] = str(injected)
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("download", self.url + "/archive", self.base / "download"), code)
+        self.env.pop("TEST_CLOSE_ERRNO")
+        for fault, code in (("TEST_HASH_FAIL", "archive_hash_failed"),
+                            ("TEST_EXTRACT_FAIL", "extraction_failed"),
+                            ("TEST_PUBLISH_FAIL", "publish_failed")):
+            with self.subTest(injected_fixture=fault):
+                self.env[fault] = "1"
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness(self.archive), code)
+                self.assert_clean()
+                self.env.pop(fault)
+
+    def test_recovered_mirror_then_configuration_failure(self):
+        self.env.update(TEST_URL=self.url + "/missing", TEST_URL_2=self.url + "/archive", TEST_CONFIG_FAIL="1")
+        path = self.event_channel()
+        events = self.assert_error_code(path, self.run_harness(), "rootfs_configuration_failed")
+        self.assertTrue(any(event.get("code") == "http_error" for event in events))
+        self.assertIn("/archive", self.requests)
+        self.assert_clean()
+
+    def test_local_archive_verification_categories(self):
+        short = self.base / "short.tar.gz"
+        short.write_bytes(self.archive.read_bytes()[:-1])
+        corrupt = self.base / "corrupt.tar.gz"
+        data = self.archive.read_bytes()
+        corrupt.write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+        for archive, code in ((self.base / "missing", "file_missing"), (short, "archive_size_mismatch"),
+                              (corrupt, "archive_checksum_mismatch")):
+            with self.subTest(code=code):
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness(archive), code)
+                self.assert_clean()
+
+    def test_install_name_mirror_collision_and_lock_categories(self):
+        self.env["TEST_DISTRO"] = "unknown"
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness(), "distro_unknown")
+        self.env.pop("TEST_DISTRO")
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness("mirror", "unknown"), "mirror_invalid")
+        self.roots.mkdir(parents=True)
+        with (self.roots / ".pdn-install.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            path = self.event_channel()
+            self.assert_error_code(path, self.run_harness(self.archive), "operation_busy")
+        (self.roots / "ALPINE").mkdir()
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness(self.archive), "rootfs_exists")
+        (self.roots / "ALPINE").rmdir()
+        (self.roots / ".pdn-install.lock").unlink()
+        (self.roots / ".pdn-install.lock").symlink_to(self.base / "missing")
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness(self.archive), "lock_failed")
+
+    def test_injected_non_contention_install_lock_errno(self):
+        import errno
+        for value in (errno.ENOLCK, errno.EIO, errno.EINTR):
+            with self.subTest(injected_errno=value):
+                self.env["TEST_FLOCK_ERRNO"] = str(value)
+                path = self.event_channel()
+                events = self.assert_error_code(path, self.run_harness(self.archive), "lock_failed")
+                self.assertIn(f"errno={value}", events[-1]["message"])
+                self.assert_clean()
+
+    def test_injected_rootfs_system_errno_categories(self):
+        import errno
+        for value, code in ((errno.ENOSPC, "storage_full"), (errno.EDQUOT, "storage_full"),
+                            (errno.ENOMEM, "out_of_memory"), (errno.EROFS, "directory_read_only")):
+            with self.subTest(injected_errno=value):
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("root-error", str(value)), code)
+
+    def test_extract_archive_error_categories(self):
+        cases = [("unsafe", [("../outside", "file", b"x")], "archive_unsafe"),
+                 ("unsupported", [("fifo", "fifo", "")], "archive_unsupported"),
+                 ("limit", [("file", "file", b"xx")], "archive_limit_exceeded")]
+        for name, entries, code in cases:
+            with self.subTest(code=code):
+                archive = self.base / (name + ".tar.gz")
+                make_archive(archive, entries)
+                target = self.base / name
+                target.mkdir()
+                path = self.event_channel()
+                self.assert_error_code(path, self.run_harness("extract-small" if name == "limit" else "extract", archive, cwd=target), code)
+        corrupt = self.base / "invalid.tar.gz"
+        corrupt.write_bytes(b"not an archive")
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness("extract", corrupt), "archive_corrupt")
+
+    def test_actual_full_device_download(self):
+        if not Path("/dev/full").exists():
+            self.skipTest("/dev/full unavailable; no storage-full syscall exercised")
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness("download", self.url + "/archive", "/dev/full"), "storage_full")
+
+    def test_configuration_and_keyring_categories(self):
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness("configure"), "file_missing")
+        self.env.update(TEST_DISTRO="arch", TEST_INIT_FAIL="1")
+        path = self.event_channel()
+        self.assert_error_code(path, self.run_harness(self.archive), "keyring_initialization_failed")
+        self.assertFalse((self.roots / "arch").exists())
 
     def test_local_install_events_phases(self):
         path = self.event_channel()

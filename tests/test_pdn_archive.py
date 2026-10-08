@@ -8,6 +8,7 @@ import tarfile
 import unittest
 
 import test_pdn as fixture
+from test_pdn_events import assert_events
 
 
 class ArchiveTests(unittest.TestCase):
@@ -29,6 +30,76 @@ class ArchiveTests(unittest.TestCase):
         item.size = len(data)
         item.mode = 0o755 if kind == tarfile.DIRTYPE else 0o644
         return item, data
+
+    def invoke_error(self, code, command, name, archive):
+        channel = self.base / "archive-events"
+        channel.write_bytes(b"")
+        channel.chmod(0o600)
+        self.env.update(PDN_EVENT_FILE=str(channel), PDN_OPERATION_ID="archive-errors_1")
+        result = self.invoke(command, name, str(archive))
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        events = assert_events(self, channel, command, "archive-errors_1", result.returncode, "manager_error")
+        self.assertEqual(events[-1]["code"], code, events)
+        return result
+
+    def test_actual_archive_error_categories(self):
+        archive = self.base / "existing.tar.gz"
+        archive.write_text("keep")
+        self.invoke_error("file_exists", "backup", "ubuntu", archive)
+        self.assertEqual(archive.read_text(), "keep")
+        self.invoke_error("rootfs_exists", "restore", "UBUNTU", archive)
+        self.invoke_error("rootfs_missing", "backup", "missing", archive)
+        duplicate = self.root.parent / "ubuntu"
+        duplicate.mkdir()
+        self.invoke_error("name_ambiguous", "backup", "Ubuntu", archive)
+        duplicate.rmdir()
+        self.invoke_error("file_missing", "restore", "saved", self.base / "missing")
+        os.mkfifo(self.base / "fifo")
+        self.invoke_error("archive_invalid", "restore", "saved", self.base / "fifo")
+        self.invoke_error("archive_corrupt", "restore", "saved", archive)
+        for name, entries, code in (("unsafe", [self.entry("../outside", b"bad")], "archive_unsafe"),
+                                    ("symlink-escape", [self.entry("link", kind=tarfile.SYMTYPE, target=str(self.base)), self.entry("link/outside", b"bad")], "archive_unsafe"),
+                                    ("unsupported", [self.entry("fifo", kind=tarfile.FIFOTYPE)], "archive_unsupported"),
+                                    ("invalid", [self.entry("not-linux", b"data")], "archive_invalid")):
+            with self.subTest(code=code):
+                source = self.archive(name + ".tar.gz", entries)
+                self.invoke_error(code, "restore", "saved", source)
+                self.assertFalse((self.root.parent / "saved").exists())
+                self.assertEqual(list(self.root.parent.glob(".pdn-restore-*")), [])
+        huge = self.entry("huge")[0]
+        huge.size = 9 * 1024**3
+        archive.write_bytes(huge.tobuf() + bytes(1024))
+        self.invoke_error("archive_limit_exceeded", "restore", "saved", archive)
+
+    def test_actual_lock_contention_categories(self):
+        output = self.base / "backup.tar.gz"
+        with (self.root.parent / ".pdn-install.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.invoke_error("operation_busy", "backup", "ubuntu", output)
+            self.invoke_error("operation_busy", "restore", "saved", output)
+        fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            self.invoke_error("operation_busy", "backup", "ubuntu", output)
+        finally:
+            os.close(fd)
+        self.assertFalse(output.exists())
+        lock = self.root.parent / ".pdn-install.lock"
+        lock.unlink()
+        lock.symlink_to(self.base / "missing")
+        self.invoke_error("lock_failed", "backup", "ubuntu", output)
+
+    def test_actual_backup_read_permission_category(self):
+        denied = self.root / "root/denied"
+        denied.write_text("private")
+        denied.chmod(0)
+        try:
+            if os.access(denied, os.R_OK):
+                self.skipTest("source remains readable; file-permission syscall not exercised")
+            self.invoke_error("file_permission", "backup", "ubuntu", self.base / "backup.tar.gz")
+            self.assertEqual(list(self.base.glob(".pdn-backup-*")), [])
+        finally:
+            denied.chmod(0o600)
 
     def test_roundtrip_and_restored_login(self):
         payload = bytes(range(256)) * 1000
@@ -195,6 +266,8 @@ class ArchiveTests(unittest.TestCase):
         denied.chmod(0)
         output = self.base / 'b.tar.gz'
         try:
+            if os.access(denied, os.R_OK | os.X_OK):
+                self.skipTest("directory remains readable; permission failure unavailable")
             self.assertNotEqual(self.invoke('backup', 'ubuntu', str(output)).returncode, 0)
             self.assertFalse(output.exists())
             self.assertEqual(list(self.base.glob('.pdn-backup-*')), [])

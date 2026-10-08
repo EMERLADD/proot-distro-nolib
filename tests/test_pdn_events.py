@@ -323,6 +323,31 @@ int main(int argc, char **argv) {
         pdn_events_stage(mode + 6);
         pdn_events_error("fixture diagnostic");
         status = 2;
+    } else if (!strncmp(mode, "system:", 7)) {
+        errno = EINTR;
+        pdn_events_system_problem("file_io_failed", "fixture I/O failure", "fixture advice", atoi(mode + 7));
+        if (errno != EINTR || !pdn_events_has_error()) return 3;
+        status = 2;
+    } else if (!strcmp(mode, "preserve-specific") || !strcmp(mode, "preserve-atexit")) {
+        pdn_events_problem("archive_unsafe", "unsafe entry", "use a safe archive");
+        pdn_events_error("generic wrapper");
+        if (!strcmp(mode, "preserve-atexit")) return 1;
+        status = 2;
+    } else if (!strcmp(mode, "replace-attempt")) {
+        pdn_events_problem("connection_failed", "first mirror", "retry");
+        pdn_events_problem("http_error", "second mirror", "check source");
+        pdn_events_error("all mirrors failed");
+        status = 2;
+    } else if (!strcmp(mode, "recover-after-error")) {
+        pdn_events_problem("connection_failed", "first mirror", "retry");
+        pdn_events_clear_error();
+        if (pdn_events_has_error()) return 3;
+    } else if (!strcmp(mode, "failure-after-recovery")) {
+        pdn_events_problem("connection_failed", "first mirror", "retry");
+        pdn_events_clear_error();
+        pdn_events_stage("configuring");
+        pdn_events_error("configuration failed after recovery");
+        status = 2;
     } else if (!strcmp(mode, "errno")) {
         errno = ENOTDIR;
         pdn_events_stage("preparing");
@@ -421,6 +446,46 @@ int main(int argc, char **argv) {
         events = self.records("manager-default", "manager_error")
         self.assertEqual(events[-1]["code"], "manager_failed")
         self.assertEqual(events[-2]["type"], "error")
+
+    def test_system_errno_mapping_and_errno_preservation(self):
+        import errno
+        codes = [(errno.EACCES, "file_permission"), (errno.EPERM, "file_permission"),
+                 (errno.EROFS, "file_read_only"), (errno.ENOSPC, "storage_full"),
+                 (errno.EDQUOT, "storage_full"), (errno.ENOENT, "file_missing"),
+                 (errno.ENOMEM, "out_of_memory"), (errno.EIO, "file_io_failed"),
+                 (0, "file_io_failed")]
+        for value, code in codes:
+            with self.subTest(value=value):
+                self.path.unlink(missing_ok=True)
+                events = self.records(f"system:{value}", "manager_error")
+                self.assertEqual(events[-1]["code"], code)
+                self.assertTrue(events[-1]["suggestion"])
+                if value:
+                    self.assertIn(f"errno={value}", events[-1]["message"])
+
+    def test_generic_wrapper_and_atexit_preserve_specific_error(self):
+        for mode in ("preserve-specific", "preserve-atexit"):
+            with self.subTest(mode=mode):
+                self.path.unlink(missing_ok=True)
+                events = self.records(mode, "manager_error")
+                self.assertEqual(events[-1]["code"], "archive_unsafe")
+                self.assertEqual(events[-1]["message"], "unsafe entry")
+                self.assertEqual(sum(event["type"] == "error" for event in events), 1)
+
+    def test_explicit_attempt_failure_replaces_previous_attempt(self):
+        events = self.records("replace-attempt", "manager_error")
+        self.assertEqual(events[-1]["code"], "http_error")
+        self.assertEqual(sum(event["type"] == "error" for event in events), 2)
+
+    def test_recovered_operation_has_no_final_error(self):
+        events = self.records("recover-after-error")
+        for key in ("code", "message", "suggestion"):
+            self.assertNotIn(key, events[-1])
+
+    def test_later_failure_does_not_reuse_recovered_diagnostic(self):
+        events = self.records("failure-after-recovery", "manager_error")
+        self.assertEqual(events[-1]["code"], "configuration_failed")
+        self.assertEqual(events[-1]["message"], "configuration failed after recovery")
 
     def test_invalid_ids_rejected_before_file_creation(self):
         for value in ("", "x" * 65, "bad space", "bad/segment", "bad\nline", "猫"):

@@ -1,4 +1,5 @@
 import fcntl
+import json
 import os
 from pathlib import Path
 import shutil
@@ -30,10 +31,94 @@ class PdnTests(unittest.TestCase):
         return subprocess.run([str(binary or BINARY), *args], env=self.env,
                               input=input, text=True, capture_output=True, timeout=20)
 
+    def invoke_events(self, *args):
+        event_file = self.base / "events.jsonl"
+        event_file.unlink(missing_ok=True)
+        self.env["PDN_EVENT_FILE"] = str(event_file)
+        try:
+            result = self.invoke(*args)
+        finally:
+            self.env.pop("PDN_EVENT_FILE", None)
+        events = [json.loads(line) for line in event_file.read_text().splitlines()]
+        return result, events
+
+    def error_code(self, code, *args):
+        result, events = self.invoke_events(*args)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        errors = [event for event in events if event["type"] == "error"]
+        self.assertEqual(len(errors), 1, events)
+        self.assertEqual(errors[0]["code"], code, events)
+        self.assertEqual(events[-1]["code"], code, events)
+        self.assertEqual(events[-1]["outcome"], "manager_error")
+        self.assertEqual(events[-1]["exit_code"], 2)
+        return result
+
     def good(self, result, expected=None):
         self.assertEqual(result.returncode, 0, result.stderr)
         if expected is not None:
             self.assertEqual(result.stdout, expected)
+
+    def test_frontend_error_classification(self):
+        missing = self.base / "missing"
+        regular = self.base / "regular"
+        regular.write_text("file")
+        fifo = self.base / "fifo"
+        os.mkfifo(fifo)
+        for command in ("exec", "config"):
+            trailing = ("--", "/bin/sh") if command == "exec" else ("--show",)
+            with self.subTest(command=command):
+                self.error_code("rootfs_missing", command, "--rootfs", str(missing), *trailing)
+                self.error_code("directory_not_directory", command, "--rootfs", str(regular), *trailing)
+        self.error_code("bind_source_missing", "exec", "ubuntu", "-b", str(missing), "--", "/bin/sh")
+        self.error_code("bind_source_unavailable", "exec", "ubuntu", "-b", str(fifo), "--", "/bin/sh")
+        self.error_code("invalid_argument", "exec", "ubuntu", "-b", ":/guest", "--", "/bin/sh")
+        (self.root.parent / "UBUNTU").mkdir()
+        self.error_code("name_ambiguous", "config", "ubuntu", "--show")
+        self.error_code("name_ambiguous", "uninstall", "ubuntu", "--yes")
+        self.error_code("rootfs_missing", "uninstall", "absent", "--yes")
+        self.env["PDN_ROOTFS_DIR"] = str(regular)
+        self.error_code("directory_not_directory", "list")
+        self.error_code("directory_not_directory", "uninstall", "ubuntu", "--yes")
+        self.env["PDN_ROOTFS_DIR"] = str(missing)
+        self.error_code("directory_missing", "config", "ubuntu", "--show")
+        self.error_code("directory_missing", "uninstall", "ubuntu", "--yes")
+
+    def test_temporary_directory_error_classification(self):
+        missing = self.base / "missing"
+        regular = self.base / "regular"
+        regular.write_text("file")
+        for path, code in ((missing, "directory_missing"), (regular, "directory_not_directory")):
+            with self.subTest(path=path):
+                self.env["PROOT_TMP_DIR"] = str(path)
+                self.error_code(code, "exec", "ubuntu", "--", "/bin/sh")
+
+    def test_busy_operations_report_lock_contention(self):
+        rootfd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(rootfd, fcntl.LOCK_EX)
+            self.error_code("operation_busy", "config", "ubuntu", "--show")
+            self.error_code("operation_busy", "exec", "ubuntu", "--", "/bin/sh")
+            self.error_code("operation_busy", "uninstall", "ubuntu", "--yes")
+        finally:
+            os.close(rootfd)
+        lockfd = os.open(self.root.parent / ".pdn-install.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lockfd, fcntl.LOCK_EX)
+            self.error_code("operation_busy", "uninstall", "ubuntu", "--yes")
+        finally:
+            os.close(lockfd)
+
+    @unittest.skipIf(os.geteuid() == 0, "requires unprivileged directory access")
+    def test_directory_permission_classification(self):
+        self.root.chmod(0)
+        try:
+            self.error_code("directory_permission", "config", "ubuntu", "--show")
+        finally:
+            self.root.chmod(0o755)
+        temporary = self.base / "unwritable"
+        temporary.mkdir(mode=0o500)
+        self.env["PROOT_TMP_DIR"] = str(temporary)
+        self.error_code("directory_permission", "exec", "ubuntu", "--", "/bin/sh")
 
     def test_named_login_and_case(self):
         for name in ("ubuntu", "UBUNTU", "Ubuntu"):
@@ -294,7 +379,7 @@ class PdnTests(unittest.TestCase):
         for args in [("VeRsIoN",), ("--version",), ("proot", "--version")]:
             result = self.invoke(*args, binary=renamed)
             self.good(result)
-            self.assertIn("proot-distro-nolib 0.6.2", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.3", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics", result.stdout)
         self.good(self.invoke("login", "Ubuntu", "--", "/bin/sh", "-c", "echo relocated", binary=renamed), "relocated\n")
 
