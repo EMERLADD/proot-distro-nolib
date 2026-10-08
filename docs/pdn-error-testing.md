@@ -93,3 +93,27 @@ PDN 0.6.3 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示�
 行覆盖率：前端 94.13%、配置 100%、卸载 93.84%、事件 97.66%、备份恢复 95.75%，同源安装器 harness 99.67%；Java/Kotlin 96.11%，新宿主异常类 100%。这些是相应模块的行覆盖率，不是所有错误类别在真实设备上都出现过。
 
 安装器 harness 使用同一份 C 源码及实际 curl/libarchive，替换固定 rootfs 大小、摘要和下载 URL 为小型本地归档及本地 HTTPS 服务。表内标为注入的函数另在此测试编译中替换；发行程序没有 TEST_* 故障开关，也没有把发行版安装限制改为测试数值。
+
+## rish / Shizuku 实机补测
+
+2026-10-08，使用 GitHub Release v0.6.3 的原始 `pdn` 与匹配的 `proot-loader`，通过一个持续的 rish 会话执行。执行身份为 Android `uid=2000(shell)`、SELinux `u:r:shell:s0`；程序从 `/data/local/tmp` 的独立测试目录运行，未使用 Termux 的 `$PREFIX`、下载器或 shell。BusyBox 仅用于构造测试锁及打包测试日志。
+
+修正测试脚本的卸载确认参数、锁持有方式后，最终整组 **40/40 通过**。不支持创建 FIFO 的 shell 环境改用 `/dev/null` 检查不支持的 bind 来源类型；归档中的 FIFO 条目仍通过真实恢复操作验证。
+
+| 实测内容 | 触发方法与核对结果 |
+| --- | --- |
+| 初始化与安装 | 版本输出为 0.6.3；官方源下载 Alpine 3.24.2 ARM64，完成校验、解压和安装；重复安装返回 `rootfs_exists` |
+| 登录与命令 | 登录执行 `id -u`、`pwd`，分别得到 0、`/root`；exec 保留含空格和分号的单个参数，stdout 与 stderr 分开 |
+| 工作区 | 宿主目录绑定到 `/workspace`，从 Linux 写入文件后在 Android shell 读到相同内容 |
+| Linux 退出状态 | 正常退出为 success；退出 37 为 `guest_exit`，保留 `guest_exit_code=37`；SIGTERM 返回 255，事件明确记录 `guest_signal=15` |
+| rootfs 与临时目录 | rootfs 不存在、目录路径实际为文件、chmod 000 后真实拒绝访问；显式临时目录不存在或为文件，分别返回具体目录错误与建议 |
+| 参数与 bind | 未知发行版、未知镜像、不存在的 bind 来源、以 `/dev/null` 为 bind 来源，返回各自分类 |
+| 配置与名称 | 无效或不存在的用户、损坏配置、配置符号链接、chmod 000 配置、仅大小写不同的双目录，分别验证用户、配置、权限及名称歧义分类 |
+| 锁冲突 | 独立 BusyBox 进程持有实际 flock，确认就绪后运行安装、备份、恢复，三者均返回 `operation_busy`；符号链接锁入口返回 `lock_failed` |
+| 备份恢复与卸载 | 真实 Alpine 备份、恢复、恢复后 exec、带 `--yes` 卸载均成功；原有备份内容未被覆盖，恢复目标确实被删除 |
+| 归档错误 | 不存在的输入、`../` 路径、FIFO 条目、缺少 Linux 结构、9 GiB 声明头、非归档内容，分别返回文件缺失及具体归档分类 |
+| 回滚与事件 | 失败后没有恢复或安装暂存目录残留，危险路径未创建外部文件；每项均核对递增 sequence、operation_id、唯一最终 result、实际退出码、outcome，错误含 message 和 suggestion |
+
+本次覆盖 40 个操作场景、23 种具体错误码。JSONL 原始记录及 stdout/stderr 位于共享测试目录 `/sdcard/yyd/PDN/rish-v063/results.tar.gz`，逐项索引为同目录的 `manifest.tsv`。测试程序没有修改，未重建 APK。
+
+这组测试证明的是 Android shell 身份下的发行 ELF 行为。Java 宿主异常继续以此前的 JVM 测试为依据，本次未重新运行 AAR App。网络失败细分仍以本地 HTTPS 测试及明确标注的故障注入为依据；存储满、只读挂载和内存耗尽未在设备上制造，不能算作此次 rish 实测。
