@@ -140,8 +140,31 @@ PDN 0.6.4 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示�
 
 动态 Alpine fixture 不存在时对应测试会明确跳过。本次环境中 fixture 可用，两次动态登录测试均执行通过。每个启动失败检查实际进程退出码与事件结果一致、sequence 连续、最终 result 唯一；已有具体诊断不会被后续通用错误覆盖。
 
-本轮在 Termux 中执行 ARM64 Android 原生程序及 JVM 测试，没有重跑 rish 或独立 AAR App 的设备验收，也没有构建 App APK。0.6.3 的 rish 结果保留在上节。加载通知之后，动态链接器自己报告的共享库缺失或 guest 初始化脚本失败继续归为 guest_exit，从 stderr 读取详细原因；本轮不解析这些文案。
+以上验证在 Termux 中执行 ARM64 Android 原生程序及 JVM 测试，没有重跑独立 AAR App 的设备验收，也没有构建 App APK。0.6.4 的 rish 补测见下节。加载通知之后，动态链接器自己报告的共享库缺失或 guest 初始化脚本失败继续归为 guest_exit，从 stderr 读取详细原因；本轮不解析这些文案。
 
 验证汇总：195 项 PDN 测试加 16 项 PRoot 回归，共 211 项原生测试，209 项通过、2 项因硬链接通道与 `/dev/full` 环境限制跳过；54 项 JVM 测试全部通过，6 项发布打包检查通过。AAR ZIP 完整，所含 pdn/loader 与对应本地 ELF 逐字节一致。
 
 LLVM 行覆盖率：本轮新增或修改的原生可执行行 192/202（95.05%），事件模块整体 98.09%；Java/Kotlin 371/386（96.11%）。新增行统计合并正常程序及同源故障注入程序，测试替换函数不计入原生源码分母。它不代表整个 PRoot 引擎达到 95.05%，也不代表每种错误都在真实设备策略下发生过。子进程 `_exit` 分支通过测试程序的 profile 刷新替换收集覆盖率，发行程序保持 `_exit` 行为。
+
+## 0.6.4 rish 补测
+
+2026-10-09，通过 `sh ~/rish` 建立持续的 Shizuku shell 会话，以 Android `uid=2000(shell)` 执行 GitHub Release v0.6.4 的原始 `pdn` 和匹配的 `proot-loader`。部署后两份 ELF 的 SHA256 与下载文件一致；程序运行于 `/data/local/tmp/pdn-rish-v064`，rootfs、临时目录及工作区使用本次新建的独立目录，没有修改已有发行版。
+
+**28/28 场景通过**，每个操作设有 20 秒超时，没有操作超时。
+
+| 实测内容 | 场景数 | 触发及结果 |
+| --- | --- | --- |
+| 版本、安装、exec、login | 4 | 版本为 0.6.4；通过本地官方 Alpine 3.24.2 ARM64 归档安装；执行及登录成功，假 root 为 UID 0，工作区文件可从宿主读取，stdout/stderr 分开 |
+| guest 退出 | 4 | exec 返回 127、SIGTERM；login 返回 126、127，均为 guest_exit，保留 guest_exit_code 或 guest_signal=15，没有启动错误码 |
+| 初始 shell | 4 | 删除文件、移除执行权限、坏格式、无 shebang 文本回退退出 0，分别返回对应 guest_shell 分类；回退退出 0 仍为非零 manager_error |
+| 外部 loader | 3 | 缺失、不可执行、坏格式，分别返回 proot_loader 分类与真实 errno |
+| ELF interpreter | 4 | PT_INTERP 指向缺失、不可执行、坏格式文件，以及声明长度超过 ELF 末尾；分别返回 guest_interpreter 分类 |
+| 实际登录 shell | 4 | passwd 选择缺失、不可执行、坏格式或文本回退退出 0 的 shell，返回 guest_login_shell 分类，不把包装 shell 启动成功当作登录成功 |
+| loader 运行阶段 | 4 | 受控 ARM64 loader 发起真实失败 open/mmap/close，保留 EISDIR/EBADF；直接退出 0 而未启动 guest 返回 guest_start_failed，不伪造 errno |
+| 动态库搜索 | 1 | musl 先探测缺失的 `/lib` 路径，再从 `/usr/lib` 找到 libz，交互登录成功，没有误报 loader 错误 |
+
+28 份 JSONL 均检查 version=1、operation_id、连续 sequence、唯一且位于末尾的 result、实际退出码与 outcome 一致。19 个启动失败场景均有唯一 error、具体 code、message 和 suggestion；18 个含真实 errno，loader 直接退出的场景只报告真实退出状态。正常及 guest_exit 场景没有 error 事件或启动错误码。
+
+原始事件、stdout/stderr 与工作区写入凭据位于 `/sdcard/yyd/PDN/rish-v064/results.tar.gz`，逐项索引为同目录的 `manifest.tsv`。本次安装使用预先下载的官方归档，没有重测在线下载。BusyBox 用于测试 fixture、超时及日志打包；PDN 没有依赖 Termux 的 `$PREFIX`、下载器或 shell。
+
+本次证明 Android shell 身份下的发行 ELF 行为；没有重新验证 untrusted_app 的 AAR App，也没有在设备上制造 fork、pipe 或 ptrace 策略拒绝。这些分支继续以明确标注的故障注入测试为依据。测试文档更新不改变程序版本，没有构建 APK。
