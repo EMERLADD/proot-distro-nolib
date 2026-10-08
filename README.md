@@ -103,6 +103,10 @@ Java/Kotlin 可以通过 `PdnRuntime` 生成安装、执行等操作，再用 `P
 接收阶段、进度、错误建议及最终结果。GUI 无需解析 CLI 输出；Linux 的 stdout/stderr
 保持独立。见 [Java/Kotlin 事件 API 与 AAR 结构](docs/pdn-events.md)。
 
+**AAR 已实测可用**：全新的独立 Android App 仅导入生成的 AAR 与 Kotlin 标准库，
+已进入 Alpine，并在交互终端成功执行 `apk add nano`。独立工程和构建方式见
+[AAR 验证 App](examples/aar-probe/README.md)。
+
 发布产物同时提供可直接下载的 `libpdn.so` 和 `libproot-loader.so`。将两者放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
 
 `PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。

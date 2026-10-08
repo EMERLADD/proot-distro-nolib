@@ -126,3 +126,7 @@ proot-engine-*.aar
 `libptyjni.so` 才是给交互终端使用的 JNI 共享库。其他三个程序保留给旧引擎接口，当前 AAR 还包含兼容路径，并未拆成只含 PDN 的最小库。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
 
 宿主导入 AAR 后，还需配置 Kotlin 标准库依赖、ARM64、minSdk 28、原生库解压和联网权限。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
+
+## 独立 App 实测
+
+生成的 AAR 已在 [全新的 Java Android 验证 App](../examples/aar-probe/README.md) 中实测可用。该工程不引用原项目模块，仅导入 AAR 与 Kotlin 标准库；进入 Alpine 后，在交互终端成功执行 `apk add nano`。自动验收与实机覆盖率报告尚未采集。
