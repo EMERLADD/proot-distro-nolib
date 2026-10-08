@@ -41,6 +41,7 @@
 #include "path/binding.h"
 #include "path/temp.h"
 #include "cli/note.h"
+#include "cli/pdn_events.h"
 
 
 /**
@@ -468,8 +469,12 @@ void translate_execve_exit(Tracee *tracee)
 #endif
 
 	syscall_result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
-	if ((int) syscall_result < 0)
+	if ((int) syscall_result < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", -(int)syscall_result);
 		return;
+	}
+
+	if (tracee->vpid == 1) pdn_events_loader_started();
 
 	/* Execve happened; commit the new "/proc/self/exe".  */
 	if (tracee->new_exe != NULL) {
@@ -491,8 +496,10 @@ void translate_execve_exit(Tracee *tracee)
 	/* Transfer the load script to the loader.  */
 	mem_prepare_after_execve(tracee);
 	status = transfer_load_script(tracee);
-	if (status < 0)
+	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_exec", -status);
 		note(tracee, ERROR, INTERNAL, "can't transfer load script: %s", strerror(-status));
+	}
 
 	return;
 }

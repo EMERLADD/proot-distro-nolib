@@ -322,6 +322,28 @@ public class PdnOperationsJavaTest {
         assertEquals(Integer.valueOf(15), signal.getGuestSignal());
         assertNull(signal.getGuestExitCode());
     }
+    @Test public void nativeStartupErrorsReachJavaWhenFixtureAvailable() throws Exception {
+        String executable = System.getenv("PDN_NATIVE_FIXTURE");
+        org.junit.Assume.assumeTrue(executable != null && new File(executable).canExecute());
+        File root = new File(directory, "startup-root");
+        assertTrue(new File(root, "bin").mkdirs());
+        assertTrue(new File(root, "tmp").mkdirs());
+        assertTrue(new File(root, "root").mkdirs());
+        List<PdnEvent> events = new ArrayList<>();
+        PdnResult failure = operations.run(nativeGuest(executable, root, "exit 0"), new PdnListener() {
+            public void onEvent(PdnEvent event) { events.add(event); }
+        });
+        assertEquals("manager_error", failure.getOutcome());
+        assertEquals("guest_shell_missing", failure.getCode());
+        assertTrue(failure.getExitCode() != 0);
+        assertNotNull(failure.getSuggestion());
+        assertTrue(failure.getMessage().contains("errno="));
+        assertNull(failure.getGuestExitCode());
+        assertNull(failure.getGuestSignal());
+        assertEquals("result", events.get(events.size() - 1).getType());
+        assertEquals(1L, events.stream().filter(event -> "result".equals(event.getType())).count());
+        assertEquals(1L, events.stream().filter(event -> "error".equals(event.getType())).count());
+    }
     private ProcessBuilder nativeGuest(String executable, File root, String command) {
         ProcessBuilder builder = new ProcessBuilder(executable, "exec", "--rootfs", root.getAbsolutePath(), "--", "/bin/sh", "-c", command);
         builder.environment().clear();

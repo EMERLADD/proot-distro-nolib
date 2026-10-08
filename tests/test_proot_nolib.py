@@ -90,7 +90,7 @@ class ProotNolibTests(unittest.TestCase):
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("proot-distro-nolib 0.6.3", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.4", result.stdout)
             self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
             if option == "--help":
@@ -99,7 +99,7 @@ class ProotNolibTests(unittest.TestCase):
             else:
                 logo, version, _ = result.stdout.split("\n\n", 2)
                 self.assertEqual(len(logo.splitlines()), 5)
-                self.assertEqual(version, "proot-distro-nolib 0.6.3")
+                self.assertEqual(version, "proot-distro-nolib 0.6.4")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()

@@ -53,6 +53,31 @@
 #include "compat.h"
 
 static bool seccomp_after_ptrace_enter = false;
+static int launch_error_fd = -1;
+
+static void collect_launch_error(void)
+{
+    int failure[2];
+    int saved_errno = errno;
+    if (launch_error_fd < 0) return;
+    ssize_t count;
+    do { count = read(launch_error_fd, failure, sizeof(failure)); } while (count < 0 && errno == EINTR);
+    if (count == sizeof(failure))
+        pdn_events_startup_problem(failure[0] ? "guest_exec" : "ptrace", failure[1]);
+    if (count >= 0) { close(launch_error_fd); launch_error_fd = -1; }
+    errno = saved_errno;
+}
+
+static void child_launch_error(int fd, int kind, int saved_errno)
+{
+    int failure[2] = {kind, saved_errno};
+    ssize_t count;
+    if (fd >= 0) {
+        do { count = write(fd, failure, sizeof(failure)); } while (count < 0 && errno == EINTR);
+    }
+    _exit(EXIT_FAILURE);
+}
+
 
 /**
  * Start @tracee->exe with the given @argv[].  This function
@@ -63,6 +88,15 @@ int launch_process(Tracee *tracee, char *const argv[])
 	char *const default_argv[] = { "-sh", NULL };
 	long status;
 	pid_t pid;
+	int channel[2] = {-1, -1};
+
+	if (pdn_events_bootstrapping()) {
+		if (pipe2(channel, O_CLOEXEC | O_NONBLOCK) < 0) {
+			int saved_errno = errno;
+			pdn_events_startup_problem("launch_pipe", saved_errno);
+			return -saved_errno;
+		}
+	}
 
 	/* Set pokedata workaround stub addr if needed. */
 	mem_prepare_before_first_execve(tracee);
@@ -74,17 +108,25 @@ int launch_process(Tracee *tracee, char *const argv[])
 
 	pid = fork();
 	switch(pid) {
-	case -1:
+	case -1: {
+		int saved_errno = errno;
+		if (channel[0] >= 0) { close(channel[0]); close(channel[1]); }
+		pdn_events_startup_problem("launch_fork", saved_errno);
+		errno = saved_errno;
 		note(tracee, ERROR, SYSTEM, "fork()");
-		return -errno;
+		return -saved_errno;
+	}
 
 	case 0: /* child */
+		if (channel[0] >= 0) close(channel[0]);
+		pdn_events_disable();
 		/* Declare myself as ptraceable before executing the
 		 * requested program. */
 		status = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
 		if (status < 0) {
+			int saved_errno = errno;
 			note(tracee, ERROR, SYSTEM, "ptrace(TRACEME)");
-			return -errno;
+			child_launch_error(channel[1], 0, saved_errno);
 		}
 
 		/* Synchronize with the tracer's event loop.  Without
@@ -103,9 +145,13 @@ int launch_process(Tracee *tracee, char *const argv[])
 		 * "foreign" binaries (ENOEXEC) but can handle execvp(3) on such
 		 * binaries.  */
 		execvp(tracee->exe, argv[0] != NULL ? argv : default_argv);
-		return -errno;
+		int saved_errno = errno;
+		note(tracee, ERROR, SYSTEM, "execve(\"%s\")", tracee->exe);
+		child_launch_error(channel[1], 1, saved_errno);
 
 	default: /* parent */
+		if (channel[1] >= 0) close(channel[1]);
+		launch_error_fd = channel[0];
 		/* We know the pid of the first tracee now.  */
 		tracee->pid = pid;
 		return 0;
@@ -333,12 +379,15 @@ int event_loop()
 		/* Wait for the next tracee's stop. */
 		pid = waitpid(-1, &tracee_status, __WALL);
 		if (pid < 0) {
+			collect_launch_error();
 			if (errno != ECHILD) {
 				note(NULL, ERROR, SYSTEM, "waitpid()");
 				return EXIT_FAILURE;
 			}
 			break;
 		}
+
+		collect_launch_error();
 
 		/* Get information about this tracee. */
 		tracee = get_tracee(NULL, pid, true);
@@ -402,7 +451,10 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 	signal = 0;
 
 	if (WIFEXITED(tracee_status)) {
-		if (tracee->vpid == 1) pdn_events_guest_exit(WEXITSTATUS(tracee_status), 0);
+		if (tracee->vpid == 1) {
+			pdn_events_startup_stopped(WEXITSTATUS(tracee_status), 0);
+			pdn_events_guest_exit(WEXITSTATUS(tracee_status), 0);
+		}
 		last_exit_status = WEXITSTATUS(tracee_status);
 		VERBOSE(tracee, 1,
 			"vpid %" PRIu64 ": exited with status %d",
@@ -410,7 +462,10 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 		terminate_tracee(tracee);
 	}
 	else if (WIFSIGNALED(tracee_status)) {
-		if (tracee->vpid == 1) pdn_events_guest_exit(-1, WTERMSIG(tracee_status));
+		if (tracee->vpid == 1) {
+			pdn_events_startup_stopped(-1, WTERMSIG(tracee_status));
+			pdn_events_guest_exit(-1, WTERMSIG(tracee_status));
+		}
 		check_architecture(tracee);
 		VERBOSE(tracee, (int) (tracee->vpid != 1),
 			"vpid %" PRIu64 ": terminated with signal %d",
@@ -456,6 +511,14 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 				status = ptrace(PTRACE_SETOPTIONS, tracee->pid, NULL,
 						default_ptrace_options);
 				if (status < 0) {
+					int saved_errno = errno;
+					if (tracee->vpid == 1 && pdn_events_bootstrapping()) {
+						pdn_events_startup_problem("ptrace", saved_errno);
+						kill(tracee->pid, SIGKILL);
+						while (waitpid(tracee->pid, NULL, __WALL) < 0 && errno == EINTR) {}
+						terminate_tracee(tracee);
+					}
+					errno = saved_errno;
 					note(tracee, ERROR, SYSTEM, "ptrace(PTRACE_SETOPTIONS)");
 					exit(EXIT_FAILURE);
 				}
@@ -715,8 +778,16 @@ bool restart_tracee(Tracee *tracee, int signal)
 	 * at the next entry or exit of a system call. */
 	assert(tracee->restart_how != 0);
 	status = ptrace(tracee->restart_how, tracee->pid, NULL, signal);
-	if (status < 0)
-		return false; /* The process likely died in a syscall.  */
+	if (status < 0) {
+		int saved_errno = errno;
+		if (saved_errno != ESRCH && tracee->vpid == 1 && pdn_events_bootstrapping()) {
+			pdn_events_startup_problem("ptrace", saved_errno);
+			kill(tracee->pid, SIGKILL);
+			terminate_tracee(tracee);
+		}
+		errno = saved_errno;
+		return false;
+	}
 
 	tracee->last_restart_how = tracee->restart_how;
 	tracee->restart_how = 0;

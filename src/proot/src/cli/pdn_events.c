@@ -11,6 +11,7 @@
 #include "pdn_events.h"
 
 static int event_fd = -1, finished, loaded, guest_status = -1, guest_signal, cancelled;
+static int login_shell, startup_error, loader_active;
 static unsigned sequence, progress_count;
 static char operation[24], identifier[65], stage[32], error_code[64], error_message[513], suggestion[513];
 static long long last_current = -1, last_tick;
@@ -216,6 +217,48 @@ void pdn_events_system_problem(const char *fallback, const char *message, const 
     errno = previous_errno;
 }
 
+int pdn_events_bootstrapping(void)
+{
+    return event_fd >= 0 && (!strcmp(operation, "exec") || !strcmp(operation, "login")) &&
+        (!loaded || login_shell == 1);
+}
+
+int pdn_events_startup_failed(void) { return startup_error; }
+int pdn_events_loader_active(void) { return loader_active; }
+void pdn_events_loader_started(void) { loader_active = pdn_events_bootstrapping(); }
+
+void pdn_events_login_shell(int pending) { login_shell = pending ? 2 : 0; }
+
+void pdn_events_startup_problem(const char *component, int saved_errno)
+{
+    int previous_errno = errno;
+    if (!pdn_events_bootstrapping() || (pdn_events_has_error() && strcmp(error_code, "manager_failed"))) return;
+    if (login_shell == 1 && !strcmp(component, "guest_shell")) component = "guest_login_shell";
+    const char *suffix = "failed";
+    const char *advice = "Inspect stderr and the failing component; check available resources and retry";
+    int executable = !strcmp(component, "guest_shell") || !strcmp(component, "guest_login_shell") ||
+        !strcmp(component, "guest_interpreter") || !strcmp(component, "proot_loader");
+    if (executable) {
+        advice = !strcmp(component, "proot_loader") ?
+            "Check PROOT_LOADER points to the installed executable loader for this architecture" :
+            "Repair the rootfs shell or ELF interpreter using an archive for this architecture";
+        if (saved_errno == ENOENT || saved_errno == ENOTDIR) suffix = "missing";
+        else if (saved_errno == EACCES || saved_errno == EPERM) {
+            suffix = "nonexecutable";
+            advice = "Check executable permissions, mount options and platform policy logs for this component";
+        } else if (saved_errno == ENOEXEC || saved_errno == ELIBBAD || saved_errno == EINVAL) suffix = "bad_format";
+    } else if (!strcmp(component, "ptrace"))
+        advice = "Check ptrace availability and platform policy logs; tracing must be permitted to run PRoot";
+    else if (!strcmp(component, "launch_fork") || !strcmp(component, "launch_pipe"))
+        advice = "Check process and file descriptor limits and available memory, then retry";
+    char code[64], detail[513];
+    snprintf(code, sizeof(code), "%s_%s", component, suffix);
+    snprintf(detail, sizeof(detail), "Cannot start %s: %s (errno=%d)", component, strerror(saved_errno), saved_errno);
+    startup_error = 1;
+    pdn_events_problem(code, detail, advice);
+    errno = previous_errno;
+}
+
 void pdn_events_error(const char *message)
 {
     if (pdn_events_has_error()) return;
@@ -230,9 +273,24 @@ void pdn_events_error(const char *message)
 
 void pdn_events_guest_loaded(void)
 {
-    if (loaded || (strcmp(operation, "exec") && strcmp(operation, "login"))) return;
+    loader_active = 0;
+    if (startup_error || (strcmp(operation, "exec") && strcmp(operation, "login"))) return;
+    if (loaded && login_shell != 1) return;
+    if (!loaded && login_shell == 2) { loaded = 1; login_shell = 1; return; }
+    login_shell = 0;
     loaded = 1;
     pdn_events_stage("running");
+}
+
+void pdn_events_startup_stopped(int status, int signal)
+{
+    if (!pdn_events_bootstrapping()) return;
+    startup_error = 1;
+    if (pdn_events_has_error()) return;
+    char detail[513];
+    snprintf(detail, sizeof(detail), "Guest startup stopped before the loader completion marker (exit=%d, signal=%d)", status, signal);
+    pdn_events_problem(login_shell == 1 ? "guest_login_failed" : "guest_start_failed", detail,
+        "Check the configured loader and guest shell; inspect stderr and use a compatible rootfs");
 }
 
 void pdn_events_guest_exit(int status, int signal)
@@ -248,18 +306,18 @@ void pdn_events_finish(int status)
     if (finished) return;
     finished = 1;
     if (event_fd < 0) return;
-    const char *outcome = status == 0 ? "success" : "manager_error";
+    const char *outcome = status == 0 && !startup_error ? "success" : "manager_error";
     if (cancelled) outcome = "cancelled";
-    else if (loaded && (guest_status >= 0 || guest_signal) && (status != 0 || guest_status != 0 || guest_signal)) outcome = "guest_exit";
+    else if (!startup_error && loaded && (guest_status >= 0 || guest_signal) && (status != 0 || guest_status != 0 || guest_signal)) outcome = "guest_exit";
     if (status != 0 && !strcmp(outcome, "manager_error") && !*error_code)
         pdn_events_error("PDN could not complete the operation; inspect stderr for details");
     struct record record = start("result");
     field(&record, "outcome", outcome);
     append(&record, ",\"exit_code\":%d", status & 255);
-    if (loaded && guest_status >= 0) append(&record, ",\"guest_exit_code\":%d", guest_status);
-    if (guest_signal) append(&record, ",\"guest_signal\":%d", guest_signal);
+    if (!startup_error && loaded && guest_status >= 0) append(&record, ",\"guest_exit_code\":%d", guest_status);
+    if (!startup_error && guest_signal) append(&record, ",\"guest_signal\":%d", guest_signal);
     if (cancelled) append(&record, ",\"signal\":%d", cancelled);
-    if (status != 0 && *error_code && !strcmp(outcome, "manager_error")) {
+    if ((status != 0 || startup_error) && *error_code && !strcmp(outcome, "manager_error")) {
         field(&record, "code", error_code); field(&record, "message", error_message); field(&record, "suggestion", suggestion);
     }
     send(&record);

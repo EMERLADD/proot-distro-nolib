@@ -29,6 +29,7 @@
 #include <string.h>      /* strlen(3), */
 
 #include "cli/note.h"
+#include "cli/pdn_events.h"
 #include "syscall/syscall.h"
 #include "syscall/sysnum.h"
 #include "syscall/socket.h"
@@ -95,6 +96,7 @@ void translate_syscall_exit(Tracee *tracee)
 	 */
 	syscall_number = get_sysnum(tracee, ORIGINAL);
 	syscall_result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+
 	switch (syscall_number) {
 	case PR_brk:
 		translate_brk_exit(tracee);
@@ -577,4 +579,14 @@ end:
 	status = notify_extensions(tracee, SYSCALL_EXIT_END, 0, 0);
 	if (status < 0)
 		poke_reg(tracee, SYSARG_RESULT, (word_t) status);
+	syscall_number = get_sysnum(tracee, ORIGINAL);
+	syscall_result = peek_reg(tracee, CURRENT, SYSARG_RESULT);
+	if (tracee->vpid == 1 && pdn_events_loader_active() &&
+		pdn_events_bootstrapping() && (long)syscall_result < 0 && (long)syscall_result >= -4095) {
+		const char *component = NULL;
+		if (syscall_number == PR_open || syscall_number == PR_openat) component = "loader_open";
+		else if (syscall_number == PR_mmap || syscall_number == PR_mmap2) component = "loader_mapping";
+		else if (syscall_number == PR_close) component = "loader_close";
+		if (component) pdn_events_startup_problem(component, -(long)syscall_result);
+	}
 }

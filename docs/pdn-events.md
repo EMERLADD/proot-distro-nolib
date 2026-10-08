@@ -1,6 +1,6 @@
 # PDN 事件接口与 AAR
 
-PDN 0.6.3 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
+PDN 0.6.4 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
 
 ## 调用关系
 
@@ -68,7 +68,27 @@ val result = runInterruptible(Dispatchers.IO) {
 
 `error` 是诊断事件，不是最终结果。例如第一个镜像下载失败产生错误，第二个镜像成功后，最终结果仍然是 `success`。成功结果不会携带此前失败镜像的错误。界面只在最终失败时显示 `code`、`message`、`suggestion`，详细日志仍从 stderr 读取。
 
-目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。底层 PRoot 的部分错误仍归为 `manager_failed` 并要求查看 stderr。这版未提供完整后台任务管理或进程树取消接口。
+目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。启动错误从 PRoot、loader、guest shell 和 ELF interpreter 的实际失败点提供分类，详见下表。未能取得具体原因的内部错误仍保留兜底分类和 stderr。这版未提供完整后台任务管理或进程树取消接口。
+
+### PRoot 与 guest 启动错误
+
+| code | 含义 |
+| --- | --- |
+| `guest_shell_missing` / `guest_shell_nonexecutable` / `guest_shell_bad_format` / `guest_shell_failed` | 初始 `/bin/sh` 缺失、无法执行、格式不支持或其他执行失败 |
+| `guest_login_shell_missing` / `guest_login_shell_nonexecutable` / `guest_login_shell_bad_format` / `guest_login_shell_failed` | 包装层已启动，但实际交互登录 shell 无法启动 |
+| `guest_interpreter_missing` / `guest_interpreter_nonexecutable` / `guest_interpreter_bad_format` / `guest_interpreter_failed` | 启动 shell 所需的 ELF interpreter 缺失、无法执行、格式错误或其他读取/加载失败 |
+| `proot_loader_missing` / `proot_loader_nonexecutable` / `proot_loader_bad_format` / `proot_loader_failed` | 外部或内嵌 PRoot loader 的准备或执行失败 |
+| `launch_pipe_failed` / `launch_fork_failed` | 启动诊断管道或进程创建失败 |
+| `ptrace_failed` | 启动阶段的追踪声明、选项设置或恢复执行失败 |
+| `guest_exec_failed` | 启动子进程报告执行失败，且没有更具体的诊断 |
+| `loader_open_failed` / `loader_mapping_failed` / `loader_close_failed` | loader 装载期间打开、映射或关闭文件失败，保留实际错误 |
+| `guest_start_failed` / `guest_login_failed` | guest 或实际登录 shell 在装载通知之前退出，无法取得更具体原因 |
+
+这些失败返回 `manager_error`，通过现有 `getCode()`、`getMessage()`、`getSuggestion()` 获取，不需要修改 Java/Kotlin catch。系统调用错误的 message 保留实际 errno。权限失败只说明执行被拒绝，并建议检查权限、挂载和平台策略日志，不根据一个 errno 断言具体策略原因。
+
+启动成功的边界是 PRoot loader 完成映射并发出装载通知；交互登录还要完成实际登录 shell 的装载。之后的命令不存在、退出 126/127、信号终止，以及 guest 动态链接器自身在运行时报告共享库缺失，仍是 `guest_exit`，详细原因从原始 stderr 获取。此接口不解析动态链接器文案，也不保证 guest 的初始化脚本执行成功。
+
+父进程统一写事件。启动子进程失败通过 close-on-exec 管道报告，避免父子分别输出最终结果；即使系统尝试把坏 shell 回退为文本脚本并退出 0，已经确认的启动失败也不会被发布为 success。
 
 Java 宿主的缓存、事件文件、进程启动、流读写及清理错误抛出 `PdnHostException`，它继承 `IOException`，保留原始 `cause`，新增 `getCode()` 与 `getSuggestion()`。原有 `catch (IOException)` 继续有效；参数错误、线程中断及监听器自身抛出的异常保持原有行为。清理失败不会覆盖前面的异常，而是通过 `getSuppressed()` 附加。
 

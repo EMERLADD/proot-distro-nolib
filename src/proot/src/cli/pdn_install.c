@@ -182,7 +182,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return problem("download_failed", "cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.3");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.4");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);

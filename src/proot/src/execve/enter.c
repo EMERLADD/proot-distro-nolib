@@ -45,6 +45,7 @@
 #include "syscall/sysnum.h"
 #include "arch.h"
 #include "cli/note.h"
+#include "cli/pdn_events.h"
 
 #define P(a) PROGRAM_FIELD(load_info->elf_header, *program_header, a)
 
@@ -142,15 +143,15 @@ int translate_and_check_exec(Tracee *tracee, char host_path[PATH_MAX], const cha
 
 	status = access(host_path, F_OK);
 	if (status < 0)
-		return -ENOENT;
+		return -errno;
 
 	status = access(host_path, X_OK);
 	if (status < 0)
-		return -EACCES;
+		return -errno;
 
 	status = lstat(host_path, &statl);
 	if (status < 0)
-		return -EPERM;
+		return -errno;
 
 	return 0;
 }
@@ -182,8 +183,15 @@ static int add_interp(Tracee *tracee, int fd, LoadInfo *load_info,
 	/* Remember pread(2) doesn't change the
 	 * current position in the file.  */
 	status = pread(fd, user_path, P(filesz), P(offset));
-	if ((size_t) status != P(filesz)) /* Unexpected size.  */
-		status = -EACCES;
+	if (status < 0) {
+		status = -errno;
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_interpreter", -status);
+		return status;
+	}
+	if ((size_t) status != P(filesz)) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_interpreter", ENOEXEC);
+		status = -ENOEXEC;
+	}
 	if (status < 0)
 		return status;
 
@@ -206,8 +214,10 @@ static int add_interp(Tracee *tracee, int fd, LoadInfo *load_info,
 	}
 
 	status = translate_and_check_exec(tracee, host_path, user_path);
-	if (status < 0)
+	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_interpreter", -status);
 		return status;
+	}
 
 	load_info->interp->host_path = talloc_strdup(load_info->interp, host_path);
 	if (load_info->interp->host_path == NULL)
@@ -487,13 +497,16 @@ static char *extract_loader(const Tracee *tracee, bool wants_32bit_version)
 	size_t size;
 	int status;
 	int fd;
+	int saved_errno;
 
 	char *loader_path = NULL;
 	FILE *file = NULL;
 
 	file = open_temp_file(NULL, "prooted");
-	if (file == NULL)
+	if (file == NULL) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", errno);
 		goto end;
+	}
 	fd = fileno(file);
 
 	if (wants_32bit_version) {
@@ -507,24 +520,28 @@ static char *extract_loader(const Tracee *tracee, bool wants_32bit_version)
 
 	status2 = write(fd, start, size);
 	if (status2 != size) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", status2 == (size_t)-1 ? errno : EIO);
 		note(tracee, ERROR, SYSTEM, "can't write the loader");
 		goto end;
 	}
 
 	status = fchmod(fd, S_IRUSR|S_IXUSR);
 	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", errno);
 		note(tracee, ERROR, SYSTEM, "can't change loader permissions (u+rx)");
 		goto end;
 	}
 
 	status = readlink_proc_pid_fd(getpid(), fd, path);
 	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", -status);
 		note(tracee, ERROR, INTERNAL, "can't retrieve loader path (/proc/self/fd/)");
 		goto end;
 	}
 
 	status = access(path, X_OK);
 	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", errno);
 		note(tracee, ERROR, INTERNAL,
 			"it seems the current temporary directory (%s) "
 			"is mounted with no execution permission.",
@@ -537,6 +554,8 @@ static char *extract_loader(const Tracee *tracee, bool wants_32bit_version)
 
 	loader_path = talloc_strdup(talloc_autofree_context(), path);
 	if (loader_path == NULL) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", ENOMEM);
+		errno = ENOMEM;
 		note(tracee, ERROR, INTERNAL, "can't allocate memory");
 		goto end;
 	}
@@ -545,12 +564,14 @@ static char *extract_loader(const Tracee *tracee, bool wants_32bit_version)
 		note(tracee, INFO, INTERNAL, "loader: %s", loader_path);
 
 end:
+	saved_errno = errno;
 	if (file != NULL) {
 		status = fclose(file);
 		if (status < 0)
 			note(tracee, WARNING, SYSTEM, "can't close loader file");
 	}
 
+	errno = saved_errno;
 	return loader_path;
 }
 #endif
@@ -623,10 +644,12 @@ int translate_execve_enter(Tracee *tracee)
 		return -ENOMEM;
 
 	status = expand_shebang(tracee, host_path, user_path);
-	if (status < 0)
+	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_shell", status == -EISDIR ? EACCES : -status);
 		/* The Linux kernel actually returns -EACCES when
 		 * trying to execute a directory.  */
 		return status == -EISDIR ? -EACCES : status;
+	}
 
 	/* user_path is modified only if there's an interpreter
 	 * (ie. for a script or with qemu).  */
@@ -690,13 +713,17 @@ int translate_execve_enter(Tracee *tracee)
 		return -ENOMEM;
 
 	status = extract_load_info(tracee, tracee->load_info);
-	if (status < 0)
+	if (status < 0) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("guest_shell", -status);
 		return status;
+	}
 
 	if (tracee->load_info->interp != NULL) {
 		status = extract_load_info(tracee, tracee->load_info->interp);
-		if (status < 0)
+		if (status < 0) {
+			if (tracee->vpid == 1) pdn_events_startup_problem("guest_interpreter", -status);
 			return status;
+		}
 
 		/* An ELF interpreter is supposed to be
 		 * standalone.  */
@@ -710,8 +737,10 @@ int translate_execve_enter(Tracee *tracee)
 
 	/* Execute the loader instead of the program.  */
 	loader_path = get_loader_path(tracee);
-	if (loader_path == NULL)
+	if (loader_path == NULL) {
+		if (tracee->vpid == 1) pdn_events_startup_problem("proot_loader", errno ? errno : ENOENT);
 		return -ENOENT;
+	}
 
 	status = set_sysarg_path(tracee, loader_path, SYSARG_1);
 	if (status < 0)

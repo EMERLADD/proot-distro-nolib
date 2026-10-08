@@ -9,6 +9,7 @@
 #include <talloc.h>     /* talloc(3), */
 
 #include "cli/note.h"
+#include "cli/pdn_events.h"
 
 /**
  * Return the path to a directory where temporary files should be
@@ -268,6 +269,8 @@ char *create_temp_name(TALLOC_CTX *context, const char *prefix)
 
 	name = talloc_asprintf(context, "%s/%s-%d-XXXXXX", temp_directory, prefix, getpid());
 	if (name == NULL) {
+		if (!strcmp(prefix, "prooted")) pdn_events_startup_problem("proot_loader", ENOMEM);
+		errno = ENOMEM;
 		note(NULL, ERROR, INTERNAL, "can't allocate memory");
 		return NULL;
 	}
@@ -341,6 +344,7 @@ FILE* open_temp_file(TALLOC_CTX *context, const char *prefix)
 	char *name;
 	FILE *file;
 	int fd;
+	int saved_errno;
 
 	name = create_temp_name(context, prefix);
 	if (name == NULL)
@@ -359,10 +363,14 @@ FILE* open_temp_file(TALLOC_CTX *context, const char *prefix)
 	return file;
 
 error:
+	saved_errno = errno;
+	if (!strcmp(prefix, "prooted")) pdn_events_startup_problem("proot_loader", saved_errno);
 	if (fd >= 0)
 		close(fd);
+	errno = saved_errno;
 	note(NULL, ERROR, SYSTEM, "can't create temporary file");
 	note(NULL, INFO, USER, "Please set PROOT_TMP_DIR env. variable "
 		"to an alternate location (with write permission).");
+	errno = saved_errno;
 	return NULL;
 }

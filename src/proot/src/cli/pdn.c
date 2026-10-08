@@ -424,6 +424,7 @@ int pdn_login(int argc, char *const argv[])
     args[n++] = identity.shell ? identity.shell : "";
     args[n++] = command < argc ? "command" : "interactive";
     args[n++] = shell_override ? "override" : "default";
+    pdn_events_login_shell(command >= argc);
     for (; command < argc; command++) args[n++] = argv[command];
     pdn_events_stage("starting");
     result = proot_main(n, args);

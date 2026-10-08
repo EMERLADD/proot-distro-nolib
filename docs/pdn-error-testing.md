@@ -1,6 +1,6 @@
 # PDN 错误分类与逐项验证
 
-PDN 0.6.3 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示具体失败原因，`message` 与 `suggestion` 提供说明和建议。Linux 命令退出仍是 `guest_exit`，不因为退出码碰巧相同而变成管理器错误。
+PDN 0.6.4 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示具体失败原因，`message` 与 `suggestion` 提供说明和建议。Linux 命令退出仍是 `guest_exit`，不因为退出码碰巧相同而变成管理器错误。
 
 ## 测试方法
 
@@ -55,7 +55,7 @@ PDN 0.6.3 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示�
 | `config_read_failed` / `config_write_failed` | 无明确 errno 分类时的配置 I/O 兜底；实际权限失败优先返回 `file_permission` | 兜底分类；未逐个读写调用点注入 |
 | `user_invalid` | 无效 UID/GID、不存在的用户名、损坏 passwd 内容 | 真实解析与用户查找 |
 | `uninstall_failed` / `uninstall_incomplete` | 已接入卸载失败点，并记录是否确实删除过条目；具体系统原因可优先返回文件错误 | 部分删除故障尚未单独注入；不能声称已完整实测 |
-| `manager_failed` | 无更具体原因的管理失败，测试版直接返回非零而不提前报告错误 | 兜底路径验证；PRoot/guest 启动内部细分不在本次范围 |
+| `manager_failed` | 无更具体原因的管理失败，测试版直接返回非零而不提前报告错误 | 兜底路径验证；0.6.3 未包含 PRoot/guest 启动内部细分；0.6.4 的补充验证见后文 |
 
 原先的 `not_directory` 统一为 `directory_not_directory`；临时目录的权限不足、只读分别报告，不再都并入 `directory_not_writable`。旧阶段类 `verification_failed`、`configuration_failed`、`archive_failed` 等仍作为无法提供更具体原因时的兼容兜底。
 
@@ -86,7 +86,7 @@ PDN 0.6.3 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示�
 
 本环境缺少 `/dev/full`，因此真实 ENOSPC 测试跳过；硬链接事件通道测试也因文件系统拒绝创建硬链接而跳过。所有故障注入结果都不能替代独立 Android App 的实机覆盖率报告。
 
-## 本次结果
+## 0.6.3 验证记录
 
 原生 170 项执行，168 项通过、2 项按上述原因跳过；Java/Kotlin 53 项全部通过，真实 PDN/guest fixture 已启用。原 App Kotlin 编译、AAR ZIP 完整性、新异常类和原生程序逐字节一致性检查通过，没有构建原 App APK。
 
@@ -117,3 +117,31 @@ PDN 0.6.3 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示�
 本次覆盖 40 个操作场景、23 种具体错误码。JSONL 原始记录及 stdout/stderr 位于共享测试目录 `/sdcard/yyd/PDN/rish-v063/results.tar.gz`，逐项索引为同目录的 `manifest.tsv`。测试程序没有修改，未重建 APK。
 
 这组测试证明的是 Android shell 身份下的发行 ELF 行为。Java 宿主异常继续以此前的 JVM 测试为依据，本次未重新运行 AAR App。网络失败细分仍以本地 HTTPS 测试及明确标注的故障注入为依据；存储满、只读挂载和内存耗尽未在设备上制造，不能算作此次 rish 实测。
+
+## 0.6.4 启动错误验证
+
+新增 `tests/test_pdn_startup.py`，执行 41 项启动测试。18 个文件系统、ELF、登录及受控 loader 场景分别运行于正常程序和链接替换测试程序；另外 5 个测试方法覆盖多个进程/追踪及提取失败条件。测试程序链接替换仅用于故障注入，发行 ELF 不含 `PDN_FIXTURE_*` 开关或替换函数。
+
+| 验证内容 | 如何触发 | 性质 |
+| --- | --- | --- |
+| 初始 shell 缺失、不能执行、格式错误 | 删除 fixture 的 `/bin/sh`、移除执行权限、写入非 ELF 内容 | 真实文件及执行失败 |
+| 坏 shell 回退后退出 0 | 无 shebang 的可执行文本包含 `exit 0`；最终仍为非零 manager_error | 真实执行回退；防止错误被成功退出遮盖 |
+| ELF interpreter | 构造指向缺失、不可执行或损坏 interpreter 的 PT_INTERP；声明超过文件末尾的长度 | 真实 ELF 解析与文件失败，截断归为格式错误 |
+| interpreter 读取 I/O | 测试链接替换让特定 PT_INTERP 的 pread 返回 EIO | 故障注入，原始 errno 保留 |
+| 外部 loader | 指向缺失、不能执行或非 ELF 文件 | 真实执行失败 |
+| 内嵌 loader 提取 | 仅匹配 loader 的 mkstemp、fchmod、ELF 数据 write，分别返回 ENOSPC、EACCES、ENOSPC | 故障注入；没有写满设备存储 |
+| loader 的 open/mmap/close | 受控 ARM64 loader fixture 发起真实失败系统调用 | 真实内核错误＋受控 loader；不是设备随机出现的故障 |
+| loader 没启动 guest 就正常退出 | 受控 loader 直接退出 0，不发出装载通知；最终为 guest_start_failed | 真实子进程退出；不伪造 errno |
+| 实际交互登录 shell | passwd 选择不存在、不能执行或格式错误的 shell；包含文本回退退出 0 | 真实登录失败，包装层成功不等于登录成功 |
+| 正常 Linux 退出 | 登录后退出 126/127、运行不存在命令；原有 exec 信号及退出码回归 | 真实 guest_exit，未归为启动错误 |
+| 动态库搜索不能误报 | 复制真实 Alpine musl BusyBox/linker/libz 到私有 fixture，把依赖放在 `/usr/lib`，允许先探测缺失的 `/lib` 路径 | 真实 musl 登录；没有更改已有 Alpine 系统 |
+| 进程与追踪启动 | 测试链接替换 fork、pipe2、ptrace TRACEME、SETOPTIONS、恢复执行，让它们返回指定 errno | 故障注入；验证非零退出、回收及不挂起 |
+| Java 原生协议对接 | 实际原生缺失 shell 的结果由 PdnOperations 解析，核对类别、errno、建议及唯一最终结果 | 真实 native → Java 对接 |
+
+动态 Alpine fixture 不存在时对应测试会明确跳过。本次环境中 fixture 可用，两次动态登录测试均执行通过。每个启动失败检查实际进程退出码与事件结果一致、sequence 连续、最终 result 唯一；已有具体诊断不会被后续通用错误覆盖。
+
+本轮在 Termux 中执行 ARM64 Android 原生程序及 JVM 测试，没有重跑 rish 或独立 AAR App 的设备验收，也没有构建 App APK。0.6.3 的 rish 结果保留在上节。加载通知之后，动态链接器自己报告的共享库缺失或 guest 初始化脚本失败继续归为 guest_exit，从 stderr 读取详细原因；本轮不解析这些文案。
+
+验证汇总：195 项 PDN 测试加 16 项 PRoot 回归，共 211 项原生测试，209 项通过、2 项因硬链接通道与 `/dev/full` 环境限制跳过；54 项 JVM 测试全部通过，6 项发布打包检查通过。AAR ZIP 完整，所含 pdn/loader 与对应本地 ELF 逐字节一致。
+
+LLVM 行覆盖率：本轮新增或修改的原生可执行行 192/202（95.05%），事件模块整体 98.09%；Java/Kotlin 371/386（96.11%）。新增行统计合并正常程序及同源故障注入程序，测试替换函数不计入原生源码分母。它不代表整个 PRoot 引擎达到 95.05%，也不代表每种错误都在真实设备策略下发生过。子进程 `_exit` 分支通过测试程序的 profile 刷新替换收集覆盖率，发行程序保持 `_exit` 行为。

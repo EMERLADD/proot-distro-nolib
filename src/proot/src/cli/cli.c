@@ -26,6 +26,7 @@
 #include <string.h>        /* str*(3), basename(3),  */
 #include <talloc.h>        /* talloc*,  */
 #include "cli/pdn_events.h"
+#include "execve/execve.h"
 #include <stdlib.h>        /* exit(3), EXIT_*, strtol(3), {g,s}etenv(3), */
 #include <assert.h>        /* assert(3),  */
 #include <sys/types.h>     /* getpid(2),  */
@@ -269,9 +270,15 @@ static int initialize_exe(Tracee *tracee, const char *exe)
 	char path[PATH_MAX];
 	int status;
 
+	if (pdn_events_bootstrapping() && (!exe || !strcmp(exe, "/bin/sh"))) {
+		status = translate_and_check_exec(tracee, path, exe ?: "/bin/sh");
+		if (status < 0) pdn_events_startup_problem("guest_shell", -status);
+	}
 	status = which(tracee, tracee->reconf.paths, path, exe ?: "/bin/sh");
-	if (status < 0)
+	if (status < 0) {
+		pdn_events_startup_problem("guest_shell", -status);
 		return -1;
+	}
 
 	status = detranslate_path(tracee, path, NULL);
 	if (status < 0)
@@ -486,6 +493,7 @@ int proot_main(int argc, char *const argv[])
 
 	/* Start tracing the first tracee and all its children.  */
 	status = event_loop();
+	if (status == 0 && pdn_events_startup_failed()) status = EXIT_FAILURE;
 	pdn_events_finish(status);
 	exit(status);
 
@@ -498,8 +506,9 @@ error:
 		exit(EXIT_FAILURE);
 	}
 	else {
-		pdn_events_finish(EXIT_SUCCESS);
-		exit(EXIT_SUCCESS);
+		status = pdn_events_startup_failed() ? EXIT_FAILURE : EXIT_SUCCESS;
+		pdn_events_finish(status);
+		exit(status);
 	}
 }
 
