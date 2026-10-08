@@ -13,6 +13,8 @@ import threading
 import time
 import unittest
 
+from test_pdn_events import assert_events
+
 PROJECT = Path(__file__).resolve().parents[1]
 BINARY = Path(os.environ.get("PROOT_NOLIB_BINARY", PROJECT / "build/proot-distro-nolib/arm64/proot-distro-nolib")).resolve()
 DEPS = PROJECT / "build/proot-distro-nolib/deps/install"
@@ -58,6 +60,7 @@ class InstallTests(unittest.TestCase):
 #define ARCH_SIZE ALPINE_SIZE
 #define ARCH_SHA256 ALPINE_SHA256
 #define ARCH_MIRRORS ALPINE_MIRRORS
+#include "{PROJECT / 'src/proot/src/cli/pdn_events.h'}"
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
 int pdn_login(int argc, char *const argv[]) {{
     if (getenv("TEST_INIT_SLOW")) sleep(5);
@@ -71,7 +74,7 @@ char *pdn_rootfs_base(void) {{
     const char *base = getenv("PDN_ROOTFS_DIR");
     return base ? strdup(base) : NULL;
 }}
-int main(int argc, char **argv) {{
+static int harness_main(int argc, char **argv) {{
     const char *name = getenv("TEST_DISTRO");
     struct distro distro;
     if (!name) name = "alpine";
@@ -87,6 +90,13 @@ int main(int argc, char **argv) {{
     if (argc == 3 && !strcmp(argv[1], "mirror")) return pdn_install(name, NULL, argv[2]);
     return pdn_install(name, argc == 2 ? argv[1] : NULL, NULL);
 }}
+int main(int argc, char **argv) {{
+    int result;
+    if (pdn_events_begin("install") != 0) return 2;
+    result = harness_main(argc, argv);
+    pdn_events_finish(result);
+    return result;
+}}
 ''')
         ndk = Path(os.environ["NDK_PATH"])
         toolchain, = ndk.glob("toolchains/llvm/prebuilt/*")
@@ -100,7 +110,7 @@ int main(int argc, char **argv) {{
             flags += ["-fprofile-instr-generate", "-fcoverage-mapping", "-DPDN_TEST_COVERAGE"]
             runtime = subprocess.check_output([compiler, "-print-resource-dir"], text=True).strip()
             flags += [f"{runtime}/lib/linux/libclang_rt.profile-aarch64-android.a"]
-        subprocess.run([compiler, *flags, str(source), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
+        subprocess.run([compiler, *flags, str(source), str(PROJECT / "src/proot/src/cli/pdn_events.c"), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
                         "-lcurl", "-larchive", "-lmbedtls", "-lmbedx509", "-lmbedcrypto", "-lz",
                         "-o", str(cls.harness)], check=True)
         if os.environ.get("PDN_COVERAGE"):
@@ -174,6 +184,83 @@ int main(int argc, char **argv) {{
     def assert_clean(self):
         self.assertFalse((self.roots / "alpine").exists())
         self.assertFalse(list(self.roots.glob(".pdn-alpine-*")))
+
+    def event_channel(self):
+        path = self.base / "events.jsonl"
+        path.write_bytes(b"")
+        path.chmod(0o600)
+        self.env.update(PDN_EVENT_FILE=str(path), PDN_OPERATION_ID="install-fixture_1")
+        return path
+
+    def event_records(self, path, result, outcome):
+        return assert_events(self, path, "install", "install-fixture_1", result.returncode, outcome)
+
+    def test_local_install_events_phases(self):
+        path = self.event_channel()
+        result = self.run_harness(self.archive)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.event_records(path, result, "success")
+        stages = [event["stage"] for event in events if event["type"] == "stage"]
+        required = ["verifying", "extracting", "configuring", "publishing"]
+        self.assertEqual([stage for stage in stages if stage in required], required)
+        self.assertTrue((self.roots / "alpine/bin/tool").exists())
+        self.assertFalse(list(self.roots.glob(".pdn-alpine-*")))
+
+    def test_mirror_fallback_events_final_result_authoritative(self):
+        path = self.event_channel()
+        self.env["TEST_URL"] = self.url + "/missing"
+        self.env["TEST_URL_2"] = self.url + "/archive"
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.event_records(path, result, "success")
+        self.assertTrue(any(event["type"] == "error" for event in events))
+        self.assertIn("/missing", self.requests)
+        self.assertIn("/archive", self.requests)
+        self.assertTrue((self.roots / "alpine/bin/tool").exists())
+
+    def test_https_download_events_are_bounded(self):
+        path = self.event_channel()
+        result = self.run_harness()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = self.event_records(path, result, "success")
+        progress = [event for event in events if event["type"] == "progress"]
+        self.assertTrue(progress)
+        self.assertLessEqual(len(progress), 30)
+        for event in progress:
+            self.assertGreaterEqual(event["current"], 0)
+            if "percent" in event:
+                self.assertGreaterEqual(event["percent"], 0)
+                self.assertLessEqual(event["percent"], 100)
+            if event.get("total", -1) >= 0:
+                self.assertLessEqual(event["current"], event["total"])
+
+    def test_interrupted_install_events_after_cleanup(self):
+        path = self.event_channel()
+        self.env["TEST_URL"] = self.url + "/slow"
+        proc = subprocess.Popen([str(self.harness)], env=self.env, cwd=self.base,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: proc.kill() if proc.poll() is None else None)
+        self.assertIn("Installing", proc.stdout.readline())
+        time.sleep(0.15)
+        proc.send_signal(signal.SIGINT)
+        proc.communicate(timeout=10)
+        self.assertEqual(proc.returncode, 130)
+        events = self.event_records(path, proc, "cancelled")
+        self.assertEqual(events[-1]["exit_code"], 130)
+        self.assert_clean()
+        self.assertNotIn("/missing", self.requests)
+
+    def test_invalid_channel_prevents_install_side_effects(self):
+        path = self.base / "shared-events"
+        path.write_bytes(b"")
+        path.chmod(0o644)
+        self.env.update(PDN_EVENT_FILE=str(path), PDN_OPERATION_ID="install-fixture_1")
+        result = self.run_harness()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("event", result.stderr.lower())
+        self.assertFalse(self.roots.exists())
+        self.assertEqual(self.requests, [])
+        self.assertEqual(path.read_bytes(), b"")
 
     def test_local_install_and_preservation(self):
         result = self.run_harness(self.archive)

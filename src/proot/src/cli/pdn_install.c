@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "pdn_distros.h"
+#include "pdn_events.h"
 #include <sys/wait.h>
 
 char *pdn_rootfs_base(void);
@@ -28,6 +29,7 @@ static void cancel_install(int signal_number)
 
 static int error(const char *message)
 {
+    pdn_events_error(message);
     fprintf(stderr, "pdn: %s\n", message);
     return -1;
 }
@@ -35,6 +37,12 @@ static int error(const char *message)
 static int rootfs_error(const char *action, const char *path, int code)
 {
     const char *configured = getenv("PDN_ROOTFS_DIR");
+    const char *kind = code == EACCES || code == EPERM ? "directory_permission" :
+                       code == EROFS ? "directory_read_only" :
+                       code == ENOTDIR ? "directory_not_directory" :
+                       code == ENOENT ? "directory_missing" : "directory_unavailable";
+    pdn_events_problem(kind, "Cannot access rootfs directory",
+                       "Set PDN_ROOTFS_DIR to a writable directory");
     fprintf(stderr, "pdn: cannot %s rootfs directory '%s': %s (errno=%d)\n",
             action, path, strerror(code), code);
     fprintf(stderr, "pdn: rootfs location selected by %s; set PDN_ROOTFS_DIR to a writable directory.\n",
@@ -99,6 +107,9 @@ static int progress(void *context, curl_off_t total, curl_off_t current,
     struct transfer *transfer = context;
     int percent = (int)(current * 100 / transfer->distro->size);
     (void)total; (void)upload_total; (void)uploaded;
+    pdn_events_progress(current > (curl_off_t)transfer->distro->size ?
+                        (long long)transfer->distro->size : (long long)current,
+                        (long long)transfer->distro->size);
     if (percent / 10 > transfer->percent / 10) {
         fprintf(stderr, "Downloading %s: %d%%\n", transfer->distro->name, percent);
         transfer->percent = percent;
@@ -113,12 +124,14 @@ static int download(const struct distro *distro, const char *url, const char *pa
     struct transfer transfer = {.distro = distro};
     char details[CURL_ERROR_SIZE] = {0};
     const char *ca = getenv("PDN_CA_BUNDLE");
+    pdn_events_stage("downloading");
+    pdn_events_progress(0, (long long)distro->size);
     transfer.file = fopen(path, "wb");
     if (!transfer.file) return error(strerror(errno));
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return error("cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.2");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -142,6 +155,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
     curl_easy_cleanup(curl);
     if (fclose(transfer.file) != 0 && status == CURLE_OK) status = CURLE_WRITE_ERROR;
     if (status != CURLE_OK) return error(*details ? details : curl_easy_strerror(status));
+    pdn_events_progress((long long)transfer.size, (long long)distro->size);
     return 0;
 }
 
@@ -172,6 +186,7 @@ static int verify(const struct distro *distro, const char *path)
     char hex[65];
     struct stat st;
     size_t i;
+    pdn_events_stage("verifying");
     if (stat(path, &st) < 0 || st.st_size != (off_t)distro->size) return error("incorrect archive size");
     if (mbedtls_md_file(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), path, digest) != 0)
         return error("cannot hash archive");
@@ -270,6 +285,7 @@ static int extract(const struct distro *distro, const char *path)
     size_t size;
     la_int64_t offset, total = 0;
     int status, result = -1, entries = 0;
+    pdn_events_stage("extracting");
     archive_read_support_filter_gzip(input);
     archive_read_support_format_tar(input);
     archive_write_disk_set_options(output, ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_TIME |
@@ -391,6 +407,7 @@ static int configure(const struct distro *distro, const struct mirror *mirror)
     const char *base = mirror->packages ? mirror->packages : mirror->base;
     int etc = open("etc", O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC), config = -1, extra = -1, result = -1, length;
     struct stat st;
+    pdn_events_stage("configuring");
     if (etc < 0) return error("missing etc directory");
     if (!strcmp(distro->name, "alpine")) {
         length = snprintf(repositories, sizeof(repositories), "%s/v3.24/main\n%s/v3.24/community\n", base, base);
@@ -462,10 +479,12 @@ static int initialize_arch(void)
     int status;
     pid_t child, waited;
     if (!root || !temp) { free(root); free(temp); return error("cannot resolve staging rootfs"); }
+    pdn_events_stage("initializing");
     puts("Initializing Arch Linux ARM package keys...");
     fflush(stdout);
     child = fork();
     if (child == 0) {
+        pdn_events_disable();
         const char *proot_tmp = getenv("PROOT_TMP_DIR"), *tmp = getenv("TMPDIR");
         if ((!proot_tmp || !*proot_tmp) && (!tmp || !*tmp)) setenv("PROOT_TMP_DIR", temp, 1);
         char *args[] = {"pdn", "login", "--rootfs", root, "--", "/bin/sh", "-c",
@@ -486,6 +505,7 @@ static int initialize_arch(void)
 int pdn_install(const char *name, const char *local_archive, const char *mirror_name)
 {
     struct distro distro;
+    pdn_events_stage("preparing");
     if (find_distro(name, &distro) < 0) return error("unknown distro; run pdn list --available") != 0;
     const struct mirror *mirrors = distro.mirrors;
     size_t count = 0, i;
@@ -543,6 +563,7 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
     if (!strcmp(distro.name, "arch") && initialize_arch() < 0) goto restore;
     if (cancelled || fchdir(basefd) < 0) goto restore;
     if (exists_distro(distro.name)) { error("rootfs appeared during installation; refusing to replace it"); goto restore; }
+    pdn_events_stage("publishing");
     {
         char source[sizeof(stage) + 8];
         snprintf(source, sizeof(source), "%s/rootfs", stage);
@@ -561,5 +582,6 @@ done:
     if (lock >= 0) close(lock);
     if (basefd >= 0) close(basefd);
     free(archive); free(base);
+    if (cancelled) pdn_events_cancelled(cancelled);
     return result;
 }

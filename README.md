@@ -4,7 +4,7 @@
 
 面向提供终端或命令执行能力的 Android App：把 `pdn` 放进 App 可执行的目录，就能用简单命令安装、登录和管理 Linux。无需先安装 Termux，也不需要宿主额外提供 Bash、Python、curl 或 tar。
 
-当前版本：**v0.6.1 · ARM64 Android · 早期测试版**。
+当前版本：**v0.6.2 · ARM64 Android · 早期测试版**。
 
 > 我在 **MT 管理器** 里实际用过，目前功能正常。这是我第一次做这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
 >
@@ -37,7 +37,7 @@
 
 也可以获取开发中的构建：打开 [Build pdn 工作流](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml)，选择成功运行记录，在 **Artifacts** 下载 `pdn-android-arm64-提交号`。下载产物通常需要登录 GitHub；自动构建产物有保留期限，不等同于长期 Release。
 
-解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.1-android-arm64.tar.gz`。里面同时提供：
+解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.2-android-arm64.tar.gz`。里面同时提供：
 
 - `pdn`：建议使用的命令名。
 - `proot-distro-nolib`：与 `pdn` 内容相同，任选一个即可，不必两个都放进 bin。
@@ -98,6 +98,10 @@ pdn install alpine --mirror official
 Kotlin 接入时调用 `pdn.install("alpine", mirror = "official")`。
 
 ## 嵌入 Android App
+
+Java/Kotlin 可以通过 `PdnRuntime` 生成安装、执行等操作，再用 `PdnOperations`
+接收阶段、进度、错误建议及最终结果。GUI 无需解析 CLI 输出；Linux 的 stdout/stderr
+保持独立。见 [Java/Kotlin 事件 API 与 AAR 结构](docs/pdn-events.md)。
 
 发布产物同时提供可直接下载的 `libpdn.so` 和 `libproot-loader.so`。将两者放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
 
@@ -231,7 +235,7 @@ make package
 make clean
 ```
 
-`make test` 必须在允许 PRoot 运行的 ARM64 Android 环境执行，还需要 Python 3 和仓库测试使用的 BusyBox fixture。v0.6.1 已通过 101 项本地 Android 测试；Ubuntu/Debian/Arch/Alpine 的核心链路已验证，不代表所有设备兼容性。
+`make test` 必须在允许 PRoot 运行的 ARM64 Android 环境执行，还需要 Python 3 和仓库测试使用的 BusyBox fixture。v0.6.2 的回归与覆盖率记录见 [更新记录](CHANGELOG.md)；Ubuntu/Debian/Arch/Alpine 的核心链路已验证，不代表所有设备兼容性。
 
 `make package` 先编译，再打包已提交的源码和产物。打包前需提交项目文件，确保源码对应当前提交；输出在 `build/packages/`。更换编译器、NDK 或依赖编译参数时先 `make clean`，避免复用旧静态库。
 

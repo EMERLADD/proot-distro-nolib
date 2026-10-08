@@ -66,8 +66,8 @@ App/JNI 示例时使用 API 28 及以上。宿主的其他代码可以要求更�
 - [PdnRuntime](../android/proot-engine/src/main/java/id/or/oo/pr/engine/PdnRuntime.kt)：准备目录、生成 argv/environment 和 ProcessBuilder。
 - [AlpinePackages](../android/proot-engine/src/main/java/id/or/oo/pr/engine/AlpinePackages.kt)：通过 exec 接口安装软件、更新索引和查询软件。
 
-仓库内可使用 `:proot-engine` 模块。其他项目可把这三份 Kotlin 源码引入自己的
-模块并保留许可材料；仅使用 `PdnRuntime` 的进程接口不需要 PTY JNI 或终端 UI。
+仓库内可使用 `:proot-engine` 模块。其他项目可引入这些 Kotlin 源码和 W2 的四份 Java 接口源码，
+并保留许可材料；仅使用 `PdnRuntime` 的进程接口不需要 PTY JNI 或终端 UI。
 
 也可以构建 `:proot-engine:assembleDebug`，把
 `android/proot-engine/build/outputs/aar/proot-engine-debug.aar` 放到宿主的 `app/libs/`：
@@ -78,7 +78,8 @@ dependencies {
 }
 ```
 
-宿主需启用 Kotlin 支持，并保留上面的 ARM64、SDK、原生库解压及网络权限配置。
+宿主需提供 Kotlin 标准库，并保留上面的 ARM64、SDK、原生库解压及网络权限配置。
+Java 工程也可使用 Java 监听器 API；Kotlin 实现需要的运行时依赖仍须保留。
 AAR 已包含原生程序，不要再重复放同名 `.so`；引擎 AAR 不包含终端 UI 模块。
 
 
@@ -123,6 +124,13 @@ fun createRuntime(context: Context): PdnRuntime = PdnRuntime(
 
 PDN 核心使用 `PDN_ROOTFS_DIR` 和显式参数决定数据位置；`APP_*` 是现有宿主
 封装的契约。进入 guest 后，PDN 会设置 guest 的 HOME、PATH、USER 等环境。
+
+## 事件监听与 Java 接口
+
+W2 新增 `PdnOperations.run(builder, listener)`、`PdnEvent`、`PdnResult` 与 `PdnListener`，
+支持阶段、进度、分类错误和最终结果，stdout/stderr 独立回调。
+API 保持进程调用方式，不要求 JNI 或协程；回调与等待在工作线程执行。
+使用 GUI 接入时优先选择这个接口，详见 [事件协议、Java/Kotlin 示例和 AAR 结构](pdn-events.md)。
 
 ## 安装与执行 API
 

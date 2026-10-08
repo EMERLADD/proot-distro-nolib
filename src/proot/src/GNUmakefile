@@ -19,6 +19,7 @@ CFLAGS   += -Wall -Wextra -O2
 LDFLAGS  += -ltalloc -Wl,-z,noexecstack
 
 OBJECTS += \
+	cli/pdn_events.o		\
 	cli/pdn.o		\
 	cli/pdn_config.o		\
 	cli/pdn_remove.o		\

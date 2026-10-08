@@ -3,7 +3,7 @@ package id.or.oo.pr.engine
 import java.io.File
 import java.io.IOException
 
-class PdnRuntime(
+class PdnRuntime @JvmOverloads constructor(
     private val host: ProotHost,
     val rootfsDir: File = File(host.prefixDir, "var/lib/pdn/rootfs"),
     val projectDir: File = File(host.homeDir, "workspace"),
@@ -32,6 +32,7 @@ class PdnRuntime(
         return listOf(executable.absolutePath) + arguments
     }
 
+    @JvmOverloads
     fun loginArguments(rootfs: File, user: String = "root"): List<String> = listOf(
         "login", "--rootfs", rootfs.absolutePath,
         "--user", user, "--bind", "${projectDir.absolutePath}:/workspace",
@@ -45,12 +46,15 @@ class PdnRuntime(
 
     fun version(): ProcessBuilder = processBuilder(listOf("version"))
 
+    @JvmOverloads
     fun list(available: Boolean = false): ProcessBuilder =
         processBuilder(if (available) listOf("list", "--available") else listOf("list"))
 
+    @JvmOverloads
     fun mirrors(name: String? = null): ProcessBuilder =
         processBuilder(if (name == null) listOf("mirrors") else listOf("mirrors", distroName(name)))
 
+    @JvmOverloads
     fun install(name: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
         val args = mutableListOf("install", distroName(name))
         require(mirror == null || archive == null) { "Choose either a mirror or a local archive" }
@@ -64,17 +68,21 @@ class PdnRuntime(
 
     fun remove(name: String): ProcessBuilder = processBuilder(listOf("remove", distroName(name), "--yes"))
 
+    @JvmOverloads
     fun login(name: String, user: String = "root"): ProcessBuilder =
         processBuilder(listOf("login", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3))
 
+    @JvmOverloads
     fun login(rootfs: File, user: String = "root"): ProcessBuilder = processBuilder(loginArguments(rootfs, user))
 
+    @JvmOverloads
     fun exec(name: String, command: List<String>, user: String = "root"): ProcessBuilder {
         require(command.isNotEmpty()) { "A guest command is required" }
         return processBuilder(listOf("exec", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3)
             + listOf("--") + command)
     }
 
+    @JvmOverloads
     fun exec(rootfs: File, command: List<String>, user: String = "root"): ProcessBuilder {
         require(command.isNotEmpty()) { "A guest command is required" }
         return processBuilder(listOf("exec") + loginArguments(rootfs, user).drop(1) + listOf("--") + command)

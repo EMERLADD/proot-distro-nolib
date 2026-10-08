@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "cli/pdn_config.h"
+#include "cli/pdn_events.h"
 
 #ifdef PDN_WITH_INSTALL
 int pdn_install(const char *name, const char *local_archive, const char *mirror_name);
@@ -23,6 +24,16 @@ int pdn_remove(const char *requested, int yes);
 static int fail(const char *message, const char *value)
 {
     fprintf(stderr, "pdn: %s: %s\n", message, value);
+    pdn_events_problem("invalid_argument", message, "Check the selected rootfs and arguments; see pdn help");
+    return 2;
+}
+
+static int root_error(const char *message, const char *value, int code)
+{
+    fprintf(stderr, "pdn: %s: %s\n", message, value);
+    pdn_events_problem(code == ENOENT ? "rootfs_missing" : code == ENOTDIR ? "not_directory" :
+        (code == EACCES || code == EPERM) ? "directory_permission" : code == EROFS ? "directory_read_only" : "directory_unavailable",
+        message, "Check PDN_ROOTFS_DIR or --rootfs; install the distro and select an accessible Linux rootfs directory");
     return 2;
 }
 
@@ -42,6 +53,8 @@ static char *join(const char *a, const char *b)
     char *result;
     if (asprintf(&result, "%s/%s", a, b) < 0) {
         perror("pdn");
+        pdn_events_problem("out_of_memory", "Could not allocate startup paths", "Free memory and retry");
+        pdn_events_finish(2);
         exit(2);
     }
     return result;
@@ -61,6 +74,9 @@ static int temp_error(const char *path, const char *source, int code)
     if (code == ENOENT)
         fputs("pdn: create this directory with mkdir -p before retrying.\n", stderr);
     fputs("pdn: set PROOT_TMP_DIR to an existing writable directory with search permission.\n", stderr);
+    pdn_events_problem(code == ENOENT ? "directory_missing" : code == ENOTDIR ? "not_directory" : (code == EACCES || code == EROFS) ? "directory_not_writable" : "directory_unavailable",
+        strerror(code), code == ENOENT ? "Create the selected temporary directory with mkdir -p, then retry" :
+        "Set PROOT_TMP_DIR to an existing writable directory with search permission");
     return 2;
 }
 
@@ -172,7 +188,7 @@ static int resolve_root(int argc, char *const argv[], char **root, int *command)
         base = pdn_rootfs_base();
         if (!base) return fail("set PDN_ROOTFS_DIR or HOME", requested);
         dir = opendir(base);
-        if (!dir) { result = fail(strerror(errno), base); free(base); return result; }
+        if (!dir) { result = root_error(strerror(errno), base, errno); free(base); return result; }
         while ((entry = readdir(dir))) {
             if (!equal(entry->d_name, requested)) continue;
             if (candidate) {
@@ -183,13 +199,13 @@ static int resolve_root(int argc, char *const argv[], char **root, int *command)
         }
         closedir(dir);
         free(base);
-        if (!candidate) return fail("rootfs not found", requested);
+        if (!candidate) return root_error("rootfs not found", requested, ENOENT);
         *command = 3;
     }
     if (!candidate) return fail("out of memory", requested);
     *root = realpath(candidate, NULL);
     free(candidate);
-    if (!*root) return fail(strerror(errno), requested);
+    if (!*root) return root_error(strerror(errno), requested, errno);
     if (!directory(*root) || !strcmp(*root, "/")) result = fail("rootfs must be a Linux directory other than /", requested);
     return result;
 }
@@ -328,6 +344,7 @@ int pdn_login(int argc, char *const argv[])
     args[n++] = command < argc ? "command" : "interactive";
     args[n++] = shell_override ? "override" : "default";
     for (; command < argc; command++) args[n++] = argv[command];
+    pdn_events_stage("starting");
     result = proot_main(n, args);
 done:
     if (rootfd >= 0) close(rootfd);
@@ -360,7 +377,7 @@ static int list(void)
     return 0;
 }
 
-int main(int argc, char *const argv[])
+static int dispatch(int argc, char *const argv[])
 {
     const char *name = strrchr(argv[0], '/');
     int named_pdn = equal(name ? name + 1 : argv[0], "pdn");
@@ -401,4 +418,24 @@ int main(int argc, char *const argv[])
         if (named_pdn && argv[1][0] != '-') return fail("unknown command", argv[1]);
     } else if (named_pdn) return help();
     return proot_main(argc, argv);
+}
+
+int main(int argc, char *const argv[])
+{
+    const char *operation = "proot";
+    const char *names[] = {"install", "login", "exec", "config", "backup", "restore", "mirrors", "list", "remove", "help", "version"};
+    if (argc > 1) {
+        operation = argv[1][0] == '-' ? "proot" : "unknown";
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) if (equal(argv[1], names[i])) operation = names[i];
+        if (equal(argv[1], "--version") || equal(argv[1], "-V")) operation = "version";
+        if (equal(argv[1], "--help") || equal(argv[1], "-h")) operation = "help";
+        if (equal(argv[1], "ls")) operation = "list";
+        if (equal(argv[1], "uninstall")) operation = "remove";
+    }
+    int status = pdn_events_begin(operation);
+    if (status) return status;
+    pdn_events_stage("preparing");
+    status = dispatch(argc, argv);
+    pdn_events_finish(status);
+    return status;
 }

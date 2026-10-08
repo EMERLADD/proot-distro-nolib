@@ -36,6 +36,7 @@
 #include <talloc.h>     /* talloc_*, */
 #include <inttypes.h>   /* PRI*, */
 
+#include "cli/pdn_events.h"
 #include "tracee/event.h"
 #include "tracee/seccomp.h"
 #include "tracee/mem.h"
@@ -401,6 +402,7 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 	signal = 0;
 
 	if (WIFEXITED(tracee_status)) {
+		if (tracee->vpid == 1) pdn_events_guest_exit(WEXITSTATUS(tracee_status), 0);
 		last_exit_status = WEXITSTATUS(tracee_status);
 		VERBOSE(tracee, 1,
 			"vpid %" PRIu64 ": exited with status %d",
@@ -408,6 +410,7 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 		terminate_tracee(tracee);
 	}
 	else if (WIFSIGNALED(tracee_status)) {
+		if (tracee->vpid == 1) pdn_events_guest_exit(-1, WTERMSIG(tracee_status));
 		check_architecture(tracee);
 		VERBOSE(tracee, (int) (tracee->vpid != 1),
 			"vpid %" PRIu64 ": terminated with signal %d",

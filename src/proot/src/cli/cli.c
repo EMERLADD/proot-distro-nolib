@@ -25,6 +25,7 @@
 #include <linux/limits.h>  /* ARG_MAX, PATH_MAX, */
 #include <string.h>        /* str*(3), basename(3),  */
 #include <talloc.h>        /* talloc*,  */
+#include "cli/pdn_events.h"
 #include <stdlib.h>        /* exit(3), EXIT_*, strtol(3), {g,s}etenv(3), */
 #include <assert.h>        /* assert(3),  */
 #include <sys/types.h>     /* getpid(2),  */
@@ -484,17 +485,22 @@ int proot_main(int argc, char *const argv[])
 	}
 
 	/* Start tracing the first tracee and all its children.  */
-	exit(event_loop());
+	status = event_loop();
+	pdn_events_finish(status);
+	exit(status);
 
 error:
 	TALLOC_FREE(tracee);
 
 	if (exit_failure) {
 		fprintf(stderr, "fatal error: see `%s --help`.\n", basename(argv[0]));
+		pdn_events_finish(EXIT_FAILURE);
 		exit(EXIT_FAILURE);
 	}
-	else
+	else {
+		pdn_events_finish(EXIT_SUCCESS);
 		exit(EXIT_SUCCESS);
+	}
 }
 
 /**

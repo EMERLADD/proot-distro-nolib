@@ -32,6 +32,7 @@
 #include <termios.h>     /* TCSETS, TCSANOW */
 
 #include "cli/note.h"
+#include "cli/pdn_events.h"
 #include "syscall/syscall.h"
 #include "syscall/sysnum.h"
 #include "syscall/socket.h"
@@ -626,6 +627,8 @@ int translate_syscall_enter(Tracee *tracee)
 		break;
 
 	case PR_prctl:
+		if (tracee->vpid == 1 && tracee->load_info != NULL &&
+		    peek_reg(tracee, CURRENT, SYSARG_1) == PR_SET_NAME) pdn_events_guest_loaded();
 		/* Prevent tracees from setting dumpable flag.
 		 * (Otherwise it could break tracee memory access)  */
 		if (peek_reg(tracee, CURRENT, SYSARG_1) == PR_SET_DUMPABLE) {

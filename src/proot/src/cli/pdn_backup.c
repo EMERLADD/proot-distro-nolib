@@ -15,6 +15,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "pdn_events.h"
+
 char *pdn_rootfs_base(void);
 static volatile sig_atomic_t stopped;
 static const int64_t total_limit = INT64_C(64) * 1024 * 1024 * 1024;
@@ -24,8 +26,19 @@ static void interrupt_archive(int number) { stopped = number; }
 
 static int fail(const char *message)
 {
+    pdn_events_error(message);
     fprintf(stderr, "pdn: %s\n", message);
     return -1;
+}
+
+static void rootfs_problem(int code)
+{
+    const char *kind = code == EACCES || code == EPERM ? "directory_permission" :
+                       code == EROFS ? "directory_read_only" :
+                       code == ENOTDIR ? "directory_not_directory" :
+                       code == ENOENT ? "directory_missing" : "directory_unavailable";
+    pdn_events_problem(kind, "Cannot access rootfs directory",
+                       "Set PDN_ROOTFS_DIR to a writable directory");
 }
 
 static int valid_name(const char *name)
@@ -92,7 +105,7 @@ static int l2s_target(const char *path)
     return !strncmp(leaf, ".l2s.", 5) || !strncmp(leaf, ".proot.l2s.", 11);
 }
 
-struct limits { int64_t total; unsigned entries; };
+struct limits { int64_t total; unsigned entries; int64_t processed; };
 
 static int pack(struct archive *out, int dirfd, const char *prefix, dev_t device,
                 struct limits *limits, unsigned depth, const char *rootpath)
@@ -155,6 +168,8 @@ static int pack(struct archive *out, int dirfd, const char *prefix, dev_t device
                 size = read(fd, buffer, remaining < (off_t)sizeof(buffer) ? (size_t)remaining : sizeof(buffer));
                 if (size <= 0 || archive_write_data(out, buffer, (size_t)size) != size) goto entry_done;
                 remaining -= size;
+                limits->processed += size;
+                pdn_events_progress(limits->processed, -1);
             }
             if (fstat(fd, &opened) < 0 || opened.st_size != st.st_size ||
                 opened.st_mtim.tv_sec != st.st_mtim.tv_sec || opened.st_mtim.tv_nsec != st.st_mtim.tv_nsec)
@@ -246,6 +261,8 @@ static int unpack(int fd, const char *rootpath)
             if (stopped || offset < end || offset > declared || size > (uint64_t)(declared - offset) ||
                 archive_write_data_block(out, block, size, offset) != ARCHIVE_OK) goto done;
             end = offset + (la_int64_t)size;
+            limits.processed += (int64_t)size;
+            pdn_events_progress(limits.processed, -1);
         }
         if (status != ARCHIVE_EOF || archive_write_finish_entry(out) != ARCHIVE_OK) goto done;
     }
@@ -274,6 +291,7 @@ int pdn_archive(const char *name, const char *file, int restoring)
     struct sigaction action = {0}, old_int, old_term;
     struct archive *out = NULL;
     struct limits limits = {0};
+    pdn_events_stage("preparing");
     if (!valid_name(name) || !*file) { fail("invalid name or archive path"); return 2; }
     stopped = 0;
     action.sa_handler = interrupt_archive;
@@ -281,11 +299,12 @@ int pdn_archive(const char *name, const char *file, int restoring)
     sigaction(SIGINT, &action, &old_int);
     sigaction(SIGTERM, &action, &old_term);
     base = pdn_rootfs_base();
-    if (!base || !*base || (restoring && mkdirs(base) < 0)) goto done;
+    if (!base || !*base) { rootfs_problem(ENOENT); goto done; }
+    if (restoring && mkdirs(base) < 0) { rootfs_problem(errno); goto done; }
     resolved = realpath(base, NULL);
-    if (!resolved || !strcmp(resolved, "/")) goto done;
+    if (!resolved || !strcmp(resolved, "/")) { rootfs_problem(resolved ? EINVAL : errno); goto done; }
     basefd = open(resolved, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (basefd < 0) goto done;
+    if (basefd < 0) { rootfs_problem(errno); goto done; }
     lock = openat(basefd, ".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (lock < 0 || flock(lock, LOCK_EX | LOCK_NB) < 0) { fail("cannot acquire archive/install lock"); goto done; }
     found = lookup(basefd, name, &count);
@@ -295,6 +314,8 @@ int pdn_archive(const char *name, const char *file, int restoring)
     cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (cwd < 0) goto done;
     if (restoring) {
+        pdn_events_stage("restoring");
+        pdn_events_progress(0, -1);
         fd = open(file, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0 || fstat(fd, &st) < 0 || !S_ISREG(st.st_mode)) { fail("archive must be a readable regular file"); goto done; }
         if (fchdir(basefd) < 0 || !mkdtemp(stage)) goto done;
@@ -305,6 +326,7 @@ int pdn_archive(const char *name, const char *file, int restoring)
             fail("archive does not contain a Linux rootfs at its top level"); goto done;
         }
         if (stopped || fchdir(basefd) < 0) goto done;
+        pdn_events_stage("publishing");
         free(found); found = lookup(basefd, name, &count);
         if (count || syscall(SYS_renameat2, basefd, stage, basefd, name, 1) < 0) {
             fail("cannot publish rootfs without replacing an existing entry"); goto done;
@@ -337,6 +359,8 @@ int pdn_archive(const char *name, const char *file, int restoring)
         if (outputfd < 0 || !temp || fchdir(outputfd) < 0) goto done;
         fd = mkstemp(temp);
         if (fd < 0) goto done;
+        pdn_events_stage("backing_up");
+        pdn_events_progress(0, -1);
         out = archive_write_new();
         if (!out || archive_write_set_format_pax_restricted(out) != ARCHIVE_OK ||
             archive_write_add_filter_gzip(out) != ARCHIVE_OK || archive_write_open_fd(out, fd) != ARCHIVE_OK ||
@@ -344,6 +368,7 @@ int pdn_archive(const char *name, const char *file, int restoring)
             archive_write_close(out) != ARCHIVE_OK || fsync(fd) < 0 || stopped) {
             fail("backup failed; source may be changing or unreadable"); goto done;
         }
+        pdn_events_stage("publishing");
         if (syscall(SYS_renameat2, outputfd, temp, outputfd, strrchr(destination, '/') + 1, 1) < 0) {
             fail("cannot publish backup without replacing an existing file"); goto done;
         }
@@ -364,7 +389,7 @@ done:
     free(base); free(resolved); free(found); free(rootpath); free(destination); free(parent); free(temp);
     sigaction(SIGINT, &old_int, NULL);
     sigaction(SIGTERM, &old_term, NULL);
-    if (stopped) return 128 + stopped;
+    if (stopped) { pdn_events_cancelled(stopped); return 128 + stopped; }
     if (result) fprintf(stderr, "pdn: %s failed; existing files were not replaced\n", restoring ? "restore" : "backup");
     return result;
 }

@@ -15,11 +15,18 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import id.or.oo.pr.engine.AlpinePackages
 import id.or.oo.pr.engine.PdnRuntime
+import id.or.oo.pr.engine.PdnEvent
+import id.or.oo.pr.engine.PdnListener
+import id.or.oo.pr.engine.PdnOperations
+import id.or.oo.pr.engine.PdnResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.ByteArrayOutputStream
 
 private val PDN_DISTROS = listOf(
     "alpine" to "Alpine",
@@ -42,6 +49,9 @@ fun PdnScreen(app: App) {
     var operation by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf("") }
     var lastStatus by remember { mutableStateOf<Int?>(null) }
+    var phase by remember { mutableStateOf("准备中") }
+    var progress by remember { mutableStateOf<Int?>(null) }
+    var result by remember { mutableStateOf<PdnResult?>(null) }
     var removing by remember { mutableStateOf<DistroInfo?>(null) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -64,10 +74,24 @@ fun PdnScreen(app: App) {
         selected = name
         output = emptyList()
         lastStatus = null
+        result = null
+        progress = null
+        phase = "准备中"
         showOutput = true
         scope.launch {
             try {
-                lastStatus = runPdnCommand(createBuilder) { output = (output + it).takeLast(500) }
+                result = runPdnCommand(runtime, createBuilder,
+                    onLine = { output = (output + it).takeLast(500) },
+                    onEvent = { event ->
+                        if (event.type == "stage") {
+                            phase = pdnStageLabel(event.stage)
+                            progress = null
+                        } else if (event.type == "progress") {
+                            progress = event.percent
+                        }
+                    },
+                )
+                lastStatus = result?.let { if (it.isSuccess) 0 else if (it.exitCode == 0) -1 else it.exitCode } ?: -1
             } finally {
                 busy = null
                 refresh()
@@ -168,6 +192,28 @@ fun PdnScreen(app: App) {
             onDismissRequest = { if (busy == null) showOutput = false },
             sheetState = sheet,
         ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                if (busy != null) {
+                    Text(phase + (progress?.let { " · $it%" } ?: ""))
+                    val percent = progress
+                    if (percent == null) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    else LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                }
+                result?.takeUnless { it.isSuccess }?.let { failure ->
+                    Text(when (failure.outcome) {
+                        "guest_exit" -> failure.guestSignal?.let { "Linux 命令被信号 $it 终止" }
+                            ?: "Linux 命令失败，退出码：${failure.guestExitCode ?: failure.exitCode}"
+                        "cancelled" -> "操作已中断"
+                        "host_protocol_error" -> "无法确认操作结果：事件通道异常"
+                        else -> "PDN 操作失败"
+                    }, color = MaterialTheme.colorScheme.error)
+                    failure.code?.let { Text("错误类型：$it") }
+                    failure.message?.let { Text(it) }
+                    failure.suggestion?.let { Text("建议：$it") }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
             OutputConsoleContent(operation, selected, busy != null, output, lastStatus) { showOutput = false }
         }
     }
@@ -241,28 +287,68 @@ private fun AlpinePackagePanel(
     }
 }
 
-private suspend fun runPdnCommand(createBuilder: () -> ProcessBuilder, onLine: (String) -> Unit): Int =
-    withContext(Dispatchers.IO) {
-        try {
-            val process = createBuilder().redirectErrorStream(true).start()
-            try {
-                process.outputStream.close()
-                process.inputStream.bufferedReader().use { reader ->
-                    while (true) {
-                        val line = reader.readLine() ?: break
-                        withContext(Dispatchers.Main) { onLine(line) }
-                    }
-                }
-                val status = process.waitFor()
-                withContext(Dispatchers.Main) { onLine(if (status == 0) "操作成功。" else "操作失败，退出码：$status") }
-                status
-            } finally {
-                if (process.isAlive) process.destroyForcibly()
+private fun pdnStageLabel(stage: String?): String = when (stage) {
+    "preparing" -> "检查目录和参数"
+    "copying" -> "复制本地安装包"
+    "downloading" -> "下载系统"
+    "verifying" -> "校验安装包"
+    "extracting" -> "解压系统"
+    "configuring" -> "配置系统"
+    "initializing" -> "初始化系统"
+    "publishing" -> "保存安装结果"
+    "backing_up" -> "备份系统"
+    "restoring" -> "恢复系统"
+    "starting" -> "启动 Linux 命令"
+    "running" -> "Linux 命令正在运行"
+    else -> stage ?: "执行中"
+}
+
+private class PdnLogLines(private val onLine: (String) -> Unit) {
+    private val pending = ByteArrayOutputStream()
+    fun accept(data: ByteArray) {
+        for (byte in data) {
+            if (byte == '\n'.code.toByte()) flush()
+            else {
+                pending.write(byte.toInt())
+                if (pending.size() >= 16384) flush()
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            withContext(Dispatchers.Main) { onLine("错误：${e.message}") }
-            -1
         }
     }
+    fun flush() {
+        val line = pending.toString("UTF-8").trimEnd('\r')
+        pending.reset()
+        onLine(line)
+    }
+    fun finish() { if (pending.size() > 0) flush() }
+}
+
+private suspend fun runPdnCommand(
+    runtime: PdnRuntime,
+    createBuilder: () -> ProcessBuilder,
+    onLine: (String) -> Unit,
+    onEvent: (PdnEvent) -> Unit,
+): PdnResult? = runInterruptible(Dispatchers.IO) {
+    fun line(text: String) = runBlocking(Dispatchers.Main) { onLine(text) }
+    val stdout = PdnLogLines(::line)
+    val stderr = PdnLogLines(::line)
+    try {
+        val result = PdnOperations(runtime).run(createBuilder(), object : PdnListener {
+            override fun onStdout(data: ByteArray) { stdout.accept(data) }
+            override fun onStderr(data: ByteArray) { stderr.accept(data) }
+            override fun onEvent(event: PdnEvent) = runBlocking(Dispatchers.Main) { onEvent(event) }
+        })
+        stdout.finish()
+        stderr.finish()
+        line(if (result.isSuccess) "操作成功。" else "操作失败，退出码：${result.exitCode}")
+        result
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: InterruptedException) {
+        throw e
+    } catch (e: Exception) {
+        stdout.finish()
+        stderr.finish()
+        line("错误：${e.message}")
+        null
+    }
+}

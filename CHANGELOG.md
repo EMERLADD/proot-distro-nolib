@@ -1,5 +1,18 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.2 — 2026-10-08
+
+- 新增可选 JSONL 操作事件：阶段、下载及归档进度、错误建议和最终结果；不混入 Linux stdout/stderr。
+- 增加 Java `PdnOperations`、`PdnListener`、`PdnEvent`、`PdnResult`，Kotlin 默认参数提供 Java 重载。
+- 区分 PDN 管理/启动错误、guest 非零退出、信号终止与协议异常；保留实际进程退出码。
+- GUI 接入事件监听，显示原生阶段和进度，最终失败时显示错误类型、原因及建议。
+- 通道使用私有缓存文件，校验事件版本与顺序，限制记录大小和流缓冲；异常与线程中断后清理资源。
+- 补充 Java/Kotlin 接入示例、协议说明与 AAR 实际目录结构。
+- App 元数据更新为 1.0.2 / versionCode 3，生成引擎 Debug AAR；本次没有构建 APK，也未做新版 GUI 实机确认。
+
+验证：144 项原生测试执行，143 项通过、1 项因环境不允许创建硬链接而跳过；42 项 JVM 测试通过，包含实际 PDN 与 Linux 命令的 Java 对接。
+原生行覆盖率：事件模块 97.27%、命令前端 98.43%、安装器 98.81%、备份恢复 97.07%；Java/Kotlin 行覆盖率 96.44%。GUI Kotlin 编译与 AAR 原生程序哈希校验通过。
+
 ## v0.6.1 — 2026-10-08
 
 - Debian rootfs 下载源只保留 `official` 直链，移除重定向到同一文件的 `github` 重复入口；固定版本、文件大小和 SHA256 校验保持不变。

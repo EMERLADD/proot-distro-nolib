@@ -12,11 +12,14 @@ jacoco { toolVersion = "0.8.12" }
 val pdnClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
     include("id/or/oo/pr/engine/PdnRuntime*.class", "id/or/oo/pr/engine/AlpinePackages*.class")
 }
+val pdnJavaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes")) {
+    include("id/or/oo/pr/engine/Pdn*.class")
+}
 val pdnExecution = layout.buildDirectory.file("jacoco/testDebugUnitTest.exec")
 
 val pdnCoverageReport = tasks.register<JacocoReport>("pdnCoverageReport") {
     dependsOn("testDebugUnitTest")
-    classDirectories.setFrom(pdnClasses)
+    classDirectories.setFrom(pdnClasses, pdnJavaClasses)
     sourceDirectories.setFrom(files("src/main/java"))
     executionData.setFrom(pdnExecution)
     reports { xml.required.set(true); html.required.set(true) }
@@ -24,7 +27,7 @@ val pdnCoverageReport = tasks.register<JacocoReport>("pdnCoverageReport") {
 
 tasks.register<JacocoCoverageVerification>("pdnCoverage") {
     dependsOn(pdnCoverageReport)
-    classDirectories.setFrom(pdnClasses)
+    classDirectories.setFrom(pdnClasses, pdnJavaClasses)
     executionData.setFrom(pdnExecution)
     violationRules {
         rule {
@@ -113,6 +116,7 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20160810")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
 }
