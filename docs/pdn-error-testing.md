@@ -168,3 +168,32 @@ LLVM 行覆盖率：本轮新增或修改的原生可执行行 192/202（95.05%�
 原始事件、stdout/stderr 与工作区写入凭据位于 `/sdcard/yyd/PDN/rish-v064/results.tar.gz`，逐项索引为同目录的 `manifest.tsv`。本次安装使用预先下载的官方归档，没有重测在线下载。BusyBox 用于测试 fixture、超时及日志打包；PDN 没有依赖 Termux 的 `$PREFIX`、下载器或 shell。
 
 本次证明 Android shell 身份下的发行 ELF 行为；没有重新验证 untrusted_app 的 AAR App，也没有在设备上制造 fork、pipe 或 ptrace 策略拒绝。这些分支继续以明确标注的故障注入测试为依据。测试文档更新不改变程序版本，没有构建 APK。
+
+## 0.6.4 APK 接入实测
+
+2026-10-09，分别构建并安装两个独立 Java Android App，在 Android 14（SDK 34）、ARM64 环境运行自动验收。两者均为 minSdk 28、targetSdk 35、compileSdk 36，使用 Android 平台控件；实际操作进程检查 SELinux 为 `untrusted_app`。rish 只负责安装、启动 instrumentation 与导出报告，不能代替 App 的执行身份。
+
+| 路径 | 依赖与实测结果 |
+| --- | --- |
+| AAR | 独立 `examples/aar-probe` 仅导入 Release `pdn-engine-0.6.4.aar` 和 Kotlin 标准库，19/19 检查通过；Java API、事件回调与 AAR PTY JNI 均执行 |
+| 直接 `.so` | 独立 `examples/so-probe` 不导入 AAR、Kotlin 或引擎源码模块，通过 ProcessBuilder 启动 Release ELF，自行读取 JSONL，并使用自有小型 PTY JNI；24/24 检查通过 |
+
+两份 APK 均通过签名验证、ZIP 完整性、Manifest 的 SDK/入口/原生库解压检查。APK 内 `libpdn.so` 与 `libproot-loader.so` 和 GitHub Release 原件逐字节一致，原生运行依赖不含 Termux 库或 RPATH/RUNPATH；自有 PTY JNI 只依赖 Android libc/libdl，LOAD 对齐为 16 KiB。两份验收 APK 为 Debug 签名并带测试覆盖率采集，Release AAR 与 PDN/loader 本身没有重新插桩。
+
+两条路径都实际点击初始化、官方源在线安装 Alpine、执行命令、打开终端、发送输入、resize、Ctrl-C、关闭及关闭后拒绝输入。完整验收另外创建新 rootfs，从官方 Alpine 3.24.2 ARM64 归档安装，验证 UID 0、精确 argv、stdout/stderr 分流、工作区持久化、真实 PTY、连续输入输出、`stty size` 为 32×96、正常退出及事件回调线程。
+
+初始 shell 的缺失、不可执行、坏 ELF、无 shebang 文本退出 0，以及 passwd 选择的登录 shell 缺失、不可执行、坏格式，都通过私有 fixture 触发并验证具体错误码、真实 errno 与建议。无 shebang 回退退出 0 仍为 manager_error。loader 缺失和 App 数据目录中的执行拒绝也验证通过；后者实际为 EACCES，即使内容损坏也不能宣称覆盖 ENOEXEC。guest 退出 17、127 与 SIGTERM 均保留为 guest_exit。每次正常操作均检查连续 sequence、operation_id、唯一 started/result，manager_error 才有唯一 error。
+
+直接 `.so` 工程额外通过 JNI 无效参数检查，以及真实 `/system/bin/sh` 构造的四类事件尾部错误：损坏 JSON、result 后还有事件、截断行、非法 UTF-8。它们验证宿主示例读取器会拒绝错误协议，不属于 PDN 原生故障注入。
+
+| 实机行覆盖率 | 覆盖行 / 可执行行 | 比例 |
+| --- | --- | --- |
+| AAR 验证工程 Java | 425/454 | 93.61% |
+| 直接 `.so` 验证工程 Java | 569/593 | 95.95% |
+| 自有 PTY JNI | 92/103 | 89.32% |
+
+Java 通过 JaCoCo 采集普通 App 的执行数据；自有 JNI 通过可选 LLVM 插桩构建采集，9/9 函数执行。这里统计验证工程的行覆盖率，不是 Release 引擎的覆盖率，也不代表所有内存耗尽或系统策略拒绝分支均实测。
+
+验收脚本遇到两个宿主测试问题并已修正：归档 asset 的 `.gz` 后缀被构建工具解压并改名，改为 `.archive` 后核对 APK 内原始字节；Alpine `/bin/sh` 是 guest 绝对符号链接，检查入口改用 NOFOLLOW_LINKS，而实际可执行性由 guest exec 验证。它们没有改变 PDN 原生代码。启动 instrumentation 后还需显式打开 Activity，实际验收才继续；界面启动方式见两个示例工程说明。
+
+测试输入的官方归档 SHA256 为 `9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773`；PDN 安装时继续按内置大小与 SHA256 校验。原始报告、Java `.ec`、JNI `.profraw` 和两份测试 APK 位于 `/sdcard/yyd/PDN/apk-v064/`，本地分析报告位于 `build/apk-v064/`。没有修改已有发行版，PDN 版本维持 0.6.4。

@@ -1,12 +1,7 @@
-package org.example.pdnprobe;
+package org.example.pdnsoleprobe;
 
 import android.content.Context;
 import android.os.Process;
-import id.or.oo.pr.engine.PdnEvent;
-import id.or.oo.pr.engine.PdnListener;
-import id.or.oo.pr.engine.PdnOperations;
-import id.or.oo.pr.engine.PdnResult;
-import id.or.oo.pr.engine.PdnRuntime;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -21,20 +16,20 @@ public final class ProbeSuite {
     public interface Log { void accept(String line); }
     private final Context context;
     private final ProbeHost host;
-    private PdnRuntime runtime;
-    private PdnOperations operations;
+    private NativeRuntime runtime;
+    private NativeOperations operations;
     private final Log log;
 
     public ProbeSuite(Context context, Log log) {
         this.context = context.getApplicationContext();
         this.log = log;
         host = new ProbeHost(context);
-        runtime = new PdnRuntime(host, new File(context.getFilesDir(), "distributions"),
+        runtime = new NativeRuntime(host, new File(context.getFilesDir(), "distributions"),
                 new File(context.getFilesDir(), "project with spaces"));
-        operations = new PdnOperations(runtime);
+        operations = new NativeOperations(runtime);
     }
 
-    public PdnRuntime getRuntime() { return runtime; }
+    public NativeRuntime getRuntime() { return runtime; }
     public ProbeHost getHost() { return host; }
     public File getRootfs() { return new File(runtime.getRootfsDir(), "alpine"); }
 
@@ -60,8 +55,8 @@ public final class ProbeSuite {
     }
 
     public JSONObject verify() throws Exception {
-        runtime = new PdnRuntime(host, new File(context.getFilesDir(), "acceptance/" + java.util.UUID.randomUUID() + "/distributions"), runtime.getProjectDir());
-        operations = new PdnOperations(runtime);
+        runtime = new NativeRuntime(host, new File(context.getFilesDir(), "acceptance/" + java.util.UUID.randomUUID() + "/distributions"), runtime.getProjectDir());
+        operations = new NativeOperations(runtime);
         JSONArray checks = new JSONArray();
         check(checks, "initialize", () -> {
             runtime.prepare();
@@ -184,6 +179,41 @@ public final class ProbeSuite {
             require("guest_exit".equals(c.result.getOutcome()) && Integer.valueOf(15).equals(c.result.getGuestSignal()), "real guest signal: " + c.result.getOutcome());
             return "guest signal15 with zero errors";
         });
+        check(checks, "native_pty_invalid_arguments", () -> {
+            byte[] bytes = new byte[4];
+            require(NativePty.read(-1, bytes, 0, 4) == -1, "invalid descriptor");
+            require(NativePty.read(0, null, 0, 1) == -1, "null read array");
+            require(NativePty.read(0, bytes, -1, 1) == -1, "negative offset");
+            require(NativePty.read(0, bytes, 0, -1) == -1, "negative length");
+            require(NativePty.read(0, bytes, 5, 0) == -1, "offset beyond array");
+            require(NativePty.read(0, bytes, 3, 2) == -1, "length beyond array");
+            require(NativePty.read(0, bytes, 0, 0) == 0, "empty read");
+            require(NativePty.write(-1, bytes) == -1 && NativePty.write(0, null) == -1, "invalid write");
+            require(NativePty.resize(-1, 24, 80) == -1 && NativePty.resize(0, 0, 80) == -1, "invalid resize");
+            require(NativePty.waitPid(0) == -1, "invalid wait PID");
+            require(NativePty.spawn(null, new String[0], "/", 24, 80) == null, "null arguments");
+            require(NativePty.spawn(new String[0], new String[0], "/", 24, 80) == null, "empty arguments");
+            require(NativePty.spawn(new String[] { null }, new String[0], "/", 24, 80) == null, "null argument element");
+            require(NativePty.spawn(new String[] { "/system/bin/sh" }, new String[] { null }, "/", 24, 80) == null, "null environment element");
+            return "JNI rejects invalid descriptors, array ranges, strings and dimensions safely";
+        });
+        for (String tail : Arrays.asList("malformed", "event_after_result", "truncated", "invalid_utf8")) {
+            check(checks, "native_event_tail_" + tail, () -> {
+                String script = "printf '{\"version\":1,\"operation_id\":\"%s\",\"sequence\":1,\"type\":\"started\"}\\n' \"$PDN_OPERATION_ID\"; "
+                        + "printf '{\"version\":1,\"operation_id\":\"%s\",\"sequence\":2,\"type\":\"result\",\"outcome\":\"success\",\"exit_code\":0}\\n' \"$PDN_OPERATION_ID\"; ";
+                if (tail.equals("malformed")) script += "printf '{broken\\n'";
+                else if (tail.equals("event_after_result")) script += "printf '{\"version\":1,\"operation_id\":\"%s\",\"sequence\":3,\"type\":\"stage\"}\\n' \"$PDN_OPERATION_ID\"";
+                else if (tail.equals("truncated")) script += "printf '{broken'";
+                else script += "printf '\\377'";
+                ProcessBuilder builder = new ProcessBuilder("/system/bin/sh", "-c", "{ " + script + "; } > \"$PDN_EVENT_FILE\"");
+                builder.environment().put("TMPDIR", host.getCacheDir().getAbsolutePath());
+                boolean rejected = false;
+                try { operations.run(builder, new Capture(log)); }
+                catch (AssertionError | java.nio.charset.CharacterCodingException expected) { rejected = true; }
+                require(rejected, "malformed final event tail was accepted");
+                return "consumer rejected " + tail + " after a valid result";
+            });
+        }
         boolean success = true;
         for (int i = 0; i < checks.length(); i++) success &= checks.getJSONObject(i).getBoolean("passed");
         JSONObject report = new JSONObject().put("package", context.getPackageName()).put("target_sdk", context.getApplicationInfo().targetSdkVersion)
@@ -218,24 +248,24 @@ public final class ProbeSuite {
         if (!valid) throw new AssertionError(message);
     }
 
-    public static final class Capture implements PdnListener {
+    public static final class Capture implements NativeListener {
         private final Log log;
         private final long thread = Thread.currentThread().getId();
         private final ByteArrayOutputStream out = new ByteArrayOutputStream();
         private final ByteArrayOutputStream err = new ByteArrayOutputStream();
-        public final List<PdnEvent> events = new ArrayList<>();
-        public PdnResult result;
+        public final List<NativeEvent> events = new ArrayList<>();
+        public NativeResult result;
         private int completed;
         Capture(Log log) { this.log = log; }
         @Override public void onStdout(byte[] data) { sameThread(); out.write(data, 0, data.length); }
         @Override public void onStderr(byte[] data) { sameThread(); err.write(data, 0, data.length); }
-        @Override public void onEvent(PdnEvent event) {
+        @Override public void onEvent(NativeEvent event) {
             sameThread();
             events.add(event);
             if ("stage".equals(event.getType())) log.accept("阶段：" + event.getStage());
             if (event.getPercent() != null) log.accept("进度：" + event.getPercent() + "%");
         }
-        @Override public void onComplete(PdnResult value) { sameThread(); completed++; result = value; }
+        @Override public void onComplete(NativeResult value) { sameThread(); completed++; result = value; }
         private void sameThread() { require(thread == Thread.currentThread().getId(), "callback thread changed"); }
         void validate() {
             require(completed == 1 && !events.isEmpty(), "event/result callbacks");
@@ -244,7 +274,7 @@ public final class ProbeSuite {
             require(events.stream().filter(e -> "result".equals(e.getType())).count() == 1, "one result callback");
             require(events.stream().filter(e -> "error".equals(e.getType())).count() == ("manager_error".equals(result.getOutcome()) ? 1 : 0), "unique error callback");
             long sequence = 0;
-            for (PdnEvent e : events) require(e.getSequence() == ++sequence && e.getOperationId().equals(result.getOperationId()), "event correlation");
+            for (NativeEvent e : events) require(e.getSequence() == ++sequence && e.getOperationId().equals(result.getOperationId()), "event correlation");
         }
         public String stdout() { return new String(out.toByteArray(), StandardCharsets.UTF_8); }
         public String stderr() { return new String(err.toByteArray(), StandardCharsets.UTF_8); }

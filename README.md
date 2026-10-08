@@ -111,6 +111,8 @@ v0.6.3 将目录、锁、网络、校验、归档、配置、卸载与 Java 宿�
 已进入 Alpine，并在交互终端成功执行 `apk add nano`。独立工程和构建方式见
 [AAR 验证 App](examples/aar-probe/README.md)。
 
+0.6.4 已分别通过普通 App 进程的设备验收：AAR 接入 19/19，直接打包 `.so` 接入 24/24。初始化、官方归档安装、命令执行、事件回调、PTY 交互和启动错误分类均通过；界面的官方源在线安装也成功。直接接入工程见 [.so 验证 App](examples/so-probe/README.md)，测试环境和覆盖率见 [APK 接入实测](docs/pdn-error-testing.md#064-apk-接入实测)。
+
 每个 Release 同时提供 `pdn-engine-版本号.aar`、`libpdn.so`、`libproot-loader.so` 和原始 ELF `pdn`、`proot-loader`。AAR 是非插桩 Debug 引擎构建，包含封装 API 和 ARM64 原生程序；宿主需提供 Kotlin 标准库。也可以单独将两个 `.so` 放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
 
 `PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。

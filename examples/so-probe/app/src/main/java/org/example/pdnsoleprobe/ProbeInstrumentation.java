@@ -1,4 +1,4 @@
-package org.example.pdnprobe;
+package org.example.pdnsoleprobe;
 
 import android.app.Instrumentation;
 import android.content.Intent;
@@ -12,7 +12,11 @@ import java.util.ArrayList;
 import org.json.JSONObject;
 
 public final class ProbeInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean nativeCoverage;
+    @Override public void onCreate(Bundle arguments) {
+        nativeCoverage = arguments != null && "true".equals(arguments.getString("nativeCoverage"));
+        super.onCreate(arguments); start();
+    }
     private void click(MainActivity activity, String label, boolean expectSuccess) throws Exception {
         runOnMainSync(() -> {
             ArrayList<View> matches = new ArrayList<>();
@@ -73,6 +77,11 @@ public final class ProbeInstrumentation extends Instrumentation {
             } catch (Exception reportFailure) { result.putString("report_error", reportFailure.toString()); }
         } finally {
             if (activity != null) { MainActivity target = activity; runOnMainSync(target::finish); waitForIdleSync(); }
+        }
+        if (nativeCoverage) {
+            int nativeStatus = NativePty.dumpCoverage(new File(getTargetContext().getFilesDir(), "native-coverage.profraw").getAbsolutePath());
+            result.putInt("native_coverage_status", nativeStatus);
+            if (nativeStatus != 0) status = 0;
         }
         try {
             Class<?> rt = Class.forName("org.jacoco.agent.rt.RT");
