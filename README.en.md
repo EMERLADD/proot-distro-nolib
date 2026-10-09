@@ -176,6 +176,7 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 | Independent AAR APK | Initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminals passed |
 | Independent direct `.so` APK | Independent processes, events and PTY integration passed |
 | Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
+| Error-handling fault injection | All 9 lock-error combinations passed through Alpine → SSH → Termux |
 
 Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records (Chinese)](docs/pdn-error-testing.md).
 
@@ -224,6 +225,7 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
+- **Execution performance**: PRoot’s own seccomp acceleration is disabled by default; compression and C compilation took longer than Termux proot-distro in these tests. Startup and workload timings are measured separately; see the [workload comparison (Chinese)](docs/pdn-error-testing.md#066-短中长任务实测).
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: formal Release/R8 obfuscation and Maven publication have not been validated. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.

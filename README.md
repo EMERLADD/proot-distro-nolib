@@ -176,6 +176,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | AAR 独立 APK | 初始化、安装、命令执行、事件、工作区、异步任务和交互终端通过 |
 | 直接 `.so` 独立 APK | 独立进程、事件和 PTY 接入通过 |
 | GUI 安装 Linux 软件 | Alpine 内安装 nano、curl，以及 HTTPS 访问通过 |
+| 错误处理故障注入 | 经 Alpine → SSH → Termux 执行，锁错误的 9 个组合全部通过 |
 
 两种 APK 路径已在普通 Android App 身份下验证。具体版本、环境、逐项结果、覆盖率和未验证范围统一见[测试与版本验证记录](docs/pdn-error-testing.md)。
 
@@ -224,6 +225,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 - **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
 - **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不属于本次调试链路验收范围。
+- **执行性能**：默认关闭 PRoot 自带的 seccomp 加速；本次压缩和 C 编译比 Termux proot-distro 耗时更长。启动与运行任务分别测试，见[任务对比](docs/pdn-error-testing.md#066-短中长任务实测)。
 - **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
 - **发布与更新**：正式 Release/R8 混淆和 Maven 发布尚未验收；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。

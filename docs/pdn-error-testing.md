@@ -97,6 +97,16 @@
 
 ## 执行入口
 
+日常验证 Release 时，不需要故障注入开关：通过缺失 rootfs、临时目录或 bind 来源等受控输入，检查真实错误分类和建议即可。内存分配失败、特定 errno 等难以稳定制造的情况由开发测试覆盖。故障注入验证处理分支，真实失败验证设备上的实际操作，两者分别记录。
+
+在有源码、Python、Clang 和 NDK 的 Termux 中，可以运行单项注入测试：
+
+```sh
+NDK_PATH=/你的/NDK目录 CC=clang python tests/test_pdn_system_errors.py -v
+```
+
+脚本临时编译测试 harness，把 `flock()` 替换为固定失败的函数，再自动检查结果和清理测试目录。测试变量只影响这份测试程序，对发行 PDN 无效。SSH 可作为进入 Termux 的入口，不能让发行程序获得这些注入开关。
+
 原生测试需要 ARM64 Android 环境、可执行的 BusyBox fixture 与 NDK。常规入口为 `make test`；额外的错误处理测试位于 `tests/test_pdn_system_errors.py`。Java 入口为 `:proot-engine:testDebugUnitTest` 与 `:proot-engine:pdnCoverage`，真实原生对接测试还需设置 `PDN_NATIVE_FIXTURE`、`PDN_GUEST_FIXTURE`。
 
 本环境缺少 `/dev/full`，因此真实 ENOSPC 测试跳过；硬链接事件通道测试也因文件系统拒绝创建硬链接而跳过。所有故障注入结果都不能替代独立 Android App 的实机覆盖率报告。
@@ -318,3 +328,49 @@ JVM 90 项、PRoot 16 项、打包 9 项通过；原生 PDN 205 项中 203 通�
 proot-distro 使用默认登录配置，PDN 使用默认登录配置；两者挂载和扩展项不完全相同。这是实际入口的启动成本对比，不是相同 PRoot 参数下的引擎微基准，也不代表 GUI 打开速度或 Linux 长任务性能。
 
 复现计时脚本：`scripts/benchmark-pdn-startup.sh OUTPUT_CSV REPETITIONS COMMAND [ARGS...]`。两边均用同一个 Android `date` 纳秒计时脚本，包含少量相同的采样开销。原始 CSV 与汇总位于 `build/startup-benchmark/`，交付副本位于 `/sdcard/yyd/PDN/path-boundary-v066/`。
+
+
+## 0.6.6 短、中、长任务实测
+
+2026-10-10，干净 Termux 的 proot-distro 5.9.0 与 Android shell 的 PDN Release 0.6.6，使用同一 Alpine 3.24.2 ARM64 归档、相同源和完全一致的 guest 包版本。两边 `apk update` 和安装 curl、nano、Python、GCC、musl-dev、make、CA 证书均成功；共 **9 类任务，两边全部通过**。
+
+计时在已进入 Linux 的 Python 中使用单调时钟，排除启动器、rish 连接和 SSH 建连。所有程序使用 guest 绝对路径，PATH 不含 Termux 程序目录；避免把宿主 curl/nano 当成 Alpine 程序。所有读写删除仅作用于新建的 `/tmp/pdn-workloads-*` 夹具，结束后回收。
+
+| 任务 | 样本数 | Termux proot-distro | Android shell PDN | 结果 |
+| --- | --- | --- | --- | --- |
+| 写入、读取、rm 删除 | 15 | 13.8 ms | 42.8 ms | 通过 |
+| apk 查询已安装软件 | 10 | 45.1 ms | 101.6 ms | 通过 |
+| apk add 已安装软件 | 5 | 615.8 ms | 1124.8 ms | 通过 |
+| nano 输入、保存、读取、删除 | 3 | 465.9 ms | 552.5 ms | 通过 |
+| curl HTTPS 请求 | 3 | 330.0 ms | 585.3 ms | 通过 |
+| 64 MiB tar/gzip 压缩解压 | 6 | 2110.9 ms | 3374.3 ms | 通过 |
+| 512 MiB SHA256 计算 | 3 | 715.2 ms | 710.8 ms | 通过 |
+| 3000 文件写入、stat、读取、删除 | 3 | 8878.7 ms | 9555.6 ms | 通过 |
+| 25 个 C 文件编译、链接、运行 | 6 | 3650.5 ms | 7105.8 ms | 通过 |
+
+表中为中位数。压缩与编译先按 Termux→PDN 测试，再交换顺序复核，各合并 6 个样本；其他任务按表中次数测试。未控制 CPU 频率与系统负载，因此不作为所有设备的性能保证。
+
+- nano 使用真实 PTY 输入文字，Ctrl-O/Enter 保存，Ctrl-X 正常退出；核对保存字节，再使用 guest cat 和 rm。其时间含自动化固定等待，仅用于功能验收，不比较编辑器响应速度。
+- curl 从 Linux 内访问 `https://example.com/`，HTTP 200、TLS 校验为 0，响应内容正确。它包含网络波动；在线 apk 下载同样不用于判断管理器性能。
+- 压缩夹具是循环字节组成的 64 MiB 可压缩数据，解压后核对 SHA256；不代表一般文件压缩性能。
+- 哈希处理 512 MiB，与计时前计算的预期摘要比较，计算性能基本持平。
+- 批量文件每次创建 3000 个文件，逐个 stat 和读取核对，然后真实递归删除。
+- C 工程包含 25 个编译单元，每轮编译、链接并执行生成程序，检查计算结果。
+
+**启动优势不等于持续执行优势。** 本次默认配置下，PDN 的压缩、编译和部分短任务更慢；纯哈希计算接近。
+
+进一步对照只给 Termux 的 proot-distro 设置 `PROOT_NO_SECCOMP=1`：压缩中位数 **3338.3 ms**、编译 **6880.3 ms**，接近 PDN 的 **3374.3 / 7105.8 ms**。PDN 管理器默认关闭 PRoot 自带 seccomp 加速；该项配置是这两个场景差距的重要原因。它不同于 Android zygote 的 seccomp 限制，本轮没有修改发行程序或 AAR 的默认策略。
+
+guest 包版本包括 curl 8.22.0-r0、nano 9.2-r0、Python 3.14.8-r0、GCC 15.2.0-r5、musl 1.2.6-r2。复现脚本 `scripts/test-pdn-workloads.py` 支持 `--route`、`--report`，以及选定任务的 `--only`、重复次数 `--repetitions`。报告与日志位于 `build/task-benchmark/`，交付副本位于 `/sdcard/yyd/PDN/task-benchmark-v066/`。
+
+单独使用 Python trace 验证测试脚本行覆盖率 **185/196（94.39%）**，9 类任务均通过；插桩结果不计入上述性能对比，也不代表 PRoot 引擎覆盖率。
+
+补正计时脚本：Android mksh 的整数运算会在长于约 2.1 秒的纳秒差值上溢出。外部计时改用 Android `expr` 做 64 位减法，3 秒任务回归通过；前面的启动样本均不足 1 秒，不受此问题影响。本轮任务计时使用 guest 单调时钟，在线安装只记录成功，不比较其下载耗时。
+
+## 0.6.6 经 SSH 运行故障注入测试
+
+2026-10-10，从 Alpine 的 SSH 客户端连接回本机 Termux，再进入仓库运行 `tests/test_pdn_system_errors.py`。测试在 Termux 原生 Python/Clang/NDK 环境临时编译 harness，退出码为 0。
+
+**1 个测试方法、9 个组合通过**：ENOLCK、EIO、EINTR 三种锁错误，分别覆盖 exec、config、uninstall；核对 `lock_failed`、原 errno、建议和 rootfs 保留。临时测试目录自动清理，发行程序没有被修改。
+
+日志位于 `build/task-benchmark/ssh-lock-harness.log`。记录不包含 SSH 账号或认证信息。

@@ -20,7 +20,7 @@ while [ "$benchmark_iteration" -lt "$benchmark_runs" ]; do
         exit 1
     fi
     benchmark_iteration=$((benchmark_iteration + 1))
-    benchmark_elapsed=$((benchmark_end - benchmark_start))
+    benchmark_elapsed=$(/system/bin/expr "$benchmark_end" - "$benchmark_start")
     test "$benchmark_elapsed" -gt 0
     printf '%s,%s\n' "$benchmark_iteration" "$benchmark_elapsed" >> "$benchmark_output"
 done
