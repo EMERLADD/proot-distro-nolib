@@ -20,7 +20,7 @@
 ## 测试方法
 
 - **真实失败**：实际执行文件操作、flock、curl 或 libarchive，用受控输入触发失败，再检查实际退出码、JSONL 最终结果、建议和回滚后的文件。
-- **故障注入**：只在测试编译的 harness 中替换某个函数，让它返回指定错误。发行程序不包含这些开关；它验证处理路径，不能证明设备真的发生过该故障。
+- **故障注入**：在原生 Termux 中编译并运行专用测试程序，让指定函数返回预设错误，检查错误分类、建议、退出状态和文件保留情况。锁错误的 9 个组合已验证通过；发行程序不包含注入开关。
 - **映射验证**：直接给公共事件函数传入 errno，验证分类、建议和事件序列。它不验证文件系统或分配器能否真实产生该 errno。
 
 测试不靠修改报错文字或让外网偶然失效，不写满设备存储，也不修改系统挂载。
@@ -105,7 +105,7 @@
 NDK_PATH=/你的/NDK目录 CC=clang python tests/test_pdn_system_errors.py -v
 ```
 
-脚本临时编译测试 harness，把 `flock()` 替换为固定失败的函数，再自动检查结果和清理测试目录。测试变量只影响这份测试程序，对发行 PDN 无效。SSH 可作为进入 Termux 的入口，不能让发行程序获得这些注入开关。
+脚本临时编译专用测试程序，把 `flock()` 替换为固定失败的函数，再自动检查结果和清理测试目录。测试变量只影响这份测试程序，对发行 PDN 无效。SSH 可作为进入 Termux 的入口，不能让发行程序获得这些注入开关。
 
 原生测试需要 ARM64 Android 环境、可执行的 BusyBox fixture 与 NDK。常规入口为 `make test`；额外的错误处理测试位于 `tests/test_pdn_system_errors.py`。Java 入口为 `:proot-engine:testDebugUnitTest` 与 `:proot-engine:pdnCoverage`，真实原生对接测试还需设置 `PDN_NATIVE_FIXTURE`、`PDN_GUEST_FIXTURE`。
 
@@ -115,9 +115,9 @@ NDK_PATH=/你的/NDK目录 CC=clang python tests/test_pdn_system_errors.py -v
 
 原生 170 项执行，168 项通过、2 项按上述原因跳过；Java/Kotlin 53 项全部通过，真实 PDN/guest fixture 已启用。原 App Kotlin 编译、AAR ZIP 完整性、新异常类和原生程序逐字节一致性检查通过，没有构建原 App APK。
 
-行覆盖率：前端 94.13%、配置 100%、卸载 93.84%、事件 97.66%、备份恢复 95.75%，同源安装器 harness 99.67%；Java/Kotlin 96.11%，新宿主异常类 100%。这些是相应模块的行覆盖率，不是所有错误类别在真实设备上都出现过。
+行覆盖率：前端 94.13%、配置 100%、卸载 93.84%、事件 97.66%、备份恢复 95.75%，同源安装器测试程序 99.67%；Java/Kotlin 96.11%，新宿主异常类 100%。这些是相应模块的行覆盖率，不是所有错误类别在真实设备上都出现过。
 
-安装器 harness 使用同一份 C 源码及实际 curl/libarchive，替换固定 rootfs 大小、摘要和下载 URL 为小型本地归档及本地 HTTPS 服务。表内标为注入的函数另在此测试编译中替换；发行程序没有 TEST_* 故障开关，也没有把发行版安装限制改为测试数值。
+安装器测试程序使用同一份 C 源码及实际 curl/libarchive，替换固定 rootfs 大小、摘要和下载 URL 为小型本地归档及本地 HTTPS 服务。表内标为注入的函数另在此测试编译中替换；发行程序没有 TEST_* 故障开关，也没有把发行版安装限制改为测试数值。
 
 ## rish / Shizuku 实机补测
 
@@ -369,7 +369,7 @@ guest 包版本包括 curl 8.22.0-r0、nano 9.2-r0、Python 3.14.8-r0、GCC 15.2
 
 ## 0.6.6 原生 Termux 故障注入测试
 
-2026-10-10，在原生 Termux 环境运行 `tests/test_pdn_system_errors.py`，使用 Python、Clang 和 NDK 临时编译 harness，退出码为 0。
+2026-10-10，在原生 Termux 环境运行 `tests/test_pdn_system_errors.py`，使用 Python、Clang 和 NDK 临时编译专用测试程序，退出码为 0。
 
 **1 个测试方法、9 个组合通过**：ENOLCK、EIO、EINTR 三种锁错误，分别覆盖 exec、config、uninstall；核对 `lock_failed`、原 errno、建议和 rootfs 保留。临时测试目录自动清理，发行程序没有被修改。
 
