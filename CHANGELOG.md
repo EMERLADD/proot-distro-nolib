@@ -1,5 +1,14 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.6 — 2026-10-09
+
+- 本地交付同步更新无版本号的 ELF、`.so`、AAR，并核对 `version` 与 `--version`，避免继续读取早期 0.6.0 副本。
+
+- 所有 AAR 移除旧 pr-cli、独立旧 PRoot、BusyBox 和 Bash，仅保留 PDN、loader 和 PTY JNI；PDN 的 PRoot 能力、Java/Kotlin API 和全部终端功能保留。
+- `pdn-engine-lite-0.6.6.aar` 保留为标准 AAR 的字节相同别名，避免已有下载流程失效。
+- 原 App 单独打包旧 pr 原生组件；旧 Java/Kotlin 类保留，但依赖旧 pr-cli 的功能需要宿主另行提供原生组件。
+- 发布打包再次过滤原生条目，并检查三项必需文件、PTY JNI、元数据与 SHA256。此次只验证 AAR，不构建 APK。
+
 ## v0.6.5 — 2026-10-09
 
 - AAR 增加不可变配置与 Java/Kotlin 兼容构造器，统一账号、guest 工作目录、挂载和原样环境变量参数。

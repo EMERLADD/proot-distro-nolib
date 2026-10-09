@@ -4,7 +4,7 @@
 
 面向提供终端或命令执行能力的 Android App：把 `pdn` 放进 App 可执行的目录，就能用简单命令安装、登录和管理 Linux。无需先安装 Termux，也不需要宿主额外提供 Bash、Python、curl 或 tar。
 
-当前版本：**v0.6.5 · ARM64 Android · 早期测试版**。
+当前版本：**v0.6.6 · ARM64 Android · 早期测试版**。
 
 > 我在 **MT 管理器** 里实际用过，目前功能正常。这是我第一次做这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
 >
@@ -49,7 +49,7 @@
 
 也可以获取开发中的构建：打开 [Build pdn 工作流](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml)，选择成功运行记录，在 **Artifacts** 下载 `pdn-android-arm64-提交号`。下载产物通常需要登录 GitHub；自动构建产物有保留期限，不等同于长期 Release。
 
-解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.5-android-arm64.tar.gz`。里面同时提供：
+解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.6-android-arm64.tar.gz`。里面同时提供：
 
 - `pdn`：建议使用的命令名。
 - `proot-distro-nolib`：与 `pdn` 内容相同，任选一个即可，不必两个都放进 bin。
@@ -127,9 +127,11 @@ v0.6.3 将目录、锁、网络、校验、归档、配置、卸载与 Java 宿�
 
 每个 Release 同时提供 `pdn-engine-版本号.aar`、`pdn-engine-lite-版本号.aar`、`libpdn.so`、`libproot-loader.so` 和原始 ELF `pdn`、`proot-loader`。AAR 是非插桩 Debug 引擎构建，包含封装 API 和 ARM64 原生程序；宿主需提供 Kotlin 标准库。也可以单独将两个 `.so` 放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
 
+更新时同时替换 ELF、`.so` 和 AAR，避免继续使用旧目录中的文件。`pdn version` 与 `pdn --version` 都应显示当前 PDN 版本；`Based on PRoot 5.4.0-pr` 是底层 PRoot 版本，与 PDN 版本分别维护。
+
 0.6.5 轻量 AAR 在独立 Java App 的普通进程中实测 **33/33 通过**，包括异步取消/超时、配置与结构化查询、双终端和 GUI 操作。测试范围与覆盖率见 [0.6.5 AAR 实测](docs/pdn-error-testing.md#065-aar-接口实测)。
 
-0.6.5 增加可取消、可超时的异步任务、不可变配置、独立终端会话与结构化发行版/镜像查询，并提供只含三个原生文件的轻量 AAR。Java/Kotlin 调用、两种 AAR 的结构和任务生命周期见 [AAR 接口](docs/pdn-aar-api.md)。
+0.6.5 增加可取消、可超时的异步任务、不可变配置、独立终端会话与结构化发行版/镜像查询，并提供只含三个原生文件的轻量 AAR。0.6.6 起所有 AAR 只含 PDN、loader 和 PTY JNI，完整保留终端功能，旧 pr 原生组件仅由原 App 自行打包。Java/Kotlin 调用、AAR 结构和任务生命周期见 [AAR 接口](docs/pdn-aar-api.md)。
 
 `PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。
 

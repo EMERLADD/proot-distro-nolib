@@ -47,19 +47,25 @@ class ReleasePackagingTest(unittest.TestCase):
             self.assertEqual(digest, hashlib.sha256((self.output / name).read_bytes()).hexdigest())
         self.assertEqual((self.output / 'pdn-engine-0.6.2.aar').read_bytes(), self.aar.read_bytes())
 
-    def test_lightweight_excludes_legacy_programs_and_preserves_sdk(self):
+    def test_all_aars_exclude_legacy_programs_and_preserve_sdk(self):
         self.entries.update({f'jni/arm64-v8a/{name}': b'\x7fELFlegacy' for name in
-                             ('libproot.so', 'libpr-cli.so', 'libbusybox.so')})
+                             ('libproot.so', 'libpr-cli.so', 'libbusybox.so', 'libbash.so')})
         self.entries['jni/x86_64/libextra.so'] = b'\x7fELFother'
         self.entries['META-INF/metadata.txt'] = b'metadata'
         self.write_aar()
         packager.package(self.aar, self.root)
         with zipfile.ZipFile(self.output / 'pdn-engine-lite-0.6.2.aar') as lite:
             natives = {name for name in lite.namelist() if name.startswith('jni/')}
-            self.assertEqual(natives, packager.LITE_LIBRARIES)
+            self.assertEqual(natives, packager.PDN_LIBRARIES)
             for name in natives | {'classes.jar', 'AndroidManifest.xml', 'META-INF/metadata.txt'}:
                 self.assertEqual(lite.read(name), self.entries[name])
-        self.assertEqual((self.output / 'pdn-engine-0.6.2.aar').read_bytes(), self.aar.read_bytes())
+        full = self.output / 'pdn-engine-0.6.2.aar'
+        self.assertNotEqual(full.read_bytes(), self.aar.read_bytes())
+        self.assertEqual(full.read_bytes(), (self.output / 'pdn-engine-lite-0.6.2.aar').read_bytes())
+        with zipfile.ZipFile(full) as archive:
+            self.assertEqual(set(archive.namelist()), set(self.entries) -
+                             {name for name in self.entries if name.startswith('jni/')} |
+                             packager.PDN_LIBRARIES)
 
     def test_rejects_duplicate_archive_entries(self):
         self.write_aar()

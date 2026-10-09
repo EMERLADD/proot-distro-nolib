@@ -196,6 +196,7 @@ Commit message policy:
 
 - Default version updates increment the patch component (e.g. 0.6.0 to 0.6.1).
 - Keep the PDN version, download User-Agent, current-version documentation and tests consistent.
+- When delivering PDN artifacts, refresh unversioned ELF, `.so` and AAR aliases in the delivery directory and verify both `version` and `--version` against the current version. Preserve versioned historical artifacts.
 - When updating App version metadata, increment versionName's patch component and versionCode.
 - Commit completed project changes by default and push to the current branch's established remote unless instructed otherwise.
 - Honor explicit instructions to skip APK builds, including when changing App version metadata.

@@ -19,7 +19,7 @@ if [ ! -f "$termlib_dir/lib/src/main/cpp/Terminal.cpp" ]; then
     git -C "$repo_dir/vendor/termlib" archive HEAD | tar -x -C "$termlib_dir"
 fi
 cpp_dir=$termlib_dir/lib/src/main/cpp
-mkdir -p "$native_dir/engine/arm64-v8a" "$native_dir/termlib/arm64-v8a" "$obj_dir"
+mkdir -p "$native_dir/engine/arm64-v8a" "$native_dir/app/arm64-v8a" "$native_dir/termlib/arm64-v8a" "$obj_dir"
 [ -d "$sysroot_dir" ] || { echo "NDK sysroot missing: $sysroot_dir" >&2; exit 1; }
 [ -f "$program_dir/pdn" ] && [ -f "$program_dir/proot-loader" ] || {
     echo "Build pdn and matching loader first: scripts/build-proot-nolib.sh" >&2
@@ -41,10 +41,11 @@ done
     -landroid -llog -lm -ldl -Wl,-z,max-page-size=16384 -o "$native_dir/termlib/arm64-v8a/libjni_cb_term.so"
 for legacy_file in libbusybox.so libpr-cli.so libproot.so libbash.so; do
     legacy_path=$repo_dir/android/proot-engine/src/main/jniLibs/arm64-v8a/$legacy_file
+    rm -f "$native_dir/engine/arm64-v8a/$legacy_file"
     if [ -f "$legacy_path" ]; then
-        cp -f "$legacy_path" "$native_dir/engine/arm64-v8a/$legacy_file"
+        cp -f "$legacy_path" "$native_dir/app/arm64-v8a/$legacy_file"
     else
-        rm -f "$native_dir/engine/arm64-v8a/$legacy_file"
+        rm -f "$native_dir/app/arm64-v8a/$legacy_file"
     fi
 done
 cp -f "$program_dir/pdn" "$native_dir/engine/arm64-v8a/libpdn.so"

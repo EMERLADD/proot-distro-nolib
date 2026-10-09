@@ -33,8 +33,8 @@ cat >> "$notes" <<EOF
 
 ### 下载文件
 
-- \`$aar\`：Android 引擎 AAR（非插桩 Debug 构建）；Kotlin 标准库由宿主提供。
-- \`$lite\`：轻量 Android 引擎 AAR，仅包含 PDN、loader 和 PTY JNI 三个原生文件；Kotlin 标准库由宿主提供。
+- \`$aar\`：PDN Android 引擎 AAR，仅含 PDN、loader 与 PTY JNI（非插桩 Debug 构建）；Kotlin 标准库由宿主提供。
+- \`$lite\`：兼容旧 lite 下载名称的别名，与上述 AAR 字节相同，保留全部 PDN 终端功能；Kotlin 标准库由宿主提供。
 - \`libpdn.so\`、\`libproot-loader.so\`：放入 \`jniLibs/arm64-v8a/\` 的 ELF 可执行程序。
 - \`pdn\`、\`proot-loader\`：同版本的原始 ARM64 ELF。
 - \`$package\`：完整原生程序、对应源码、依赖源码与许可证。

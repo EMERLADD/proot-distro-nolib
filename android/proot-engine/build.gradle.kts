@@ -44,7 +44,7 @@ val generatedJniLibsDir = layout.buildDirectory.dir("generated/pdnJniLibs")
 if (termuxNativeLibsDir == null) {
     val stagePdnPrograms = tasks.register<Sync>("stagePdnPrograms") {
         from("src/main/jniLibs") {
-            exclude("**/libpdn.so", "**/libproot-loader.so")
+            include("**/libptyjni.so")
         }
         from(pdnProgramsDir.resolve("pdn")) {
             into("arm64-v8a")
@@ -112,6 +112,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            excludes += setOf("**/libpr-cli.so", "**/libproot.so", "**/libbusybox.so", "**/libbash.so")
         }
     }
 }

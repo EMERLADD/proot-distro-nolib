@@ -14,7 +14,7 @@
 
 ## 构建
 
-先执行 `prepare.sh`，将 Release 0.6.5 轻量 AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
+先执行 `prepare.sh`，将 Release 0.6.6 PDN AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
 
 ```sh
 ./prepare.sh

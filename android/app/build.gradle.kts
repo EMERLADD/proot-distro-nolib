@@ -4,7 +4,20 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val termuxNativeLibsDir = providers.gradleProperty("termuxNativeLibsDir").orNull
+val legacyJniLibsDir = layout.buildDirectory.dir("generated/legacyJniLibs")
+val stageLegacyPrograms = tasks.register<Sync>("stageLegacyPrograms") {
+    from(if (termuxNativeLibsDir == null)
+        rootProject.file("proot-engine/src/main/jniLibs")
+    else file("$termuxNativeLibsDir/app")) {
+        include("**/libpr-cli.so", "**/libproot.so", "**/libbusybox.so", "**/libbash.so")
+    }
+    into(legacyJniLibsDir)
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(stageLegacyPrograms) }
+
 android {
+    sourceSets["main"].jniLibs.srcDir(legacyJniLibsDir.get().asFile)
     namespace = "id.or.oo.pr"
     compileSdk = 36
 
