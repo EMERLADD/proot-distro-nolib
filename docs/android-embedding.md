@@ -21,7 +21,7 @@ PDN 和 loader 应来自同一次构建。GitHub Release 已提供独立 AAR；�
 
 ## 通过 AAR 接入
 
-从同一 Release 下载 `pdn-engine-版本号.aar`，放到 App 的 `libs/`。0.6.6 起 AAR 只包含 PDN、loader、PTY JNI 和 Java/Kotlin API；lite 文件名是字节相同的兼容别名，选一个导入。
+从同一 Release 下载 `pdn-engine-版本号.aar`，放到 App 的 `libs/`。0.6.6 起 AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口；终端界面由宿主 App 提供。标准版与 lite 内容相同，选一个导入。
 
 ```kotlin
 dependencies {

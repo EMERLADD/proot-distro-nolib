@@ -11,7 +11,7 @@
 | `libpdn.so`、`libproot-loader.so` | 单独打包的 PDN 与 loader ELF 可执行程序 |
 | `pdn`、`proot-loader` | 同版本原始 ELF |
 
-推荐导入 `pdn-engine-0.6.6.aar`；`pdn-engine-lite-0.6.6.aar` 是兼容旧下载名称的别名，两个文件字节完全相同，选一个导入即可。所有 PDN 终端接口和 PTY JNI 都保留。旧 `ProotLauncher` 类和方法仍保留以维持接口兼容，但依赖旧 pr-cli 的调用（例如 `startSession()`）不能仅靠本 AAR 运行；应改用 `PdnTerminal`，或由宿主自行提供旧原生程序。仓库原 App 单独打包旧组件，不再通过 AAR 携带。
+推荐导入 `pdn-engine-0.6.6.aar`；`pdn-engine-lite-0.6.6.aar` 是兼容旧下载名称的别名，两个文件字节完全相同，选一个导入即可。终端会话、输入输出、窗口大小调整和多会话接口均保留，终端界面由宿主 App 提供。旧 `ProotLauncher` 类和方法仍保留以维持接口兼容，但依赖旧 pr-cli 的调用（例如 `startSession()`）不能仅靠本 AAR 运行；应改用 `PdnTerminal`，或由宿主自行提供旧原生程序。仓库原 App 单独打包旧组件，不再通过 AAR 携带。
 
 AAR 内 `classes.jar` 包含 API，`jni/arm64-v8a/` 包含原生文件，Manifest 与 Android 元数据用于合并。PDN 和 loader 是可执行程序；`libptyjni.so` 是实际的 JNI 共享库。AAR 不包含已安装的 Linux，也不提供终端屏幕渲染控件。
 

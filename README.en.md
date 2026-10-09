@@ -51,7 +51,7 @@ Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-noli
 | App-managed process launch | `libpdn.so`, `libproot-loader.so` |
 | Source and license materials | `proot-distro-nolib-vVERSION-android-arm64.tar.gz` |
 
-Since 0.6.6, the standard AAR contains only PDN, loader, PTY JNI and the API, retaining full terminal functionality. `pdn-engine-lite-VERSION.aar` is a byte-identical compatibility filename; choose either one. `libpdn.so` and `libproot-loader.so` are APK filenames for executable ELFs; PTY JNI is the actual JNI shared library.
+Since 0.6.6, the AAR contains Java/Kotlin APIs and three native files: PDN, its loader and PTY JNI. All terminal session APIs are retained; the host App provides the terminal interface. The standard and lite files have identical contents, so import either one. PDN and its loader use `.so` filenames for APK packaging but are invoked through processes; `libptyjni.so` is called through JNI.
 
 Exit old Linux sessions before updating, replace the program and restore its executable permissions. Existing rootfs installations do not need reinstalling. Keep ELF, `.so`, AAR and loader versions aligned; both `pdn version` and `pdn --version` should report the current PDN version. Retain corresponding source and licenses when redistributing binaries.
 

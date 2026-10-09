@@ -51,7 +51,7 @@ PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有
 | App 自行启动进程 | `libpdn.so`、`libproot-loader.so` |
 | 源码与许可材料 | `proot-distro-nolib-v版本号-android-arm64.tar.gz` |
 
-0.6.6 起标准 AAR 仅含 PDN、loader、PTY JNI 和 API，终端功能完整保留。`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名，两者选一个即可。`libpdn.so` 和 `libproot-loader.so` 是可执行 ELF 的 APK 文件名；PTY JNI 才是实际 JNI 共享库。
+0.6.6 起，AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口。终端界面由宿主 App 提供。标准版与 lite 文件内容相同，任选一个导入即可。PDN 和加载器使用 `.so` 文件名供 APK 打包，但仍通过进程方式调用；`libptyjni.so` 则通过 JNI 调用。
 
 更新前退出旧 Linux 会话，替换程序并重新设置执行权限；已有 rootfs 不需要重装。ELF、`.so`、AAR 和 loader 应保持同一版本，`pdn version` 和 `pdn --version` 都应显示当前 PDN 版本。转发二进制时同时保留对应源码和许可证。
 
