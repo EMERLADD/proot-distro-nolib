@@ -74,8 +74,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.4"), "version: " + c.stderr());
-            return "native PDN 0.6.4, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.5"), "version: " + c.stderr());
+            return "native PDN 0.6.5, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -184,6 +184,7 @@ public final class ProbeSuite {
             require("guest_exit".equals(c.result.getOutcome()) && Integer.valueOf(15).equals(c.result.getGuestSignal()), "real guest signal: " + c.result.getOutcome());
             return "guest signal15 with zero errors";
         });
+        ProbeSdkChecks.verify(checks, host, runtime, operations, log);
         boolean success = true;
         for (int i = 0; i < checks.length(); i++) success &= checks.getJSONObject(i).getBoolean("passed");
         JSONObject report = new JSONObject().put("package", context.getPackageName()).put("target_sdk", context.getApplicationInfo().targetSdkVersion)

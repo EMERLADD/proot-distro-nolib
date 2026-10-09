@@ -29,6 +29,17 @@ class ProotLauncher(private val host: ProotHost) {
         }
     }
 
+    fun startPdnSession(
+        rootfs: File,
+        configuration: PdnConfiguration,
+        rows: Int = 24,
+        cols: Int = 80,
+    ): PdnTerminalSession {
+        val runtime = PdnRuntime(host)
+        runtime.prepare()
+        return PdnTerminalSession.start(runtime.login(rootfs, configuration), rows, cols)
+    }
+
     fun startSession(
         distroName: String,
         user: String = "root",
@@ -45,14 +56,15 @@ class ProotLauncher(private val host: ProotHost) {
         val envVars = buildEnvVars()
         val args = arrayOf(prCli.absolutePath, "login", distroName, "--user", user)
 
-        val masterFd = PtyNative.forkPty(args[0], args, envVars, rows, cols)
+        val spawned = PtyNative.spawn(args[0], args, envVars, rows, cols, null)
+        val masterFd = spawned[0]
         if (masterFd < 0) {
             Log.e(TAG, "forkPty failed with fd=$masterFd")
             return null
         }
 
         Log.i(TAG, "PTY session started for $distroName, masterFd=$masterFd")
-        return Session(masterFd)
+        return Session(masterFd, spawned[1])
     }
 
     /**
@@ -68,14 +80,15 @@ class ProotLauncher(private val host: ProotHost) {
         require(args.isNotEmpty()) { "An executable is required" }
         require(args.all { '\u0000' !in it }) { "Arguments cannot contain NUL" }
         val envVars = buildEnvVars()
-        val masterFd = PtyNative.forkPty(args[0], args.toTypedArray(), envVars, rows, cols)
+        val spawned = PtyNative.spawn(args[0], args.toTypedArray(), envVars, rows, cols, null)
+        val masterFd = spawned[0]
         if (masterFd < 0) {
             Log.e(TAG, "forkPty failed with fd=$masterFd for ${args.joinToString(" ")}")
             return null
         }
 
         Log.i(TAG, "PTY custom session started: ${args.joinToString(" ")}, masterFd=$masterFd")
-        return Session(masterFd)
+        return Session(masterFd, spawned[1])
     }
 
     fun runCommand(
@@ -87,34 +100,55 @@ class ProotLauncher(private val host: ProotHost) {
     }
 
     private fun buildEnvVars(): Array<String> {
-        return PdnRuntime(host).environment().flatMap { listOf(it.key, it.value) }.toTypedArray()
+        val environment = System.getenv().toMutableMap()
+        environment.putAll(PdnRuntime(host).environment())
+        return environment.flatMap { listOf(it.key, it.value) }.toTypedArray()
     }
 
-    class Session(val masterFd: Int) {
+    class Session @JvmOverloads constructor(val masterFd: Int, val pid: Int = -1) {
         var closed = false
             private set
 
+        @Synchronized
         fun read(buf: ByteArray, offset: Int = 0, length: Int = buf.size): Int {
             if (closed) return -1
-            return PtyNative.read(masterFd, buf, offset, length)
+            val count = PtyNative.read(masterFd, buf, offset, length)
+            if (count == 0) Thread.sleep(10)
+            return count
         }
 
+        @Synchronized
         fun write(data: ByteArray): Int {
             if (closed) return -1
             return PtyNative.write(masterFd, data, 0, data.size)
         }
 
+        @Synchronized
         fun resize(rows: Int, cols: Int): Int {
             if (closed) return -1
             return PtyNative.resize(masterFd, rows, cols)
         }
 
+        @Synchronized
         fun close() {
             if (!closed) {
                 closed = true
-                try {
-                    PtyNative.write(masterFd, byteArrayOf(0x04), 0, 1)
-                } catch (_: Exception) {}
+                if (pid > 0) {
+                    val initial = PtyNative.poll(pid)
+                    if (initial[0] == 0) PtyNative.signal(pid, 15)
+                    Thread {
+                        val deadline = System.nanoTime() + 500_000_000L
+                        var state = initial
+                        while (state[0] == 0 && System.nanoTime() < deadline) {
+                            Thread.sleep(10)
+                            state = PtyNative.poll(pid)
+                        }
+                        if (state[0] == 0) {
+                            PtyNative.signal(pid, 9)
+                            while (PtyNative.poll(pid)[0] == 0) Thread.sleep(10)
+                        }
+                    }.apply { isDaemon = true }.start()
+                }
                 try {
                     PtyNative.close(masterFd)
                 } catch (_: Exception) {}

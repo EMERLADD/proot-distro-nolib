@@ -197,3 +197,24 @@ Java 通过 JaCoCo 采集普通 App 的执行数据；自有 JNI 通过可选 LL
 验收脚本遇到两个宿主测试问题并已修正：归档 asset 的 `.gz` 后缀被构建工具解压并改名，改为 `.archive` 后核对 APK 内原始字节；Alpine `/bin/sh` 是 guest 绝对符号链接，检查入口改用 NOFOLLOW_LINKS，而实际可执行性由 guest exec 验证。它们没有改变 PDN 原生代码。启动 instrumentation 后还需显式打开 Activity，实际验收才继续；界面启动方式见两个示例工程说明。
 
 测试输入的官方归档 SHA256 为 `9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773`；PDN 安装时继续按内置大小与 SHA256 校验。原始报告、Java `.ec`、JNI `.profraw` 和两份测试 APK 位于 `/sdcard/yyd/PDN/apk-v064/`，本地分析报告位于 `build/apk-v064/`。没有修改已有发行版，PDN 版本维持 0.6.4。
+
+
+## 0.6.5 AAR 接口实测
+
+2026-10-09，独立 Java App 仅导入本地构建的 0.6.5 轻量 AAR 与 Kotlin 标准库，在 Android 14（SDK 34）、ARM64、targetSdk 35 的 `untrusted_app` 进程中验收。rish 只负责安装、启动与导出结果。覆盖率 APK 和正式非插桩 APK 分别 **33/33 通过**，均验证实际 GUI 按钮；两份 APK 仅包含 PDN、loader、PTY JNI 三项原生文件。没有把本地构建的结果冒充 GitHub Release 原件的逐字节验收。
+
+新增测试通过实际 API 触发行为：配置将含空格、引号、美元符号、中文与 emoji 的环境值原样传入 guest，检查自定义挂载文件；结构化查询检查已安装路径、未知版本字段和 Debian 单一官方源；两项异步命令检查独立 operation_id、指定 Executor 和唯一最终回调。取消与超时使用真的 guest shell 和后台 sleep，获取 PID 后检查两者均已消失，清理完成才结束等待。
+
+两个真实 PTY 同时运行，验证不同 PID/fd、独立输入输出、TTY、resize、正常/非零/信号退出、重复关闭和关闭后输入失败。高层终端检查原生 shell 启动错误与事件回调一致；监听器抛出 Error 后检查回收与唯一失败通知。清空 ProcessBuilder 环境后，裸终端只收到显式变量；旧 launcher 继续继承宿主环境。JNI 错误参数、Unicode、exec/chdir 失败、旧接口适配与真实 errno 都有单独检查。
+
+| 行覆盖率范围 | 覆盖行 / 可执行行 | 比例 |
+| --- | --- | --- |
+| 全部 SDK 类，JVM 单元测试 | 893/1044 | 85.54% |
+| 全部 SDK 类，单元与实机合并 | 944/1044 | 90.42% |
+| 引擎 PTY JNI，实机 LLVM 采集 | 269/292 | 92.12% |
+| 本轮新增/修改原生可执行行 | 94/96 | 97.92% |
+| AAR 打包脚本，Python 行追踪 | 51/53 | 96.23% |
+
+JVM 90 项、PRoot 16 项、打包 9 项通过；原生 PDN 205 项中 203 通过、2 项按运行环境跳过。这里报告行覆盖率：JNI 分支覆盖率为 62.06%，没有宣称全部异常分支或所有 Android 系统都实测。终端 JNI 的可选插桩还采集 fork 子进程执行路径；正式 AAR 与交付 APK 均恢复为非插桩版本。
+
+交付 APK、两种 AAR、33 项验收报告和说明位于 `/sdcard/yyd/PDN/apk-v065/`，本地覆盖率与构建记录位于 `build/apk-v065/` 和 `build/pdn-v065-coverage/`。正式 Maven 发布和 Release/R8 混淆验证不在本轮范围。

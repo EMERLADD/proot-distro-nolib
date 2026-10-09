@@ -7,7 +7,17 @@ class PdnRuntime @JvmOverloads constructor(
     private val host: ProotHost,
     val rootfsDir: File = File(host.prefixDir, "var/lib/pdn/rootfs"),
     val projectDir: File = File(host.homeDir, "workspace"),
+    val configuration: PdnConfiguration,
 ) {
+    @JvmOverloads
+    constructor(
+        host: ProotHost,
+        rootfsDir: File = File(host.prefixDir, "var/lib/pdn/rootfs"),
+        projectDir: File = File(host.homeDir, "workspace"),
+    ) : this(host, rootfsDir, projectDir, PdnConfiguration())
+
+    fun catalog(): PdnCatalog = PdnCatalog(this)
+
     val executable: File get() = File(host.nativeLibDir, "libpdn.so")
     val loader: File get() = File(host.nativeLibDir, "libproot-loader.so")
 
@@ -33,11 +43,21 @@ class PdnRuntime @JvmOverloads constructor(
     }
 
     @JvmOverloads
-    fun loginArguments(rootfs: File, user: String = "root"): List<String> = listOf(
-        "login", "--rootfs", rootfs.absolutePath,
-        "--user", user, "--bind", "${projectDir.absolutePath}:/workspace",
-        "--work-dir", "/workspace",
-    )
+    fun loginArguments(rootfs: File, user: String = configuration.user): List<String> =
+        loginArguments(rootfs, PdnConfiguration(user, configuration.workDir, configuration.binds, configuration.environment))
+
+    fun loginArguments(rootfs: File, configuration: PdnConfiguration): List<String> {
+        val args = mutableListOf("login", "--rootfs", rootfs.absolutePath, "--user", configuration.user)
+        if (configuration.binds.none { it.guestPath == "/workspace" }) {
+            val workspace = PdnBind(projectDir, "/workspace")
+            args += listOf("--bind", "${workspace.hostFile.absolutePath}:${workspace.guestPath}")
+        }
+        for (bind in configuration.binds) args += listOf("--bind", "${bind.hostFile.absolutePath}:${bind.guestPath}")
+        args += listOf("--work-dir", configuration.workDir)
+        for ((key, value) in configuration.environment) args += listOf("--env", "$key=$value")
+        require(args.all { '\u0000' !in it }) { "Arguments cannot contain NUL" }
+        return args
+    }
 
     private fun distroName(name: String): String {
         require(Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*").matches(name)) { "Invalid distro name: $name" }
@@ -69,23 +89,40 @@ class PdnRuntime @JvmOverloads constructor(
     fun remove(name: String): ProcessBuilder = processBuilder(listOf("remove", distroName(name), "--yes"))
 
     @JvmOverloads
-    fun login(name: String, user: String = "root"): ProcessBuilder =
+    fun login(name: String, user: String = configuration.user): ProcessBuilder =
         processBuilder(listOf("login", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3))
 
     @JvmOverloads
-    fun login(rootfs: File, user: String = "root"): ProcessBuilder = processBuilder(loginArguments(rootfs, user))
+    fun login(rootfs: File, user: String = configuration.user): ProcessBuilder = processBuilder(loginArguments(rootfs, user))
 
     @JvmOverloads
-    fun exec(name: String, command: List<String>, user: String = "root"): ProcessBuilder {
+    fun exec(name: String, command: List<String>, user: String = configuration.user): ProcessBuilder {
         require(command.isNotEmpty()) { "A guest command is required" }
         return processBuilder(listOf("exec", distroName(name)) + loginArguments(File(rootfsDir, name), user).drop(3)
             + listOf("--") + command)
     }
 
     @JvmOverloads
-    fun exec(rootfs: File, command: List<String>, user: String = "root"): ProcessBuilder {
+    fun exec(rootfs: File, command: List<String>, user: String = configuration.user): ProcessBuilder {
         require(command.isNotEmpty()) { "A guest command is required" }
         return processBuilder(listOf("exec") + loginArguments(rootfs, user).drop(1) + listOf("--") + command)
+    }
+
+    fun login(name: String, configuration: PdnConfiguration): ProcessBuilder =
+        processBuilder(listOf("login", distroName(name)) + loginArguments(File(rootfsDir, name), configuration).drop(3))
+
+    fun login(rootfs: File, configuration: PdnConfiguration): ProcessBuilder =
+        processBuilder(loginArguments(rootfs, configuration))
+
+    fun exec(name: String, command: List<String>, configuration: PdnConfiguration): ProcessBuilder {
+        require(command.isNotEmpty()) { "A guest command is required" }
+        return processBuilder(listOf("exec", distroName(name)) + loginArguments(File(rootfsDir, name), configuration).drop(3)
+            + listOf("--") + command)
+    }
+
+    fun exec(rootfs: File, command: List<String>, configuration: PdnConfiguration): ProcessBuilder {
+        require(command.isNotEmpty()) { "A guest command is required" }
+        return processBuilder(listOf("exec") + loginArguments(rootfs, configuration).drop(1) + listOf("--") + command)
     }
 
     fun backup(name: String, archive: File): ProcessBuilder =

@@ -41,11 +41,38 @@ class ReleasePackagingTest(unittest.TestCase):
         self.write_aar()
         packager.package(self.aar, self.root)
         lines = (self.output / 'SHA256SUMS').read_text().splitlines()
-        self.assertEqual(len(lines), 6)
+        self.assertEqual(len(lines), 7)
         for line in lines:
             digest, name = line.split('  ')
             self.assertEqual(digest, hashlib.sha256((self.output / name).read_bytes()).hexdigest())
         self.assertEqual((self.output / 'pdn-engine-0.6.2.aar').read_bytes(), self.aar.read_bytes())
+
+    def test_lightweight_excludes_legacy_programs_and_preserves_sdk(self):
+        self.entries.update({f'jni/arm64-v8a/{name}': b'\x7fELFlegacy' for name in
+                             ('libproot.so', 'libpr-cli.so', 'libbusybox.so')})
+        self.entries['jni/x86_64/libextra.so'] = b'\x7fELFother'
+        self.entries['META-INF/metadata.txt'] = b'metadata'
+        self.write_aar()
+        packager.package(self.aar, self.root)
+        with zipfile.ZipFile(self.output / 'pdn-engine-lite-0.6.2.aar') as lite:
+            natives = {name for name in lite.namelist() if name.startswith('jni/')}
+            self.assertEqual(natives, packager.LITE_LIBRARIES)
+            for name in natives | {'classes.jar', 'AndroidManifest.xml', 'META-INF/metadata.txt'}:
+                self.assertEqual(lite.read(name), self.entries[name])
+        self.assertEqual((self.output / 'pdn-engine-0.6.2.aar').read_bytes(), self.aar.read_bytes())
+
+    def test_rejects_duplicate_archive_entries(self):
+        self.write_aar()
+        with zipfile.ZipFile(self.aar, 'a') as archive:
+            archive.writestr('classes.jar', b'other')
+        with self.assertRaisesRegex(ValueError, 'Duplicate AAR entry'):
+            packager.package(self.aar, self.root)
+
+    def test_lightweight_requires_exact_native_membership(self):
+        self.entries.pop('jni/arm64-v8a/libptyjni.so')
+        self.write_aar()
+        with self.assertRaisesRegex(ValueError, 'membership mismatch'):
+            packager.lightweight(self.aar, self.root / 'lite.aar')
 
     def test_rejects_missing_native_release(self):
         (self.output / 'pdn').unlink()

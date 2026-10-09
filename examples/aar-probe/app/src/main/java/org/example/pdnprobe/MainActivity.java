@@ -146,7 +146,9 @@ public final class MainActivity extends Activity {
     @Override public void onDestroy() {
         disposed = true;
         worker.shutdownNow();
-        if (terminal != null) terminal.close();
+        if (terminal != null) {
+            try { terminal.close(); } catch (java.io.IOException failure) { android.util.Log.e("PdnProbe", "Terminal cleanup failed", failure); }
+        }
         super.onDestroy();
     }
 }

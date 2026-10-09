@@ -10,9 +10,11 @@
 
 2026-10-09，使用 GitHub Release 0.6.4 AAR，在 Android 14（SDK 34）的普通 `untrusted_app` 进程中完成自动验收：**19/19 通过**。界面初始化、官方源在线安装、执行、终端输入、Ctrl-C、resize 和关闭均通过；完整验收从内置官方归档安装新 Alpine，验证启动错误与事件回调。Java 验证代码实机行覆盖率为 425/454（93.61%）。APK 的 minSdk 28、targetSdk 35，包内 PDN 与 loader 和 Release 文件逐字节一致。
 
+2026-10-09，0.6.5 轻量 AAR 的扩展验收 **33/33 通过**：新增配置、结构化查询、异步独立任务、真实取消与超时进程树清理、双终端、退出状态、启动错误回调和 JNI 边界检查。APK 仅含 PDN、loader 和 PTY JNI 三个原生文件；实机 JNI 行覆盖率 269/292（92.12%）。SDK 全部类的单元与实机合并行覆盖率 944/1044（90.42%）。
+
 ## 构建
 
-先执行 `prepare.sh`，将 Release 0.6.4 AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
+先执行 `prepare.sh`，将 Release 0.6.5 轻量 AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
 
 ```sh
 ./prepare.sh

@@ -17,7 +17,8 @@ if gh release view "$tag" --repo "$repository" >/dev/null 2>&1; then
 fi
 package=proot-distro-nolib-$tag-android-arm64.tar.gz
 aar=pdn-engine-$version.aar
-for asset in "$package" "$aar" pdn proot-loader libpdn.so libproot-loader.so SHA256SUMS; do
+lite=pdn-engine-lite-$version.aar
+for asset in "$package" "$aar" "$lite" pdn proot-loader libpdn.so libproot-loader.so SHA256SUMS; do
     test -s "build/packages/$asset"
 done
 (cd build/packages && sha256sum -c SHA256SUMS)
@@ -33,6 +34,7 @@ cat >> "$notes" <<EOF
 ### 下载文件
 
 - \`$aar\`：Android 引擎 AAR（非插桩 Debug 构建）；Kotlin 标准库由宿主提供。
+- \`$lite\`：轻量 Android 引擎 AAR，仅包含 PDN、loader 和 PTY JNI 三个原生文件；Kotlin 标准库由宿主提供。
 - \`libpdn.so\`、\`libproot-loader.so\`：放入 \`jniLibs/arm64-v8a/\` 的 ELF 可执行程序。
 - \`pdn\`、\`proot-loader\`：同版本的原始 ARM64 ELF。
 - \`$package\`：完整原生程序、对应源码、依赖源码与许可证。
@@ -44,7 +46,7 @@ commit=${RELEASE_COMMIT:-$(git rev-parse HEAD)}
 gh release create "$tag" --repo "$repository" --target "$commit" \
     --title "$tag — proot-distro-nolib ARM64" --prerelease \
     --notes-file "$notes" \
-    "build/packages/$package" "build/packages/$aar" \
+    "build/packages/$package" "build/packages/$aar" "build/packages/$lite" \
     build/packages/pdn build/packages/proot-loader \
     build/packages/libpdn.so build/packages/libproot-loader.so \
     build/packages/SHA256SUMS

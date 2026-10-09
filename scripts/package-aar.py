@@ -5,6 +5,24 @@ import sys
 import zipfile
 
 
+LITE_LIBRARIES = frozenset(f'jni/arm64-v8a/{name}' for name in
+                           ('libpdn.so', 'libproot-loader.so', 'libptyjni.so'))
+
+
+def lightweight(source, target):
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(target, 'w') as output:
+        for entry in original.infolist():
+            if entry.filename.startswith('jni/') and entry.filename not in LITE_LIBRARIES:
+                continue
+            output.writestr(entry, original.read(entry.filename))
+    with zipfile.ZipFile(target) as archive:
+        libraries = {name for name in archive.namelist() if name.startswith('jni/') and not name.endswith('/')}
+        if libraries != LITE_LIBRARIES:
+            raise ValueError('Lightweight AAR native library membership mismatch')
+        if archive.testzip() is not None:
+            raise ValueError('Corrupt lightweight AAR')
+
+
 def package(aar, root):
     version = re.search(r'^#define PDN_VERSION "([0-9.]+)"',
                         (root / 'src/proot/src/cli/proot.h').read_text(), re.M).group(1)
@@ -15,6 +33,8 @@ def package(aar, root):
         if not (output / name).is_file():
             raise ValueError(f'Missing release asset: {name}')
     with zipfile.ZipFile(aar) as archive:
+        if len(archive.namelist()) != len(set(archive.namelist())):
+            raise ValueError('Duplicate AAR entry')
         if archive.testzip() is not None:
             raise ValueError('Corrupt AAR')
         for name in ('libpdn.so', 'libproot-loader.so'):
@@ -28,6 +48,9 @@ def package(aar, root):
     target = output / f'pdn-engine-{version}.aar'
     target.write_bytes(Path(aar).read_bytes())
     names.append(target.name)
+    lite = output / f'pdn-engine-lite-{version}.aar'
+    lightweight(target, lite)
+    names.append(lite.name)
     (output / 'SHA256SUMS').write_text(''.join(
         f'{hashlib.sha256((output / name).read_bytes()).hexdigest()}  {name}\n'
         for name in names))

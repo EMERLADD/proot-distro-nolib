@@ -12,7 +12,23 @@ import java.util.ArrayList;
 import org.json.JSONObject;
 
 public final class ProbeInstrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean nativeCoverage;
+    @Override public void onCreate(Bundle arguments) {
+        nativeCoverage = arguments != null && "true".equals(arguments.getString("nativeCoverage"));
+        super.onCreate(arguments);
+        start();
+    }
+    private void dumpNativeCoverage(Bundle result) {
+        if (!nativeCoverage) return;
+        try {
+            Class<?> type = Class.forName("id.or.oo.pr.engine.PtyNative");
+            java.lang.reflect.Method method = type.getDeclaredMethod("nativeDumpCoverage", String.class);
+            method.setAccessible(true);
+            Object status = method.invoke(type.getField("INSTANCE").get(null), new File(getTargetContext().getFilesDir(), "native-coverage.profraw").getAbsolutePath());
+            result.putString("native_coverage_status", String.valueOf(status));
+            if (!(status instanceof Number) || ((Number)status).intValue() != 0) throw new IllegalStateException("Native coverage dump status: " + status);
+        } catch (Exception failure) { result.putString("native_coverage_error", failure.toString()); }
+    }
     private void click(MainActivity activity, String label, boolean expectSuccess) throws Exception {
         runOnMainSync(() -> {
             ArrayList<View> matches = new ArrayList<>();
@@ -38,6 +54,7 @@ public final class ProbeInstrumentation extends Instrumentation {
         Bundle result = new Bundle();
         int status = 0;
         MainActivity activity = null;
+        dumpNativeCoverage(result);
         try {
             Files.deleteIfExists(new File(getTargetContext().getFilesDir(), "acceptance.json").toPath());
             activity = (MainActivity) startActivitySync(new Intent(getTargetContext(), MainActivity.class)
@@ -80,6 +97,7 @@ public final class ProbeInstrumentation extends Instrumentation {
             byte[] data = (byte[]) agent.getClass().getMethod("getExecutionData", boolean.class).invoke(agent, false);
             Files.write(new File(getTargetContext().getFilesDir(), "coverage.ec").toPath(), data);
         } catch (Exception failure) { result.putString("coverage_error", failure.toString()); }
+        dumpNativeCoverage(result);
         finish(status, result);
     }
 }

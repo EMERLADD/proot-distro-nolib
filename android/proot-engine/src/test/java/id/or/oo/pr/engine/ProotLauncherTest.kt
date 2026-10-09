@@ -42,5 +42,8 @@ class ProotLauncherTest {
         assertTrue(envMap["PROOT_LOADER"]?.endsWith("/libproot-loader.so") == true)
         assertEquals("xterm-256color", envMap["TERM"])
         assertEquals("en_US.UTF-8", envMap["LANG"])
+        for (key in System.getenv().keys - PdnRuntime(fakeHost).environment().keys) {
+            assertTrue(envMap[key] == System.getenv(key))
+        }
     }
 }

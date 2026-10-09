@@ -10,7 +10,8 @@ plugins {
 jacoco { toolVersion = "0.8.12" }
 
 val pdnClasses = fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-    include("id/or/oo/pr/engine/PdnRuntime*.class", "id/or/oo/pr/engine/AlpinePackages*.class")
+    include("id/or/oo/pr/engine/Pdn*.class", "id/or/oo/pr/engine/AlpinePackages*.class",
+        "id/or/oo/pr/engine/ProotLauncher*.class", "id/or/oo/pr/engine/PtyNative*.class")
 }
 val pdnJavaClasses = fileTree(layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes")) {
     include("id/or/oo/pr/engine/Pdn*.class")

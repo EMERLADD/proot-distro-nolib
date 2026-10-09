@@ -40,9 +40,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Build Android AAR
+      - name: Test and build Android AAR
         working-directory: android
-        run: sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
+        run: sh gradlew -PpdnEngineOnly=true :proot-engine:testDebugUnitTest :proot-engine:pdnCoverage :proot-engine:bundleDebugAar
       - name: Package and verify AAR
         run: |
           python3 -m unittest discover -s tests -p test_release_packaging.py -v

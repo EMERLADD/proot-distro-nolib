@@ -172,7 +172,7 @@ static void kill_all_tracees2(int signum, siginfo_t *siginfo UNUSED, void *ucont
 	/* Exit immediately for system signals (segmentation fault,
 	 * illegal instruction, ...), otherwise exit cleanly through
 	 * the event loop.  */
-	if (signum != SIGQUIT)
+	if (signum != SIGQUIT && signum != SIGTERM)
 		_exit(EXIT_FAILURE);
 }
 
@@ -328,6 +328,7 @@ int event_loop()
 	for (signum = 0; signum < SIGRTMAX; signum++) {
 		switch (signum) {
 		case SIGQUIT:
+		case SIGTERM:
 		case SIGILL:
 		case SIGABRT:
 		case SIGFPE:

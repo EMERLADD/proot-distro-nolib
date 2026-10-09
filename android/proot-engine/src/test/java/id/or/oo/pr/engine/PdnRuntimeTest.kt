@@ -199,4 +199,36 @@ class PdnRuntimeTest {
         assertThrows(IllegalArgumentException::class.java) { pdn.clearConfig("../x") }
         assertThrows(IllegalArgumentException::class.java) { pdn.saveConfig("../x", listOf("--user", "root")) }
     }
+    @Test fun configurationUsesLiteralArgvAndWholeOperationOverrides() {
+        val host = host()
+        binaries(host)
+        val binds = mutableListOf(PdnBind(File("/host with spaces"), "/guest with spaces"))
+        val environment = linkedMapOf("VALUE" to "$(echo x) a=b", "EMPTY" to "")
+        val configuration = PdnConfiguration("1000:1000", "/guest with spaces", binds, environment)
+        val runtime = PdnRuntime(host, File(host.prefixDir, "roots"), File(host.homeDir, "project"), configuration)
+        binds.clear()
+        environment.clear()
+        val root = File(runtime.rootfsDir, "alpine")
+        val options = listOf("--user", "1000:1000", "--bind", "${runtime.projectDir.absolutePath}:/workspace",
+            "--bind", "/host with spaces:/guest with spaces", "--work-dir", "/guest with spaces",
+            "--env", "VALUE=$(echo x) a=b", "--env", "EMPTY=")
+        assertEquals(listOf("login", "--rootfs", root.absolutePath) + options, runtime.loginArguments(root))
+        assertEquals(runtime.command(listOf("login", "alpine") + options), runtime.login("alpine").command())
+        assertEquals(runtime.command(listOf("exec", "alpine") + options + listOf("--", "/bin/printf", "a b")),
+            runtime.exec("alpine", listOf("/bin/printf", "a b")).command())
+        assertEquals("root", runtime.loginArguments(root, "root")[4])
+        assertTrue(runtime.loginArguments(root, "root").contains("VALUE=$(echo x) a=b"))
+        val selected = PdnConfiguration("root", "/workspace", listOf(PdnBind(File("/new mount"), "/workspace")), emptyMap())
+        val selectedArgs = listOf("login", "--rootfs", root.absolutePath, "--user", "root", "--bind", "/new mount:/workspace", "--work-dir", "/workspace")
+        assertEquals(selectedArgs, runtime.loginArguments(root, selected))
+        assertEquals(runtime.command(selectedArgs), runtime.login(root, selected).command())
+        assertEquals(runtime.command(listOf("login", "alpine") + selectedArgs.drop(3)), runtime.login("alpine", selected).command())
+        assertEquals(runtime.command(listOf("exec") + selectedArgs.drop(1) + listOf("--", "/bin/true")), runtime.exec(root, listOf("/bin/true"), selected).command())
+        assertEquals(runtime.command(listOf("exec", "alpine") + selectedArgs.drop(3) + listOf("--", "/bin/true")), runtime.exec("alpine", listOf("/bin/true"), selected).command())
+        assertFalse(runtime.login(root, selected).environment().containsKey("VALUE"))
+        assertThrows(IllegalArgumentException::class.java) { runtime.exec(root, emptyList(), selected) }
+        assertThrows(IllegalArgumentException::class.java) { runtime.exec("alpine", emptyList(), selected) }
+        assertThrows(IllegalArgumentException::class.java) { runtime.loginArguments(root, "a\u0000b") }
+    }
+
 }

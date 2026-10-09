@@ -1,5 +1,16 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.5 — 2026-10-09
+
+- AAR 增加不可变配置与 Java/Kotlin 兼容构造器，统一账号、guest 工作目录、挂载和原样环境变量参数。
+- 增加后台任务、取消、超时、等待与串行 Executor 回调；限制工作队列，回收 PRoot 和 guest 子进程后完成。
+- 终端会话独立持有 PID/fd，提供输入、resize、等待、终止和重复关闭，区分正常退出与信号，保留真实 JNI errno 与原生启动错误。
+- 增加结构化发行版和镜像查询，严格校验 JSON、UTF-8、版本和类型，保留未知安装元数据。
+- 每次发布增加 `pdn-engine-lite-0.6.5.aar`，仅包含 PDN、loader 与 PTY JNI，完整版与 `.so`/ELF 继续提供。
+- 独立 Java App 只依赖轻量 AAR 和 Kotlin 标准库：普通 `untrusted_app` 进程实测 33/33，通过 GUI 操作、真实安装、异步取消/超时与双终端测试；JNI 实机行覆盖率 269/292（92.12%）。
+- JVM 90 项通过；原生 PDN 203 项通过、2 项跳过，PRoot 16 项通过，打包 9 项通过。SDK 单元与实机合并行覆盖率 944/1044（90.42%），新增/修改原生可执行行覆盖率 94/96（97.92%）。
+- 正式 Release/R8 混淆与 Maven 发布不在本轮范围。接入说明见 `docs/pdn-aar-api.md`。
+
 ## v0.6.4 — 2026-10-09
 
 - PRoot 启动、loader、初始 guest shell、ELF interpreter 和实际登录 shell 的启动失败提供具体错误码、原始 errno 和建议。

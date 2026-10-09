@@ -96,11 +96,11 @@ public class PdnHostErrorsJavaTest {
         assertEquals("host_output_failed", actual.getCode());
         assertSame(inputFailure, actual.getCause());
         assertEquals("host_cleanup_failed", ((PdnHostException) actual.getSuppressed()[0]).getCode());
-        IOException readerFailure = new IOException("reader available");
+        IOException readerFailure = new IOException("reader read");
         FixtureProcess reader = new FixtureProcess();
         reader.input = new InputStream() {
-            public int read() { return -1; }
-            public int available() throws IOException { throw readerFailure; }
+            public int read() throws IOException { throw readerFailure; }
+            public int available() { return 1; }
         };
         actual = failure(new PdnOperations(runtime, builder -> reader), new PdnListener() {});
         assertEquals("host_output_failed", actual.getCode());

@@ -39,9 +39,30 @@ public final class PdnOperations {
         return new PdnHostException(code, message, suggestion, cause);
     }
 
-    public PdnResult run(ProcessBuilder original, PdnListener listener) throws IOException, InterruptedException {
-        Objects.requireNonNull(original);
+    public PdnTask start(ProcessBuilder builder, PdnListener listener) {
+        return start(builder, listener, 0, null);
+    }
+
+    public PdnTask start(ProcessBuilder builder, PdnListener listener, java.util.concurrent.Executor callbackExecutor) {
+        return start(builder, listener, 0, callbackExecutor);
+    }
+
+    public PdnTask start(ProcessBuilder builder, PdnListener listener, long timeoutMillis) {
+        return start(builder, listener, timeoutMillis, null);
+    }
+
+    public PdnTask start(ProcessBuilder builder, PdnListener listener, long timeoutMillis, java.util.concurrent.Executor callbackExecutor) {
+        return start(builder, listener, timeoutMillis, callbackExecutor, PdnTask.workers());
+    }
+
+    PdnTask start(ProcessBuilder builder, PdnListener listener, long timeoutMillis,
+            java.util.concurrent.Executor callbackExecutor, java.util.concurrent.Executor workerExecutor) {
         Objects.requireNonNull(listener);
+        return new PdnTask(this, copyBuilder(builder), listener, timeoutMillis, callbackExecutor, Objects.requireNonNull(workerExecutor));
+    }
+
+    private static ProcessBuilder copyBuilder(ProcessBuilder original) {
+        Objects.requireNonNull(original);
         if (original.redirectErrorStream() || original.redirectInput() != ProcessBuilder.Redirect.PIPE
                 || original.redirectOutput() != ProcessBuilder.Redirect.PIPE
                 || original.redirectError() != ProcessBuilder.Redirect.PIPE) {
@@ -51,6 +72,12 @@ public final class PdnOperations {
         builder.directory(original.directory());
         builder.environment().clear();
         builder.environment().putAll(original.environment());
+        return builder;
+    }
+
+    public PdnResult run(ProcessBuilder original, PdnListener listener) throws IOException, InterruptedException {
+        Objects.requireNonNull(listener);
+        ProcessBuilder builder = copyBuilder(original);
         File cache = new File(runtime.environment().get("PROOT_TMP_DIR"));
         try {
             if (!cache.isDirectory() && !cache.mkdirs()) throw new IOException("Cannot prepare operation cache");
@@ -99,16 +126,22 @@ public final class PdnOperations {
             while (process.isAlive() || completedStreams < 2 || !queue.isEmpty()) {
                 if (!process.isAlive()) {
                     if (drainDeadline == 0) drainDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-                    if (System.nanoTime() > drainDeadline) throw hostFailure("host_output_failed", "Operation streams did not finish after process exit",
+                    if (queue.isEmpty() && System.nanoTime() > drainDeadline) throw hostFailure("host_output_failed", "Operation streams did not finish after process exit",
                             "Retry the operation and check for stalled output readers", null);
                 }
+                long deliveryStart = System.nanoTime();
                 tail.read(listener);
+                if (drainDeadline != 0) drainDeadline += System.nanoTime() - deliveryStart;
                 Chunk chunk = queue.poll(10, TimeUnit.MILLISECONDS);
                 if (chunk != null) {
                     if (chunk.failure != null) throw chunk.failure;
                     if (chunk.bytes == null) completedStreams++;
-                    else if (chunk.stderr) listener.onStderr(chunk.bytes);
-                    else listener.onStdout(chunk.bytes);
+                    else {
+                        deliveryStart = System.nanoTime();
+                        if (chunk.stderr) listener.onStderr(chunk.bytes);
+                        else listener.onStdout(chunk.bytes);
+                        if (drainDeadline != 0) drainDeadline += System.nanoTime() - deliveryStart;
+                    }
                 }
             }
             int status = process.waitFor();
@@ -150,8 +183,11 @@ public final class PdnOperations {
                 while (true) {
                     int available = input.available();
                     if (available == 0) {
-                        if (!process.isAlive()) break;
-                        Thread.sleep(5);
+                        if (!process.isAlive()) {
+                            if (input.available() == 0) break;
+                            continue;
+                        }
+                        process.waitFor(10, TimeUnit.MILLISECONDS);
                         continue;
                     }
                     int size = input.read(buffer, 0, Math.min(buffer.length, available));
@@ -177,7 +213,15 @@ public final class PdnOperations {
         IOException failure = null;
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         if (process != null) {
-            if (process.isAlive()) process.destroyForcibly();
+            if (process.isAlive()) {
+                process.destroy();
+                long gracefulDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+                while (process.isAlive() && System.nanoTime() < gracefulDeadline) {
+                    try { process.waitFor(50, TimeUnit.MILLISECONDS); }
+                    catch (InterruptedException ignored) { interrupted = true; }
+                }
+                if (process.isAlive()) process.destroyForcibly();
+            }
             while (process.isAlive() && System.nanoTime() < deadline) {
                 try { process.waitFor(50, TimeUnit.MILLISECONDS); }
                 catch (InterruptedException ignored) { interrupted = true; }
@@ -232,7 +276,7 @@ public final class PdnOperations {
         }
     }
 
-    private static final class Tail {
+    static final class Tail {
         final String id;
         final RandomAccessFile file;
         final ByteArrayOutputStream line = new ByteArrayOutputStream();
@@ -286,6 +330,7 @@ public final class PdnOperations {
         PdnEvent parse() throws CharacterCodingException, JSONException {
             String json = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(line.toByteArray())).toString();
+            PdnJson.validate(json);
             JSONTokener parser = new JSONTokener(json);
             JSONObject data = new JSONObject(parser);
             if (parser.nextClean() != 0) fail();

@@ -17,6 +17,7 @@
 
 #include "pdn_distros.h"
 #include "pdn_events.h"
+#include "pdn_json.h"
 #include <sys/wait.h>
 
 char *pdn_rootfs_base(void);
@@ -182,7 +183,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return problem("download_failed", "cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.4");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.5");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -294,6 +295,52 @@ int pdn_mirrors(const char *name)
         for (j = 0; j < 5 && distro.mirrors[j].name; j++)
             printf("%-10s %s\n", distro.mirrors[j].name, distro.mirrors[j].base);
     }
+    return 0;
+}
+
+int pdn_available_json(void)
+{
+    fputs("{\"version\":1,\"distributions\":[", stdout);
+    for (size_t i = 0; i < sizeof(distro_names) / sizeof(distro_names[0]); i++) {
+        struct distro distro;
+        find_distro(distro_names[i], &distro);
+        if (i) fputc(',', stdout);
+        fputs("{\"name\":", stdout);
+        pdn_json_string(stdout, distro.name);
+        fputs(",\"version\":", stdout);
+        pdn_json_string(stdout, distro.version);
+        printf(",\"architecture\":\"aarch64\",\"download_size\":%zu}", distro.size);
+    }
+    puts("]}");
+    return 0;
+}
+
+int pdn_mirrors_json(const char *name)
+{
+    struct distro distro;
+    int emitted = 0;
+    if (name && find_distro(name, &distro) < 0)
+        return problem("distro_unknown", "unknown distro; run pdn list --available") != 0;
+    fputs("{\"version\":1,\"mirrors\":[", stdout);
+    for (size_t i = 0; i < sizeof(distro_names) / sizeof(distro_names[0]); i++) {
+        if (name && strcasecmp(name, distro_names[i])) continue;
+        find_distro(distro_names[i], &distro);
+        for (size_t j = 0; j < 5 && distro.mirrors[j].name; j++) {
+            const struct mirror *mirror = &distro.mirrors[j];
+            if (emitted++) fputc(',', stdout);
+            fputs("{\"distro\":", stdout);
+            pdn_json_string(stdout, distro.name);
+            fputs(",\"name\":", stdout);
+            pdn_json_string(stdout, mirror->name);
+            fputs(",\"base_url\":", stdout);
+            pdn_json_string(stdout, mirror->base);
+            fputs(",\"url\":", stdout);
+            pdn_json_string(stdout, mirror->url);
+            printf(",\"priority\":%zu,\"official\":%s}", j,
+                   strcmp(mirror->name, "official") ? "false" : "true");
+        }
+    }
+    puts("]}");
     return 0;
 }
 

@@ -10,11 +10,14 @@
 
 #include "cli/pdn_config.h"
 #include "cli/pdn_events.h"
+#include "cli/pdn_json.h"
 
 #ifdef PDN_WITH_INSTALL
 int pdn_install(const char *name, const char *local_archive, const char *mirror_name);
 int pdn_mirrors(const char *name);
 int pdn_available(void);
+int pdn_available_json(void);
+int pdn_mirrors_json(const char *name);
 int pdn_archive(const char *name, const char *file, int restoring);
 #endif
 
@@ -116,7 +119,7 @@ static int help(void)
          "Usage:\n"
 #ifdef PDN_WITH_INSTALL
          "  pdn install NAME [--mirror NAME | --archive PATH]\n"
-         "  pdn mirrors [NAME]\n  pdn list --available\n"
+         "  pdn mirrors [NAME] [--json]\n  pdn list --available [--json]\n"
          "  pdn backup NAME FILE.tar.gz\n  pdn restore NAME FILE.tar.gz\n"
 #endif
          "  pdn login NAME|--rootfs PATH [OPTIONS] [-- COMMAND ARG...]\n"
@@ -126,7 +129,7 @@ static int help(void)
          "           --user/-u NAME|UID[:GID], --work-dir/-w /GUEST/PATH\n"
          "  Login/exec: --no-config bypasses saved defaults.\n"
          "  Config replaces all saved options; no options shows defaults as JSON.\n"
-         "  pdn list (alias: ls)\n"
+         "  pdn list [--json] (alias: ls)\n"
          "  pdn uninstall NAME [--yes | -y] (alias: remove)\n"
          "  pdn version\n"
          "  pdn proot [PROOT OPTIONS...]\n\n"
@@ -437,24 +440,36 @@ done:
     return result;
 }
 
-static int list(void)
+
+static int list(int json)
 {
     char *base = pdn_rootfs_base();
     struct dirent **entries;
-    int count, i;
+    int count, i, emitted = 0;
     if (!base) return coded_fail(nonempty("PDN_ROOTFS_DIR") || nonempty("HOME") ? "out_of_memory" : "invalid_argument", "set PDN_ROOTFS_DIR or HOME", "list");
     count = scandir(base, &entries, NULL, alphasort);
     if (count < 0) {
         int saved = errno;
         free(base);
-        if (saved == ENOENT) { puts("No local rootfs found."); return 0; }
+        if (saved == ENOENT) { puts(json ? "{\"version\":1,\"distributions\":[]}" : "No local rootfs found."); return 0; }
         return root_error(strerror(saved), "rootfs directory", saved);
     }
+    if (json) fputs("{\"version\":1,\"distributions\":[", stdout);
     for (i = 0; i < count; i++) {
         char *path = join(base, entries[i]->d_name);
-        if (valid_name(entries[i]->d_name) && directory(path)) puts(entries[i]->d_name);
+        if (valid_name(entries[i]->d_name) && directory(path)) {
+            if (json) {
+                if (emitted++) fputc(',', stdout);
+                fputs("{\"name\":", stdout);
+                pdn_json_string(stdout, entries[i]->d_name);
+                fputs(",\"rootfs\":", stdout);
+                pdn_json_string(stdout, path);
+                fputc('}', stdout);
+            } else puts(entries[i]->d_name);
+        }
         free(path); free(entries[i]);
     }
+    if (json) puts("]}");
     free(entries); free(base);
     return 0;
 }
@@ -470,8 +485,16 @@ static int dispatch(int argc, char *const argv[])
             if (argc != 4) return fail("usage", "backup|restore NAME FILE.tar.gz");
             return pdn_archive(argv[2], argv[3], equal(argv[1], "restore"));
         }
-        if (equal(argv[1], "mirrors")) return argc <= 3 ? pdn_mirrors(argc == 3 ? argv[2] : NULL) : fail("unexpected argument", argv[3]);
-        if ((equal(argv[1], "list") || equal(argv[1], "ls")) && argc == 3 && equal(argv[2], "--available")) return pdn_available();
+        if (equal(argv[1], "mirrors")) {
+            int json = 0;
+            const char *distro = NULL;
+            for (int i = 2; i < argc; i++) {
+                if (equal(argv[i], "--json") && !json) json = 1;
+                else if (argv[i][0] != '-' && !distro) distro = argv[i];
+                else return fail("unexpected argument", argv[i]);
+            }
+            return json ? pdn_mirrors_json(distro) : pdn_mirrors(distro);
+        }
         if (equal(argv[1], "install")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3) return fail("missing distro", "run list --available");
@@ -489,7 +512,22 @@ static int dispatch(int argc, char *const argv[])
             if (!valid_name(argv[2])) return fail("invalid name", argv[2]);
             return pdn_remove(argv[2], argc == 4);
         }
-        if (equal(argv[1], "list") || equal(argv[1], "ls")) return argc == 2 ? list() : fail("unexpected argument", argv[2]);
+        if (equal(argv[1], "list") || equal(argv[1], "ls")) {
+            int json = 0, available = 0;
+            for (int i = 2; i < argc; i++) {
+                if (equal(argv[i], "--json") && !json) json = 1;
+#ifdef PDN_WITH_INSTALL
+                else if (equal(argv[i], "--available") && !available) available = 1;
+#endif
+                else return fail("unexpected argument", argv[i]);
+            }
+#ifdef PDN_WITH_INSTALL
+            if (available) return json ? pdn_available_json() : pdn_available();
+#else
+            (void)available;
+#endif
+            return list(json);
+        }
         if (equal(argv[1], "help")) return help();
         if (equal(argv[1], "version")) {
             char *version_args[] = {argv[0], "--version", NULL};
