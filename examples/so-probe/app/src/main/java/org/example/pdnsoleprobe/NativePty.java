@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Map;
 
 final class NativePty {
+    static final int RUNNING = -2;
     static { System.loadLibrary("probepty"); }
     static native int[] spawn(String[] args, String[] environment, String cwd, int rows, int cols);
     static native int read(int fd, byte[] data, int offset, int size);

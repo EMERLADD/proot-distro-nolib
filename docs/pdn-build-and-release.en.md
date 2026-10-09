@@ -58,7 +58,7 @@ sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
 
 This also needs Gradle, Java, the Android SDK and a PTY JNI build environment. The original App GUI and terminal library modules need not be configured. See [Android embedding (Chinese)](android-embedding.md), the [AAR probe project](../examples/aar-probe/README.md) and the [AAR API (Chinese)](pdn-aar-api.md).
 
-Since 0.6.6, both AAR variants contain only PDN, loader and PTY JNI as native components, retaining terminal support without legacy pr native components. `libpdn.so` and `libproot-loader.so` are renamed ELF executables; PTY JNI is the actual JVM-loaded JNI library. The AAR requires the Kotlin standard library and is currently a non-instrumented Debug engine build. Formal Release/R8 and Maven publication validation remain unfinished.
+Since 0.6.6, both AAR variants contain only PDN, loader and PTY JNI as native components, retaining terminal support without legacy pr native components. `libpdn.so` and `libproot-loader.so` are renamed ELF executables; PTY JNI is the actual JVM-loaded JNI library. The AAR requires the Kotlin standard library and is currently a non-instrumented Debug engine build. The existing AAR passed acceptance in a nondebuggable Release test App with R8, Android default optimization/JNI rules and local test signing; direct `.so` integration also passed. See the [R8 acceptance record (Chinese)](pdn-error-testing.md#066-releaser8-混淆验收). Maven publication is not implemented.
 
 ## GitHub builds
 

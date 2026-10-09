@@ -6,8 +6,8 @@ android {
         applicationId = "org.example.pdnprobe"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         ndk { abiFilters += "arm64-v8a" }
     }
     compileOptions {
@@ -16,9 +16,17 @@ android {
     }
     packaging { jniLibs.useLegacyPackaging = true; jniLibs.keepDebugSymbols += setOf("**/libpdn.so", "**/libproot-loader.so") }
     testCoverage { jacocoVersion = "0.8.12" }
-    buildTypes { getByName("debug") {
-        enableAndroidTestCoverage = providers.gradleProperty("probeCoverage").orNull == "true"
-    } }
+    buildTypes {
+        getByName("debug") {
+            enableAndroidTestCoverage = providers.gradleProperty("probeCoverage").orNull == "true"
+        }
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
 }
 dependencies {
     implementation(files("libs/pdn-engine.aar"))

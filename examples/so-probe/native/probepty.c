@@ -106,8 +106,10 @@ JNIEXPORT jint JNICALL JNI(waitPid)(JNIEnv *env, jclass cls, jint pid)
 {
     (void)env; (void)cls;
     if (pid <= 0) return -1;
-    int status; pid_t result = waitpid(pid, &status, WNOHANG);
-    if (result <= 0) return result;
+    int status; pid_t result;
+    do { result = waitpid(pid, &status, WNOHANG); } while (result < 0 && errno == EINTR);
+    if (result == 0) return -2;
+    if (result < 0) return -1;
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 }
 JNIEXPORT void JNICALL JNI(close)(JNIEnv *env, jclass cls, jint fd) { (void)env; (void)cls; close(fd); }

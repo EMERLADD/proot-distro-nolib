@@ -28,12 +28,12 @@ public final class ProbeTerminal implements AutoCloseable {
         session = NativePty.start(runtime.processBuilder(runtime.loginArguments(rootfs)), 24, 80);
         if (session == null) throw new IOException("SO PTY could not start");
         pid = session.pid;
-        if (!new File("/proc/" + pid).exists()) { session.close(); throw new IOException("Cannot observe own PTY child"); }
+        if (pid <= 0) { session.close(); throw new IOException("Invalid PTY child PID"); }
         watcher = new Thread(() -> {
             while (!childExited) {
                 synchronized (childLock) {
                     int status = NativePty.waitPid(pid);
-                    if (status != 0 || !new File("/proc/" + pid).exists()) {
+                    if (status != NativePty.RUNNING) {
                         childStatus = status;
                         if (status == -1) waitFailure = new IOException("Cannot reap PTY child");
                         childExited = true;

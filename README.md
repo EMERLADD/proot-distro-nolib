@@ -173,8 +173,8 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | 场景 | 验证结果 |
 | --- | --- |
 | MT 管理器 / Android shell | 可安装和启动 Linux；Ubuntu 内可调用继承 shell 权限的 Android 调试命令 |
-| AAR 独立 APK | 初始化、安装、命令执行、事件、工作区、异步任务和交互终端通过 |
-| 直接 `.so` 独立 APK | 独立进程、事件和 PTY 接入通过 |
+| AAR 独立 APK | Debug 与 R8 Release 均通过初始化、安装、命令、事件、工作区、异步任务和交互终端验收 |
+| 直接 `.so` 独立 APK | Debug 与 R8 Release 均通过独立进程、事件和 PTY 接入验收 |
 | GUI 安装 Linux 软件 | Alpine 内安装 nano、curl，以及 HTTPS 访问通过 |
 | 错误处理故障注入 | 原生 Termux 环境中，锁错误的 9 个组合全部通过 |
 
@@ -192,6 +192,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | 查上游归档与 SHA256 | [rootfs 来源（英文）](docs/pdn-rootfs-sources.md) |
 | 本地构建、CI 或发布源码 | [构建与发布](docs/pdn-build-and-release.md) |
 | 排查目录、版本、运行权限和终端问题 | [常见问题](docs/pdn-faq.md) |
+| 看当前开发待办和设备本地更新规划 | [当前待办](docs/pdn-workspace-and-local-update.md#当前待办2026-10-10) |
 | 查完整 CLI 细节 | [原生 CLI 手册（英文）](docs/proot-distro-nolib.md) |
 
 ## 6. 构建与贡献
@@ -228,7 +229,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 - **执行性能**：默认关闭 PRoot 自带的 seccomp 加速；本次压缩和 C 编译比 Termux proot-distro 耗时更长。启动与运行任务分别测试，见[任务对比](docs/pdn-error-testing.md#066-短中长任务实测)。
 - **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
-- **发布与更新**：正式 Release/R8 混淆和 Maven 发布尚未验收；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
+- **发布与更新**：Maven 发布尚未实现；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
 - **旧 pr 接口**：AAR 不包含旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。
 
 各版本的实际验证范围见[测试记录](docs/pdn-error-testing.md)。

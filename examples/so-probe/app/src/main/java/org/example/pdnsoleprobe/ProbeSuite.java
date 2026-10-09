@@ -2,6 +2,8 @@ package org.example.pdnsoleprobe;
 
 import android.content.Context;
 import android.os.Process;
+import android.system.Os;
+import android.system.OsConstants;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -198,6 +200,12 @@ public final class ProbeSuite {
             require(NativePty.spawn(new String[] { "/system/bin/sh" }, new String[] { null }, "/", 24, 80) == null, "null environment element");
             return "JNI rejects invalid descriptors, array ranges, strings and dimensions safely";
         });
+        check(checks, "native_pty_wait_status", () -> {
+            verifyNativeChild("exit 0", 0);
+            verifyNativeChild("exit 37", 37);
+            verifyNativeChild("kill -TERM $$", 128 + OsConstants.SIGTERM);
+            return "running, exit0, exit37, signal termination and already-reaped errors without /proc";
+        });
         for (String tail : Arrays.asList("malformed", "event_after_result", "truncated", "invalid_utf8")) {
             check(checks, "native_event_tail_" + tail, () -> {
                 String script = "printf '{\"version\":1,\"operation_id\":\"%s\",\"sequence\":1,\"type\":\"started\"}\\n' \"$PDN_OPERATION_ID\"; "
@@ -222,6 +230,37 @@ public final class ProbeSuite {
         Files.write(new File(context.getFilesDir(), "acceptance.json").toPath(), report.toString(2).getBytes(StandardCharsets.UTF_8));
         log.accept(success ? "ALL CHECKS PASSED" : "CHECKS FAILED — see acceptance.json");
         return report;
+    }
+
+    private void verifyNativeChild(String command, int expectedStatus) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder("/system/bin/sh", "-c", "read gate; " + command);
+        builder.directory(host.getCacheDir());
+        NativePty.Session child = NativePty.start(builder, 24, 80);
+        boolean finished = false;
+        try {
+            require(child.pid > 0, "native child PID");
+            int status = NativePty.waitPid(child.pid);
+            finished = status != NativePty.RUNNING;
+            require(status == NativePty.RUNNING, "blocked child must remain running: " + status);
+            byte[] input = "go\n".getBytes(StandardCharsets.UTF_8);
+            require(child.write(input) == input.length, "release native child input gate");
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            do {
+                status = NativePty.waitPid(child.pid);
+                if (status == NativePty.RUNNING) Thread.sleep(10);
+            } while (status == NativePty.RUNNING && System.nanoTime() < deadline);
+            finished = status != NativePty.RUNNING;
+            require(status == expectedStatus, "native child exit: expected " + expectedStatus + ", got " + status);
+            require(NativePty.waitPid(child.pid) == -1, "already-reaped child must return an error");
+        } finally {
+            try {
+                if (!finished && child.pid > 0 && NativePty.waitPid(child.pid) == NativePty.RUNNING) {
+                    Os.kill(child.pid, OsConstants.SIGKILL);
+                    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                    while (NativePty.waitPid(child.pid) == NativePty.RUNNING && System.nanoTime() < deadline) Thread.sleep(10);
+                }
+            } finally { child.close(); }
+        }
     }
 
     private File fixture(String name, String selected) throws Exception {

@@ -374,3 +374,28 @@ guest 包版本包括 curl 8.22.0-r0、nano 9.2-r0、Python 3.14.8-r0、GCC 15.2
 **1 个测试方法、9 个组合通过**：ENOLCK、EIO、EINTR 三种锁错误，分别覆盖 exec、config、uninstall；核对 `lock_failed`、原 errno、建议和 rootfs 保留。临时测试目录自动清理，发行程序没有被修改。
 
 日志位于 `build/task-benchmark/ssh-lock-harness.log`。
+
+## 0.6.6 Release/R8 混淆验收
+
+2026-10-10，两份独立 probe App 启用 R8 代码混淆、优化及资源压缩，使用 Android 默认优化/JNI 规则，没有保留整个 SDK 的附加规则。APK 为非 debuggable 的 Release 构建，使用本地 Debug 测试密钥签名，用于验收和演示，不是生产签名。AAR 接入使用已有 Release 0.6.6 AAR；没有改动 PDN 或重新发布引擎。
+
+| 接入 | App 版本 | R8 实机结果 | 实际混淆 |
+| --- | --- | --- | --- |
+| AAR | 0.1.4 / code 5 | **47/47** | 32 个引擎 SDK 类重命名，例如 PdnConfiguration、PdnCatalog |
+| 直接 .so | 0.1.2 / code 3 | **39/39** | NativeRuntime、NativeOperations、ProbeTerminal 等类重命名 |
+
+测试在普通 App 进程中运行，覆盖 GUI 初始化/安装/命令/终端输入与 resize/关闭、事件和路径边界；AAR 还覆盖配置、查询、异步取消/超时及双终端。两份结果均为 `passed=true`、`gui_controls_tested=true`，instrumentation 最终状态为 `INSTRUMENTATION_CODE: -1`。Release 不能使用 run-as，完整 JSON 报告从 instrumentation 输出读取。
+
+### 本轮发现并修复
+
+直接 .so 示例旧 PTY 适配器依赖 `/proc/<pid>` 判断子进程状态；非 debuggable Release 的存在性检查失败，导致 GUI 无法打开终端。原 waitPid 用 0 同时表示运行中和成功退出，也需要这项额外判断。修复为通过 waitpid 返回运行中 -2、错误 -1、正常退出码或 128+信号，重试 EINTR，并在 Java 会话中缓存完成状态。移除 /proc 依赖后，Release 完整验收通过。
+
+新增一项实际子进程回归：用输入闸门保持 Android shell 子进程运行，再验证退出 0、退出 37、SIGTERM 和已回收后的错误。它使用真实 waitpid，不是故障注入。修复仅涉及直接 .so 示例适配器；AAR 原有独立会话等待机制未修改。
+
+本次修复后另构建带采集的 Debug App，39/39 通过。Java 行覆盖率 **695/731（95.08%）**，NativePty 91.67%、ProbeTerminal 96.74%、ProbeSuite 97.08%；PTY JNI **94/105（89.52%）**。采集构建用于覆盖率，不作为最终交付；最后恢复无插桩 Release App 与原生输入。AAR SDK 本轮未改动，沿用此前超过 80% 的覆盖率记录。
+
+### 构建与产物检查
+
+两份 APK 的 ZIP、签名、包名、minSdk 28、targetSdk 35、非 debuggable、原生库解压配置均通过。PDN/loader 与原始 Release 逐字节一致，AAR PTY JNI 与 AAR 内原件一致，直接 .so PTY JNI 与本次无插桩示例构建一致。最终 APK 不含 JaCoCo 或 LLVM 覆盖率采集组件。R8 mapping、configuration、usage、构建日志及报告保存在 `build/r8-acceptance/`；本地产物和记录位于 `/sdcard/yyd/PDN/r8-v066/`。
+
+本轮验证宿主 Release/R8 接入，不把 AAR 的 Debug 构建类型误写为新发布了 Release AAR，也不代表 Maven 发布、所有 ROM 或任意反射式接入都已验收。具体构建、测试签名和报告读取方法见两份 probe README。

@@ -173,8 +173,8 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 | Use case | Result |
 | --- | --- |
 | MT Manager / Android shell | Install and start Linux; call Android debugging commands from Ubuntu with inherited shell privileges |
-| Independent AAR APK | Initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminals passed |
-| Independent direct `.so` APK | Independent processes, events and PTY integration passed |
+| Independent AAR APK | Debug and R8 Release passed initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminal checks |
+| Independent direct `.so` APK | Debug and R8 Release passed independent process, event and PTY integration checks |
 | Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
 | Error-handling fault injection | All 9 lock-error combinations passed in native Termux |
 
@@ -192,6 +192,7 @@ Both APK paths were verified under ordinary Android App identities. Versions, en
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |
 | Build locally, use CI or release source | [Building and releasing](docs/pdn-build-and-release.en.md) |
 | Diagnose directory, version, permission or terminal issues | [Frequently asked questions](docs/pdn-faq.en.md) |
+| Check current development tasks and local update plans | [Current tasks (Chinese)](docs/pdn-workspace-and-local-update.md#当前待办2026-10-10) |
 | Find complete CLI details | [Native CLI manual](docs/proot-distro-nolib.md) |
 
 ## 6. Building and contributing
@@ -228,7 +229,7 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 - **Execution performance**: PRoot’s own seccomp acceleration is disabled by default; compression and C compilation took longer than Termux proot-distro in these tests. Startup and workload timings are measured separately; see the [workload comparison (Chinese)](docs/pdn-error-testing.md#066-短中长任务实测).
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
-- **Releases and updates**: formal Release/R8 obfuscation and Maven publication have not been validated. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
+- **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
 - **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.
 
 See the [test records (Chinese)](docs/pdn-error-testing.md) for each version's verified scope.
