@@ -176,7 +176,7 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 | Independent AAR APK | Initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminals passed |
 | Independent direct `.so` APK | Independent processes, events and PTY integration passed |
 | Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
-| Error-handling fault injection | All 9 lock-error combinations passed through Alpine → SSH → Termux |
+| Error-handling fault injection | All 9 lock-error combinations passed in native Termux |
 
 Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records (Chinese)](docs/pdn-error-testing.md).
 

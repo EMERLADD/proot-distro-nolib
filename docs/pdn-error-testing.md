@@ -367,10 +367,10 @@ guest 包版本包括 curl 8.22.0-r0、nano 9.2-r0、Python 3.14.8-r0、GCC 15.2
 
 补正计时脚本：Android mksh 的整数运算会在长于约 2.1 秒的纳秒差值上溢出。外部计时改用 Android `expr` 做 64 位减法，3 秒任务回归通过；前面的启动样本均不足 1 秒，不受此问题影响。本轮任务计时使用 guest 单调时钟，在线安装只记录成功，不比较其下载耗时。
 
-## 0.6.6 经 SSH 运行故障注入测试
+## 0.6.6 原生 Termux 故障注入测试
 
-2026-10-10，从 Alpine 的 SSH 客户端连接回本机 Termux，再进入仓库运行 `tests/test_pdn_system_errors.py`。测试在 Termux 原生 Python/Clang/NDK 环境临时编译 harness，退出码为 0。
+2026-10-10，在原生 Termux 环境运行 `tests/test_pdn_system_errors.py`，使用 Python、Clang 和 NDK 临时编译 harness，退出码为 0。
 
 **1 个测试方法、9 个组合通过**：ENOLCK、EIO、EINTR 三种锁错误，分别覆盖 exec、config、uninstall；核对 `lock_failed`、原 errno、建议和 rootfs 保留。临时测试目录自动清理，发行程序没有被修改。
 
-日志位于 `build/task-benchmark/ssh-lock-harness.log`。记录不包含 SSH 账号或认证信息。
+日志位于 `build/task-benchmark/ssh-lock-harness.log`。

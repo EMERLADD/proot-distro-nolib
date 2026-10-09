@@ -176,7 +176,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | AAR 独立 APK | 初始化、安装、命令执行、事件、工作区、异步任务和交互终端通过 |
 | 直接 `.so` 独立 APK | 独立进程、事件和 PTY 接入通过 |
 | GUI 安装 Linux 软件 | Alpine 内安装 nano、curl，以及 HTTPS 访问通过 |
-| 错误处理故障注入 | 经 Alpine → SSH → Termux 执行，锁错误的 9 个组合全部通过 |
+| 错误处理故障注入 | 原生 Termux 环境中，锁错误的 9 个组合全部通过 |
 
 两种 APK 路径已在普通 Android App 身份下验证。具体版本、环境、逐项结果、覆盖率和未验证范围统一见[测试与版本验证记录](docs/pdn-error-testing.md)。
 
