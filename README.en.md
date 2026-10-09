@@ -27,7 +27,13 @@ Current version: **v0.6.6 · ARM64 Android · Early test release**.
 - **Host-controlled paths**: executable, data, cache and project directories come from arguments or the host, without binding to MT Manager, Termux or a fixed App package name.
 - **Android debugging when permissions allow**: starting PDN from Shizuku/rish or ADB shell lets Linux call Android debugging commands such as `cmd`, `settings` and `getprop` with inherited privileges.
 
-The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for versions and scope. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
+The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for results and the [test records (Chinese)](docs/pdn-error-testing.md) for versions and environments. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
+
+| Integration method | Best suited for |
+| --- | --- |
+| Original ELF (`pdn`) | Terminal tools, shell environments and MT Manager |
+| AAR | Kotlin / Java Android Apps that want packaged APIs |
+| Direct `.so` packaging | Android Apps that manage processes, events and PTY themselves |
 
 `nolib` means no dependency on Termux dynamic libraries. PDN still uses Android's `libc.so` and `libdl.so`; download, TLS and extraction components are statically linked. AAR integration also requires the host to provide the Kotlin standard library.
 
@@ -51,7 +57,7 @@ Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-noli
 | App-managed process launch | `libpdn.so`, `libproot-loader.so` |
 | Source and license materials | `proot-distro-nolib-vVERSION-android-arm64.tar.gz` |
 
-Since 0.6.6, the AAR contains Java/Kotlin APIs and three native files: PDN, its loader and PTY JNI. All terminal session APIs are retained; the host App provides the terminal interface. The standard and lite files have identical contents, so import either one. PDN and its loader use `.so` filenames for APK packaging but are invoked through processes; `libptyjni.so` is called through JNI.
+The AAR contains Java/Kotlin APIs and three native files: PDN, its loader and PTY JNI. All terminal session APIs are retained; the host App provides the terminal interface. The standard and lite files have identical contents, so import either one. PDN and its loader use `.so` filenames for APK packaging but are invoked through processes; `libptyjni.so` is called through JNI.
 
 Exit old Linux sessions before updating, replace the program and restore its executable permissions. Existing rootfs installations do not need reinstalling. Keep ELF, `.so`, AAR and loader versions aligned; both `pdn version` and `pdn --version` should report the current PDN version. Retain corresponding source and licenses when redistributing binaries.
 
@@ -151,17 +157,14 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 
 ## 4. Verified use cases
 
-| Use case | Version and scope | Result |
-| --- | --- | --- |
-| MT Manager / Android shell | 0.6.6: call Android commands from Ubuntu, write a test setting, verify after exiting and delete it; reproduced in MT | Passed |
-| Original ELF / rish | GitHub Release 0.6.4 original files: Alpine installation, execution and startup error classification | **28/28** |
-| Independent AAR APK | Release 0.6.4 original files: initialization, installation, execution, events, workspace and terminal | **19/19** |
-| Independent direct `.so` APK | Release 0.6.4 original files: independent process, events and PTY integration | **24/24** |
-| Extended AAR APK | Local 0.6.5 build: asynchronous cancellation/timeouts, configuration, queries, dual terminals and GUI | **33/33** |
+| Use case | Result |
+| --- | --- |
+| MT Manager / Android shell | Install and start Linux; call Android debugging commands from Ubuntu with inherited shell privileges |
+| Independent AAR APK | Initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminals passed |
+| Independent direct `.so` APK | Independent processes, events and PTY integration passed |
+| Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
 
-Both APK paths were tested in ordinary `untrusted_app` processes on Android 14 (SDK 34), targeting SDK 35. The 0.6.4 APKs' PDN/loader files were byte-identical to the Release originals. GUI installation of Alpine software, `apk add nano`, and HTTPS access after installing curl were also verified.
-
-These records cover specific versions and environments, not every feature on every host. See the [test records (Chinese)](docs/pdn-error-testing.md) for methods, fault injection scope and coverage.
+Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records (Chinese)](docs/pdn-error-testing.md).
 
 ## 5. Documentation
 
@@ -211,6 +214,6 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: formal Release/R8 obfuscation and Maven publication have not been validated. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
-- **Legacy pr interfaces**: the 0.6.6 AAR removes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.
+- **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.
 
 See the [test records (Chinese)](docs/pdn-error-testing.md) for each version's verified scope.

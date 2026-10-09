@@ -27,7 +27,13 @@
 - **路径由宿主决定**：程序、数据、缓存和项目目录由参数或宿主提供，不绑定 MT 管理器、Termux 或固定 App 包名。
 - **条件允许时可调试 Android**：从 Shizuku/rish 或 ADB shell 启动 PDN 后，Linux 内可调用具有继承权限的 Android 调试命令，例如 `cmd`、`settings`、`getprop`。
 
-以上主要链路已经通过 **MT 管理器、AAR 构建的独立 APK、直接打包 `.so` 的独立 APK** 验证；具体版本和范围见[验证情况](#4-已验证的使用场景)。Android 调试路径验证的是 ADB shell 级权限下的系统命令，不是 Android 真 root，也不代表已验证 Linux 内独立 adb 客户端的全部功能。
+以上主要链路已经通过 **MT 管理器、AAR 构建的独立 APK、直接打包 `.so` 的独立 APK** 验证；功能结果见[验证情况](#4-已验证的使用场景)，版本与环境记录见[测试记录](docs/pdn-error-testing.md)。Android 调试路径验证的是 ADB shell 级权限下的系统命令，不是 Android 真 root，也不代表已验证 Linux 内独立 adb 客户端的全部功能。
+
+| 接入方式 | 适用情况 |
+| --- | --- |
+| 原始 ELF（`pdn`） | 终端工具、Shell 环境、MT 管理器 |
+| AAR | Kotlin / Java Android App，希望使用封装好的 API |
+| 直接打包 `.so` | 希望自行管理进程、事件和 PTY 的 Android App |
 
 `nolib` 表示不依赖 Termux 的动态库。PDN 仍使用 Android 系统 `libc.so`、`libdl.so`，下载、TLS 和解压组件静态链接；AAR 接入还需宿主提供 Kotlin 标准库。
 
@@ -51,7 +57,7 @@ PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有
 | App 自行启动进程 | `libpdn.so`、`libproot-loader.so` |
 | 源码与许可材料 | `proot-distro-nolib-v版本号-android-arm64.tar.gz` |
 
-0.6.6 起，AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口。终端界面由宿主 App 提供。标准版与 lite 文件内容相同，任选一个导入即可。PDN 和加载器使用 `.so` 文件名供 APK 打包，但仍通过进程方式调用；`libptyjni.so` 则通过 JNI 调用。
+AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口。终端界面由宿主 App 提供。标准版与 lite 文件内容相同，任选一个导入即可。PDN 和加载器使用 `.so` 文件名供 APK 打包，但仍通过进程方式调用；`libptyjni.so` 则通过 JNI 调用。
 
 更新前退出旧 Linux 会话，替换程序并重新设置执行权限；已有 rootfs 不需要重装。ELF、`.so`、AAR 和 loader 应保持同一版本，`pdn version` 和 `pdn --version` 都应显示当前 PDN 版本。转发二进制时同时保留对应源码和许可证。
 
@@ -151,17 +157,14 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 ## 4. 已验证的使用场景
 
-| 场景 | 版本与范围 | 结果 |
-| --- | --- | --- |
-| MT 管理器 / Android shell | 0.6.6：Ubuntu 内调用 Android 命令，写入测试设置，退出后核对并删除；MT 已复现 | 通过 |
-| 原始 ELF / rish | GitHub Release 0.6.4 原件：Alpine 安装、执行和启动错误分类 | **28/28** |
-| AAR 独立 APK | Release 0.6.4 原件：初始化、安装、执行、事件、工作区和终端 | **19/19** |
-| 直接 `.so` 独立 APK | Release 0.6.4 原件：独立进程、事件和 PTY 接入 | **24/24** |
-| 扩展 AAR 独立 APK | 本地 0.6.5：异步取消/超时、配置、查询、双终端和 GUI | **33/33** |
+| 场景 | 验证结果 |
+| --- | --- |
+| MT 管理器 / Android shell | 可安装和启动 Linux；Ubuntu 内可调用继承 shell 权限的 Android 调试命令 |
+| AAR 独立 APK | 初始化、安装、命令执行、事件、工作区、异步任务和交互终端通过 |
+| 直接 `.so` 独立 APK | 独立进程、事件和 PTY 接入通过 |
+| GUI 安装 Linux 软件 | Alpine 内安装 nano、curl，以及 HTTPS 访问通过 |
 
-两种 APK 路径在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验证；0.6.4 包内 PDN/loader 与 Release 原件逐字节一致。GUI 安装 Alpine 软件、`apk add nano` 和安装 curl 后的 HTTPS 访问也已验证。
-
-这些是明确版本和环境下的记录，不是所有功能在所有宿主上的兼容性保证。详细方法、故障注入范围与覆盖率见[测试记录](docs/pdn-error-testing.md)。
+两种 APK 路径已在普通 Android App 身份下验证。具体版本、环境、逐项结果、覆盖率和未验证范围统一见[测试与版本验证记录](docs/pdn-error-testing.md)。
 
 ## 5. 文档导航
 
@@ -211,6 +214,6 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 - **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
 - **发布与更新**：正式 Release/R8 混淆和 Maven 发布尚未验收；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
-- **旧 pr 接口**：0.6.6 AAR 已去掉旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。
+- **旧 pr 接口**：AAR 不包含旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。
 
 各版本的实际验证范围见[测试记录](docs/pdn-error-testing.md)。

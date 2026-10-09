@@ -1,6 +1,21 @@
-# PDN 错误分类与逐项验证
+# PDN 测试与版本验证记录
 
-PDN 0.6.4 沿用事件协议 v1。`outcome` 表示最终结果，`code` 表示具体失败原因，`message` 与 `suggestion` 提供说明和建议。Linux 命令退出仍是 `guest_exit`，不因为退出码碰巧相同而变成管理器错误。
+本文集中保存各版本的验证结果、环境、覆盖率和故障触发方法。README 与接入教程介绍使用方式；这里保留历史版本与实际产物的对应关系，不能把旧版结果当作新版实机验收。
+
+## 验证结果总览
+
+| 版本 | 验证范围 | 结果 |
+| --- | --- | --- |
+| 0.6.3 | 原生错误分类、JVM、rish 实机补测 | 原生 168 通过 / 2 跳过；JVM 53/53；rish 40/40 |
+| 0.6.4 | 启动错误、Release 原始 ELF、独立 AAR APK、直接 `.so` APK | 原生 209 通过 / 2 跳过；JVM 54/54；rish 28/28；AAR 19/19；`.so` 24/24 |
+| 0.6.5 | 本地 AAR 独立 App：异步任务、配置、查询、双终端 | 实机 33/33；SDK 合并行覆盖率 90.42% |
+| 0.6.6 | AAR 组件精简、SDK 和打包回归；Ubuntu / Android shell 调试 | SDK 90/90；打包 9/9；原生回归 16/16；MT 复现成功 |
+
+两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 没有重新构建或验收 APK。
+
+## 事件与错误分类
+
+事件协议使用 v1。`outcome` 表示最终结果，`code` 表示具体失败原因，`message` 与 `suggestion` 提供说明和建议。Linux 命令退出仍是 `guest_exit`，不因为退出码碰巧相同而变成管理器错误。
 
 ## 测试方法
 
@@ -218,3 +233,32 @@ Java 通过 JaCoCo 采集普通 App 的执行数据；自有 JNI 通过可选 LL
 JVM 90 项、PRoot 16 项、打包 9 项通过；原生 PDN 205 项中 203 通过、2 项按运行环境跳过。这里报告行覆盖率：JNI 分支覆盖率为 62.06%，没有宣称全部异常分支或所有 Android 系统都实测。终端 JNI 的可选插桩还采集 fork 子进程执行路径；正式 AAR 与交付 APK 均恢复为非插桩版本。
 
 交付 APK、两种 AAR、33 项验收报告和说明位于 `/sdcard/yyd/PDN/apk-v065/`，本地覆盖率与构建记录位于 `build/apk-v065/` 和 `build/pdn-v065-coverage/`。正式 Maven 发布和 Release/R8 混淆验证不在本轮范围。
+
+## 0.6.6 AAR 组件与打包验证
+
+标准 AAR 与 lite 别名字节相同，原生文件仅含 PDN、loader、PTY JNI；全部 `PdnTerminal` 接口保留，终端界面由宿主提供。旧 pr 原生组件改由仓库原 App 单独打包。
+
+- 打包回归 **9/9**，打包脚本行覆盖率 **51/55（92.73%）**。
+- SDK 单元测试 **90/90**，行覆盖率 **893/1044（85.54%）**。
+- 原生回归 **16/16**；实际 Debug AAR 的文件列表、终端类和别名字节一致性通过检查。
+- Termux App 的旧组件 staging 和标准 engine staging 通过。标准 App staging 因缺少 vendor termlib 指定的 NDK 27.0.12077973 未执行；标准分支只完成相关路径与过滤规则的代码审查。
+
+本轮未构建 APK。上述结果不代替 0.6.6 的独立 App 实机验收。
+
+## 0.6.6 Ubuntu 调用 Android 命令验证
+
+2026-10-09，ARM64 Android、PDN 0.6.6、Ubuntu Base 24.04.5 LTS：从 Shizuku 获得真实 `uid=2000(shell)` 后启动 Ubuntu，Android 属性查询、包查询和系统设置读写通过，并在 MT 管理器中复现。
+
+| 检查 | 结果 |
+| --- | --- |
+| 原始 ELF 的 `version` 与 `--version` | 均为 0.6.6 |
+| Ubuntu 下载、SHA256 校验和安装 | 通过 |
+| guest 模拟 root 与真实 Android 身份 | guest 显示 root，真实 UID 仍为 shell |
+| 绑定 `/system`、`/apex` 与 linker 配置后调用 Android 命令 | `getprop` 返回 SDK 34，`cmd package path android` 返回 framework 路径 |
+| Ubuntu 内写入测试设置，退出后从 Android shell 核对 | 值一致；删除后返回 `null` |
+| 自定义 `rish()` 包装函数 | `-c`、交互、空格和引号参数、保存 `.bashrc` 后重新登录均通过 |
+| MT 管理器复现 | Ubuntu 内 Android 命令及设置验证通过 |
+
+该函数通过继承的 shell 权限执行 Android 命令，不再次连接 Shizuku。guest 内再次启动原始 Shizuku 客户端未完成稳定连接验证；Linux 独立 adb 客户端和 Android 真 root 不属于本次通过范围。已授权宿主退到后台时出现断连，电池“无限制”未解决；操作教程要求全程保持前台。
+
+独立 AAR App 的早期手动验收还完成了 `apk add nano`，并核对正常 APK 的签名、Manifest 和原生文件摘要。GUI 安装 curl 后的 HTTPS 访问也已验证。详细操作见 [Android shell 教程](pdn-shizuku-android-shell.md)和 [AAR 示例](../examples/aar-probe/README.md)。

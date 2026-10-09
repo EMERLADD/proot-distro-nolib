@@ -4,7 +4,7 @@
 
 适用于能运行 PDN、访问所选目录的 Android shell，不绑定某个终端 App。下面以 MT 管理器和 Shizuku/rish 为例；已有 ADB shell 也可从部署 PDN 开始。所有权限仍取决于启动 PDN 的真实 Android 身份及系统限制。
 
-2026-10-09，PDN 0.6.6、Ubuntu Base 24.04.5 LTS、ARM64 Android：先通过 Shizuku 获得真实 `uid=2000(shell)`，再启动 Ubuntu，验证 Android 属性、包管理查询、临时设置写入及退出 Ubuntu 后的读取和删除。此链路在 Termux 授权入口实测，并在 MT 管理器中复现成功。自定义命令的交互模式、引号及空格参数、重新登录后的持久化在本地测试中验证；不代表所有 Android 命令和系统都已测试。
+Ubuntu 内调用 Android 命令及系统设置读写已验证，并在 MT 管理器中复现。版本、环境和详细结果见 [测试记录](pdn-error-testing.md#066-ubuntu-调用-android-命令验证)。
 
 ## 目录
 

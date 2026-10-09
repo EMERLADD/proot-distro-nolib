@@ -1,6 +1,6 @@
 # PDN AAR 接口
 
-0.6.6 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独立终端和结构化发行版查询。最低 Android 9（API 28），目前提供 ARM64；宿主提供 Kotlin 标准库，不需要 Compose、协程或 Termux。
+AAR 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独立终端和结构化发行版查询。最低 Android 9（API 28），目前提供 ARM64；宿主提供 Kotlin 标准库，不需要 Compose、协程或 Termux。
 
 ## 产物与目录
 
@@ -111,6 +111,6 @@ List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 
 ## 验证与发布范围
 
-构建提供非插桩 Debug AAR、对应 ELF 和 `.so`，并保留旧 lite 下载名作为字节相同的别名。标准和 Termux 构建都不向 AAR 打包旧 pr 原生组件；发布脚本再次过滤，验证三项原生文件、API 元数据、字节一致性和校验值。0.6.5 的实机记录属于上一版本；0.6.6 本轮只验证 AAR 构建、SDK 单元测试和打包，不构建或重新测试 APK。
+构建提供非插桩 Debug AAR、对应 ELF 和 `.so`，并保留旧 lite 下载名作为字节相同的别名。标准和 Termux 构建都不向 AAR 打包旧 pr 原生组件；发布脚本再次过滤，验证三项原生文件、API 元数据、字节一致性和校验值。各版本的构建、单元测试、打包与独立 APK 实机结果见 [测试记录](pdn-error-testing.md)。
 
-本轮没有加入 Maven 发布、正式 Release/R8 混淆验收、终端渲染控件或自动后台服务。独立 App 的构建与测试方式见 [AAR 验证工程](../examples/aar-probe/README.md)。
+目前未提供 Maven 发布、正式 Release/R8 混淆验收、终端渲染控件或自动后台服务。独立 App 的构建与测试方式见 [AAR 验证工程](../examples/aar-probe/README.md)。

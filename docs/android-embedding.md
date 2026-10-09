@@ -311,8 +311,6 @@ sh scripts/build-android-termux.sh assembleDebug --no-daemon
 打包现有 PDN/loader，并核对复制后的摘要。先运行独立 PDN 构建以更新引擎。
 APK 输出是 `android/app/build/outputs/apk/debug/app-debug.apk`。
 
-## 当前验证范围
+## 验证范围
 
-GitHub Release 0.6.4 原件已分别验证 rish 原始 ELF 28/28、独立 AAR App 19/19、直接 `.so` App 24/24。两个 App 的实际运行身份为普通 `untrusted_app`，targetSdk 35；rish 仅作为安装和测试入口，不能代替 App 身份。
-
-本地 0.6.5 AAR 的独立 App 扩展验收 33/33，覆盖异步任务、配置、查询和双终端。0.6.6 的 Ubuntu 调用 Android 命令路径也在 MT 管理器中复现成功。各版本的原件对应关系、覆盖率和测试范围见 [测试记录](pdn-error-testing.md)；Android shell 操作见 [教程](pdn-shizuku-android-shell.md)。
+AAR 和直接 `.so` 两条接入路径均已在普通 Android App 身份下通过独立 APK 实测，覆盖安装、命令执行、事件与终端。历史版本、产物对应关系、覆盖率和未验证范围见 [测试记录](pdn-error-testing.md)。Android shell 调试操作见 [教程](pdn-shizuku-android-shell.md)。

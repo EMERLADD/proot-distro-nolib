@@ -4,7 +4,7 @@
 
 This applies to Android shells that can run PDN and access the chosen directories, without requiring a particular terminal app. The examples use MT Manager and Shizuku/rish; an existing ADB shell can start at PDN deployment. All permissions still depend on the real Android identity starting PDN and on system restrictions.
 
-Tested on 2026-10-09 with PDN 0.6.6, Ubuntu Base 24.04.5 LTS, and ARM64 Android: obtain real `uid=2000(shell)` through Shizuku, then start Ubuntu and verify Android properties, package queries, a temporary setting write, and reading/deleting that setting after exiting Ubuntu. This flow was tested through the Termux authorization entry point and successfully reproduced in MT Manager. Interactive use of the custom command, quoting and arguments containing spaces, and persistence after logging in again were verified locally. This does not mean every Android command or system has been tested.
+Calling Android commands and reading/writing system settings from Ubuntu were verified and reproduced in MT Manager. See the [test records (Chinese)](pdn-error-testing.md#066-ubuntu-调用-android-命令验证) for versions, environments and detailed results.
 
 ## Contents
 

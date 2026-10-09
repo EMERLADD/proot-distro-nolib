@@ -1,8 +1,8 @@
 # 直接打包 .so 的 PDN 验证 App
 
-独立 Java 工程，包名 `org.example.pdnsoleprobe`，minSdk 28、targetSdk 35。Gradle 只包含 `:app`，没有 AAR、Kotlin、引擎源码模块或原 App 依赖。`NativeRuntime` 使用宿主提供的私有目录和环境，通过 ProcessBuilder 启动 nativeLibraryDir 中的 Release 0.6.4 ELF；`NativeOperations` 读取 JSONL 并交付回调。
+独立 Java 工程，包名 `org.example.pdnsoleprobe`，minSdk 28、targetSdk 35。Gradle 只包含 `:app`，没有 AAR、Kotlin、引擎源码模块或原 App 依赖。`NativeRuntime` 使用宿主提供的私有目录和环境，通过 ProcessBuilder 启动 nativeLibraryDir 中的配套 ELF；`NativeOperations` 读取 JSONL 并交付回调。
 
-2026-10-09，在 Android 14（SDK 34）的普通 `untrusted_app` 进程中验收 **24/24 通过**，包括界面官方源在线安装、exec、事件、PTY、启动错误及读取器异常。Java 实机行覆盖率为 569/593（95.95%），自有 PTY JNI 为 92/103（89.32%）。详细记录见 [APK 接入实测](../../docs/pdn-error-testing.md#064-apk-接入实测)。
+独立 App 的安装、命令执行、事件、PTY 和启动错误处理已通过普通 Android App 身份下的实机验收。版本、逐项结果和覆盖率见 [测试记录](../../docs/pdn-error-testing.md#064-apk-接入实测)。
 
 ## 构建
 
@@ -42,9 +42,7 @@ run-as org.example.pdnsoleprobe cat files/acceptance.json
 
 `run-as` 仅导出报告；验收要求实际操作进程是 `untrusted_app`。导出到共享存储使用 `run-as ... cat ... | cat > 输出文件`。报告保留逐项结果和 instrumentation 失败原因，`passed=true` 且最终 `INSTRUMENTATION_CODE: -1` 才通过。JSONL 与最近一次 stderr 保存在私有 cache/engine 下。
 
-验收核对版本、安装阶段、精确 argv、stdout/stderr、工作区写入、假 root、真实 TTY、32×96 resize 和正常退出；事件检查关联 ID、连续 sequence、唯一 started/result/error。还触发初始 shell、实际登录 shell 和 loader 的启动失败，验证 errno 与建议，并确认 guest 退出 17/127/SIGTERM 没有误报。App 数据目录中的坏 loader 实际返回 EACCES，不宣称触发了 ENOEXEC。
-
-自有适配器另检查非法 JNI 参数，以及损坏 JSON、result 后还有事件、截断行和非法 UTF-8 的拒绝行为。
+逐项验收内容、错误触发方式与 JNI 边界检查统一见 [测试记录](../../docs/pdn-error-testing.md#064-apk-接入实测)。
 
 ## 覆盖率验收构建
 
