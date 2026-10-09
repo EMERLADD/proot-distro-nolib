@@ -1,5 +1,7 @@
 # proot-distro-nolib
 
+简体中文 | [English](README.en.md)
+
 **基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具，定位类似 Termux 的 proot-distro，但不依赖 Termux 环境及其动态库。**
 
 面向提供终端或命令执行能力的 Android App：把 `pdn` 放进 App 可执行的目录，就能用简单命令安装、登录和管理 Linux。无需先安装 Termux，也不需要宿主额外提供 Bash、Python、curl 或 tar。
@@ -9,6 +11,22 @@
 > 我在 **MT 管理器** 里实际用过，目前功能正常。这是我第一次做这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
 >
 > MT 管理器是已验证的宿主环境，不代表所有 Android App 和设备都已测试。
+
+## 目录
+
+- [已实测的三条接入路径](#已实测的三条接入路径)
+- [这是什么](#这是什么)
+- [运行条件](#运行条件)
+- [获取与安装](#获取与安装)
+- [Shizuku 与 Android shell](#shizuku-与-android-shell)
+- [ARM64 下载源](#arm64-下载源)
+- [嵌入 Android App](#嵌入-android-app)
+- [快速开始](#快速开始)
+- [本地构建](#本地构建)
+- [GitHub 自动构建](#github-自动构建)
+- [发布材料与源码](#发布材料与源码)
+- [来源与致谢](#来源与致谢)
+- [反馈](#反馈)
 
 ## 已实测的三条接入路径
 
@@ -38,7 +56,7 @@
 
 - ARM64 / AArch64 Android；构建目标为 Android API 24 及以上，实际可用性还取决于宿主权限与系统限制。
 - 宿主允许执行程序及 PRoot 所需的进程跟踪、系统调用，并能访问存放 Linux 的目录。
-- Linux rootfs 放在支持 Unix 权限与符号链接的 App 私有目录；`/sdcard` 适合放下载包、备份或共享文件，不适合直接解压 rootfs。
+- Linux rootfs 放在宿主可访问、支持 Unix 权限与符号链接的目录，例如 App 私有目录或 Android shell 的 `/data/local/tmp`；`/sdcard` 适合放下载包、备份或共享文件，不适合直接解压 rootfs。
 - 宿主需有网络权限；访问共享存储需要相应权限。
 
 “有终端就能使用”是本项目预期的使用方式，不是绕过 Android 权限的保证。对于执行位置受限的 App，开发者可能需要通过 APK 的 `nativeLibraryDir` 部署程序并设置 `PROOT_LOADER`。参见 [Android 加载器说明](docs/targetsdk35-compatibility.md)。PRoot 也不是安全隔离边界，不提供真正的 root 权限。
@@ -86,6 +104,32 @@ pdn login alpine
 如果下载位置不同，请修改 `cp` 的源路径。更新时退出旧 Linux 会话，再替换程序并重新赋予执行权限；已有 Linux 不需要重装。若提示找不到 `pdn`，先用完整路径运行 `/data/user/0/bin.mt.plus/files/term/bin/pdn version`，检查终端 PATH。
 
 该路径只作为 MT 管理器示例，没有硬编码进 `pdn`；其他 App 应使用自己的可执行目录。原始 `pdn` 是便捷下载项，转发发布时请同时保留完整包中的对应源码与许可证。
+
+## Shizuku 与 Android shell
+
+可以从具有所需执行、目录访问及进程跟踪权限的 Android shell 使用 PDN，宿主不限于 MT 管理器。需要 Android shell 权限时，可先通过 Shizuku/rish 或 ADB 进入真实 shell，再启动 Linux；Ubuntu 中显示的 root 仍是模拟身份。
+
+**已有可用 rish 时，直接运行它，跳过初次配置。** 原始 rish 的私有目录准备必须在宿主 App 原来的终端执行，进入 UID 2000 的 Android shell 后不能再假设能访问 App 私有目录。使用期间把获得 Shizuku 授权的宿主保持在前台；本次环境即使设为电池“无限制”，进入后台仍会断连。
+
+在 Android shell 中部署同版本 PDN 与 loader、设置 rootfs 和临时目录、安装 Ubuntu 后，带上 Android 运行路径登录：
+
+```sh
+./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
+```
+
+在 Ubuntu 中可把长命令封装成自选名字，例如：
+
+```sh
+rish() {
+    /system/bin/sh -c 'export PATH=/system/bin:/system/xbin; exec /system/bin/sh "$@"' -- "$@"
+}
+rish -c 'getprop ro.build.version.sdk'
+rish -c 'cmd package path android'
+```
+
+这里的 `rish` 是自定义 Bash 函数，调用 Android shell 并使用已经继承的权限，不会再次连接 Shizuku。原始客户端在 shell 内嵌套启动未跑通，不能把两者混为一谈。
+
+2026-10-09，此流程已实测，并在 MT 管理器中复现：Ubuntu 内写入专用 Android 设置项，退出 Ubuntu 后可从 Android shell 读到同一个值，随后删除。完整目录安排、安装、函数持久化、设置验证、清理和常见问题见 [Android shell 教程](docs/pdn-shizuku-android-shell.md)。MT 是操作示例，不代表所有宿主和系统都已验证。
 
 ## ARM64 下载源
 
@@ -173,7 +217,7 @@ pdn login ubuntu
 | Debian slim | 13 trixie，20261005 | ARM64 |
 | Arch Linux ARM | 2026.08 | ARM64 |
 
-下载会检查固定大小和 SHA256。部分发行版有国内外多个源，失败时按顺序切换；目前还没有延迟测速排名和断点续传。Debian 的两个入口属于同一个上游 GitHub 资源，不是两个独立镜像站。Arch 压缩包约 791 MiB，请预留数 GiB 空间。
+下载会检查固定大小和 SHA256。部分发行版有国内外多个源，失败时按顺序切换；目前还没有延迟测速排名和断点续传。Debian 仅保留一个官方上游入口。Arch 压缩包约 791 MiB，请预留数 GiB 空间。
 
 ```sh
 pdn mirrors ubuntu
@@ -297,7 +341,7 @@ Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运�
 | `jniLibs/arm64-v8a/` | APK 使用的 `libpdn.so` 与匹配的 `libproot-loader.so` |
 | `SHA256SUMS` | 包内程序及两个 APK 原生库文件名产物的校验值 |
 | `BUILD-INFO.txt` | 项目版本、源码提交号、talloc 来源提交号 |
-| `README.md`、`CHANGELOG.md`、`docs/` | 项目介绍、更新记录和详细使用说明 |
+| `README.md`、`README.en.md`、`CHANGELOG.md`、`docs/` | 项目介绍、更新记录和详细使用说明 |
 | `LICENSE`、`licenses/` | 项目许可证映射与第三方许可文本 |
 | `source.tar.gz` | 对应仓库源码、构建所需的 talloc 源码，以及四个依赖的原始源码归档 |
 

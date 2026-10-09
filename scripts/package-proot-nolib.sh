@@ -10,7 +10,7 @@ if ! git -C "$PROJECT_ROOT" diff --quiet HEAD -- . ':!vendor/bionic' ':!vendor/t
     echo 'Commit tracked project changes before packaging corresponding source.' >&2
     exit 1
 fi
-if [ -n "$(git -C "$PROJECT_ROOT" ls-files --others --exclude-standard -- src/proot scripts .github Makefile licenses README.md CHANGELOG.md LICENSE docs)" ]; then
+if [ -n "$(git -C "$PROJECT_ROOT" ls-files --others --exclude-standard -- src/proot scripts .github Makefile licenses README.md README.en.md CHANGELOG.md LICENSE docs)" ]; then
     echo 'Commit untracked project files before packaging corresponding source.' >&2
     exit 1
 fi
@@ -27,7 +27,7 @@ SOURCE=$STAGE/proot-distro-nolib-source
 mkdir -p "$BUNDLE/licenses" "$BUNDLE/docs" "$SOURCE"
 cp "$OUT_DIR/pdn" "$OUT_DIR/proot-distro-nolib" "$OUT_DIR/proot-loader" "$OUT_DIR/SHA256SUMS" "$BUNDLE/"
 cp -R "$OUT_DIR/jniLibs" "$BUNDLE/"
-cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/CHANGELOG.md" "$PROJECT_ROOT/LICENSE" "$BUNDLE/"
+cp "$PROJECT_ROOT/README.md" "$PROJECT_ROOT/README.en.md" "$PROJECT_ROOT/CHANGELOG.md" "$PROJECT_ROOT/LICENSE" "$BUNDLE/"
 cp -R "$PROJECT_ROOT/docs/." "$BUNDLE/docs/"
 cp "$OUT_DIR/licenses/"* "$BUNDLE/licenses/"
 cp "$PROJECT_ROOT/src/proot/COPYING" "$BUNDLE/licenses/proot-GPL-2.0.txt"
