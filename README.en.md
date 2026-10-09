@@ -21,6 +21,16 @@ Current version: **v0.6.6 · ARM64 Android · Early test release**.
 
 **PDN is a standalone Android Linux distribution manager based on [pr](https://github.com/oonid/pr).** It combines the PRoot engine, downloads, verification, extraction and distribution management in one ARM64 Android program. It lets Android devices run Linux environments without installing Termux or requiring the host to provide Bash, Python, curl or tar.
 
+**Quick startup**: with the same Alpine ARM64 archive, cleared environment variables and a fresh HOME in Termux, PDN started in about **35 ms**, compared with **269 ms** for proot-distro.
+
+| Startup entry in a clean environment | Median time |
+| --- | --- |
+| Termux + proot-distro | **269 ms** |
+| The same Termux + PDN | **35 ms** |
+| Android shell + PDN | **41 ms** |
+
+Measured with each tool's default login configuration through the first command and exit, excluding rish connection, downloads and installation. Each clean Termux comparison uses 20 samples; Android shell uses 40. [Full benchmark and scope (Chinese)](docs/pdn-error-testing.md#066-alpine-启动耗时对比).
+
 - **Manage Linux directly**: install, log in, execute commands, bind project directories, save configuration, back up, restore and remove distributions.
 - **Callable from other APKs**: two integration options, AAR and directly packaged `.so` files, for workspaces, AI frontends and other Apps needing Linux execution.
 - **GUI and terminal support**: Java/Kotlin APIs provide structured events, error suggestions, asynchronous tasks and independent PTY terminal sessions. The host draws the interface.
@@ -56,6 +66,9 @@ Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-noli
 | Java/Kotlin App integration | `pdn-engine-VERSION.aar` |
 | App-managed process launch | `libpdn.so`, `libproot-loader.so` |
 | Source and license materials | `proot-distro-nolib-vVERSION-android-arm64.tar.gz` |
+| Independent App integration tests | `pdn-aar-probe-VERSION-debug-test.apk`, `pdn-so-probe-VERSION-debug-test.apk` |
+
+The two test APKs are ordinary Debug test builds for verifying and demonstrating AAR / direct `.so` integration. They retain the test interface and acceptance checks and are not production Apps.
 
 The AAR contains Java/Kotlin APIs and three native files: PDN, its loader and PTY JNI. All terminal session APIs are retained; the host App provides the terminal interface. The standard and lite files have identical contents, so import either one. PDN and its loader use `.so` filenames for APK packaging but are invoked through processes; `libptyjni.so` is called through JNI.
 

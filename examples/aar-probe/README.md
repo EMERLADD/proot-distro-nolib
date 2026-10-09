@@ -8,6 +8,8 @@
 
 独立 App 的初始化、安装、命令执行、事件和终端接入已通过实机验收；扩展接口的配置、查询、异步取消/超时与双终端也已验证。各版本逐项结果和覆盖率见 [测试记录](../../docs/pdn-error-testing.md)。
 
+新增路径验收覆盖 `/usr` 映射、嵌套 bind、跨 rootfs 链接和缺失目标；所有夹具位于独立测试目录。该工程生成普通 Debug 测试 APK，用于验证和演示接入，不是生产应用。逐项结果见 [测试记录](../../docs/pdn-error-testing.md)。
+
 ## 构建
 
 先执行 `prepare.sh`，将 Release 0.6.6 PDN AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：

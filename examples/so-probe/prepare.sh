@@ -2,7 +2,8 @@
 set -eu
 probe_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(CDPATH= cd -- "$probe_dir/../.." && pwd)
-release_dir=${1:-"$repo_dir/build/releases/v0.6.4"}
+version=$(sed -n 's/^#define PDN_VERSION "\([0-9.]*\)"/\1/p' "$repo_dir/src/proot/src/cli/proot.h")
+release_dir=${1:-"$repo_dir/build/releases/v$version"}
 archive_path=${2:-"$repo_dir/build/pdn-sources/alpine-minirootfs-3.24.2-aarch64.tar.gz"}
 mkdir -p "$probe_dir/app/src/main/jniLibs/arm64-v8a" "$probe_dir/app/src/main/assets"
 cp "$release_dir/libpdn.so" "$release_dir/libproot-loader.so" "$probe_dir/app/src/main/jniLibs/arm64-v8a/"

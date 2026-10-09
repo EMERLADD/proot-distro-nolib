@@ -4,16 +4,18 @@
 
 独立 App 的安装、命令执行、事件、PTY 和启动错误处理已通过普通 Android App 身份下的实机验收。版本、逐项结果和覆盖率见 [测试记录](../../docs/pdn-error-testing.md#064-apk-接入实测)。
 
+新增路径验收覆盖 `/usr` 映射、嵌套 bind、跨 rootfs 链接和缺失目标；所有夹具位于独立测试目录。该工程生成普通 Debug 测试 APK，用于验证和演示接入，不是生产应用。逐项结果见 [测试记录](../../docs/pdn-error-testing.md)。
+
 ## 构建
 
-准备 [Release 0.6.4](https://github.com/EMERLADD/proot-distro-nolib/releases/tag/v0.6.4) 的 `libpdn.so`、`libproot-loader.so`，以及官方 Alpine 3.24.2 ARM64 归档，然后执行：
+准备 [Release 0.6.6](https://github.com/EMERLADD/proot-distro-nolib/releases/tag/v0.6.6) 的 `libpdn.so`、`libproot-loader.so`，以及官方 Alpine 3.24.2 ARM64 归档，然后执行：
 
 ```sh
 ./prepare.sh /你的/Release目录 /你的/alpine-minirootfs-3.24.2-aarch64.tar.gz
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleDebug
 ```
 
-脚本未指定参数时使用仓库的 `build/releases/v0.6.4` 和 `build/pdn-sources`。SDK 使用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT`，NDK 可通过 `PDN_NDK_DIR` 指定，默认 26.3.11579264。Termux 使用可运行的 Clang 搭配 NDK sysroot；Linux 主机默认使用 NDK Clang。首次获取 Gradle 依赖时去掉 `--offline`。
+脚本未指定参数时使用仓库的 `build/releases/v0.6.6` 和 `build/pdn-sources`。SDK 使用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT`，NDK 可通过 `PDN_NDK_DIR` 指定，默认 26.3.11579264。Termux 使用可运行的 Clang 搭配 NDK sysroot；Linux 主机默认使用 NDK Clang。首次获取 Gradle 依赖时去掉 `--offline`。
 
 原生文件放在 `app/src/main/jniLibs/arm64-v8a/`，归档放在 assets；这些输入不纳入 Git。归档以 `alpine-rootfs.archive` 命名，保留原始 gzip 字节，避免构建工具自动解压 `.gz` asset。PDN 按内置大小和 SHA256 校验再安装。
 

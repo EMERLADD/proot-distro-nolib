@@ -9,9 +9,9 @@
 | 0.6.3 | 原生错误分类、JVM、rish 实机补测 | 原生 168 通过 / 2 跳过；JVM 53/53；rish 40/40 |
 | 0.6.4 | 启动错误、Release 原始 ELF、独立 AAR APK、直接 `.so` APK | 原生 209 通过 / 2 跳过；JVM 54/54；rish 28/28；AAR 19/19；`.so` 24/24 |
 | 0.6.5 | 本地 AAR 独立 App：异步任务、配置、查询、双终端 | 实机 33/33；SDK 合并行覆盖率 90.42% |
-| 0.6.6 | AAR 组件精简、SDK 和打包回归；Ubuntu / Android shell 调试 | SDK 90/90；打包 9/9；原生回归 16/16；MT 复现成功 |
+| 0.6.6 | AAR 组件、Ubuntu 调试与三条路径实机验收 | SDK 90/90；打包 9/9；原生回归 16/16；rish 14/14；AAR 47/47；`.so` 38/38；MT 复现成功 |
 
-两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 没有重新构建或验收 APK。
+两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 组件精简那一轮未重新验收 APK；后续 Release 原件实测见本文路径边界记录。
 
 ## 事件与错误分类
 
@@ -262,3 +262,59 @@ JVM 90 项、PRoot 16 项、打包 9 项通过；原生 PDN 205 项中 203 通�
 该函数通过继承的 shell 权限执行 Android 命令，不再次连接 Shizuku。guest 内再次启动原始 Shizuku 客户端未完成稳定连接验证；Linux 独立 adb 客户端和 Android 真 root 不属于本次通过范围。已授权宿主退到后台时出现断连，电池“无限制”未解决；操作教程要求全程保持前台。
 
 独立 AAR App 的早期手动验收还完成了 `apk add nano`，并核对正常 APK 的签名、Manifest 和原生文件摘要。GUI 安装 curl 后的 HTTPS 访问也已验证。详细操作见 [Android shell 教程](pdn-shizuku-android-shell.md)和 [AAR 示例](../examples/aar-probe/README.md)。
+
+
+## 0.6.6 路径边界与三种接入方式实测
+
+2026-10-10，使用 GitHub Release 0.6.6 原件，在 ARM64 Android 14（SDK 34）完成路径边界验收。原始 ELF 通过 rish 在真实 Android shell 身份下执行；两个独立 APK 在普通 `untrusted_app` 身份下执行，minSdk 28、targetSdk 35。AAR App 仅依赖发布 AAR 和 Kotlin 标准库；直接 `.so` App 使用发布 ELF、自有事件与 PTY 适配器。两个 APK 内的 PDN 与 loader 均与 Release 原件逐字节一致。
+
+| 接入路径 | 新增路径用例 | 完整验收 |
+| --- | --- | --- |
+| 原始 ELF / Android shell | **14/14** | 本轮专门执行路径用例 |
+| AAR 独立 APK | **14/14** | **47/47**，包含原有接口、GUI 与终端验收 |
+| 直接 `.so` 独立 APK | **14/14** | **38/38**，包含原有进程、事件、GUI 与终端验收 |
+
+| 用例 | 结果 |
+| --- | --- |
+| guest `/usr` 读写映射 | guest 标记读写正确，隔离的宿主 `/usr` 夹具标记保持不变 |
+| 父 bind 在前、子 bind 在前 | 两种参数顺序均优先匹配更深目录；写入实际子 bind 来源 |
+| 路径组件边界 | `inner` 的绑定不覆盖 `innerish` |
+| 绝对、相对 symlink | 目标在 guest 路径内解析，读写目标正确 |
+| 跨 rootfs 链接，有显式 bind | 可读写另一个 rootfs 的指定目标 |
+| 跨 rootfs 链接，无 bind | 不会自动访问另一个 rootfs |
+| 链接直接指向另一 rootfs 的宿主绝对路径 | 没有对应 bind 时读取失败，目标保持不变 |
+| 断链创建目标 | 写入链接会创建 guest 目标，链接本身保留 |
+| symlink 循环 | 读取失败，guest 能正常结束 |
+| 不存在的文件 | 读取失败，不创建文件 |
+| 父目录存在、目标文件不存在 | 创建成功，落在 guest rootfs |
+| 父目录也不存在 | 创建失败，不生成意外宿主文件 |
+
+负向用例先执行正向读取，确认 guest 和读取工具可运行。两个 App 每项还核对结构化成功结果、唯一完成标记及宿主文件状态，避免把启动失败当作路径测试通过。App 用例使用独立夹具；Shell 用例使用全新目录，不操作已有发行版。
+
+实机 Java 行覆盖率：AAR App **768/815（94.23%）**，直接 `.so` App **667/703（94.88%）**；两份新增路径测试类均为 **105/109（96.33%）**。这是验证 App 的覆盖率，不是 PRoot 路径转换代码的覆盖率。
+
+宿主 `/usr` 对照使用专门的可写夹具，不修改 Android 或 Termux 的真实系统目录。这些结果验证路径映射正确性，不代表 PRoot 是安全沙箱；显式 bind 的目录仍可修改宿主文件。
+
+复现入口：`scripts/test-pdn-paths.sh` 接收 PDN、loader、官方 Alpine 归档和不存在的新目录；两个 App 的“全部验收”包含同一组路径场景。报告、APK 与日志位于 `/sdcard/yyd/PDN/path-boundary-v066/`，本地覆盖率位于 `build/path-boundary/`。
+
+
+## 0.6.6 Alpine 启动耗时对比
+
+2026-10-10，同一 ARM64 Android 环境，使用同一份 Alpine 3.24.2 官方归档。计时从调用启动器开始，到 guest 执行 `printf PDN_BENCH_READY` 并退出结束；包括启动器、PRoot、guest shell 和进程回收，不包含 rish 连接、下载、安装、终端界面绘制。
+
+| 环境 | 样本数 | 中位数 | 范围 |
+| --- | --- | --- | --- |
+| 原 Termux + proot-distro 5.9.0 | 40 | **272.2 ms** | 191.3–286.1 ms |
+| 清空环境变量、新 HOME + proot-distro 5.9.0 | 20 | **268.6 ms** | 263.4–274.8 ms |
+| 相同干净 Termux + PDN Release 0.6.6 | 20 | **35.5 ms** | 30.4–66.0 ms |
+| Android shell + PDN Release 0.6.6 | 40 | **40.9 ms** | 31.3–74.9 ms |
+
+主要两组交换顺序各测 21 次，每批首测单独记录，余下共 40 次用于统计。首次观测：proot-distro 两批为 692.2 / 709.8 ms，PDN Android shell 为 42.5 / 104.3 ms。这些不是清空系统缓存后的严格冷启动。环境清理对照各测 21 次，去掉首测后统计 20 次。
+
+清理使用 `env -i`，仅提供 PATH、HOME、TMPDIR、PREFIX、TERMUX 路径、LANG 与 TERM；PDN 另提供其 rootfs、loader、临时目录和 seccomp 配置。新 HOME 不读取原终端配置，去掉 LD_PRELOAD、LD_LIBRARY_PATH、ENV、BASH_ENV 等继承变量；使用新安装的测试 Alpine，不修改原发行版或 Termux 配置。它隔离环境变量和 HOME，不是重新安装一个全新的 Termux。
+
+本次 proot-distro 普通与干净环境相差约 **3.7 ms**，不足以解释它与 PDN 的约 **230 ms** 差距。同样干净的 Termux 中 PDN 为约 35 ms，说明快速启动不要求 rish。已安装的 proot-distro 5.9.0 使用 Python 入口，源码显示入口导入多个命令模块；启动器和默认挂载配置是合理的差距来源，但本次没有逐项剥离其开销，不把差距归因于 PRoot 引擎本身。
+
+proot-distro 使用默认登录配置，PDN 使用默认登录配置；两者挂载和扩展项不完全相同。这是实际入口的启动成本对比，不是相同 PRoot 参数下的引擎微基准，也不代表 GUI 打开速度或 Linux 长任务性能。
+
+复现计时脚本：`scripts/benchmark-pdn-startup.sh OUTPUT_CSV REPETITIONS COMMAND [ARGS...]`。两边均用同一个 Android `date` 纳秒计时脚本，包含少量相同的采样开销。原始 CSV 与汇总位于 `build/startup-benchmark/`，交付副本位于 `/sdcard/yyd/PDN/path-boundary-v066/`。

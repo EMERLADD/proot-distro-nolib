@@ -21,6 +21,16 @@
 
 **PDN 是基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具。** 它把 PRoot 引擎、下载、校验、解压和发行版管理整合进一个 ARM64 Android 程序，让 Android 设备运行 Linux 环境，无需额外安装 Termux，也不需要宿主提供 Bash、Python、curl 或 tar。
 
+**启动轻快**：同一份 Alpine ARM64 归档，在清空环境变量、使用新 HOME 的 Termux 中，PDN 启动耗时约 **35 ms**，proot-distro 约 **269 ms**。
+
+| 干净环境下的启动入口 | 中位耗时 |
+| --- | --- |
+| Termux + proot-distro | **269 ms** |
+| 同样的 Termux + PDN | **35 ms** |
+| Android shell + PDN | **41 ms** |
+
+按各自默认登录配置，计时至首条命令执行并退出；不含 rish 连接、下载或安装。Termux 清理对照各统计 20 次，Android shell 统计 40 次。[完整测速与范围](docs/pdn-error-testing.md#066-alpine-启动耗时对比)。
+
 - **直接管理 Linux**：安装、登录、执行命令、挂载项目目录、保存配置、备份恢复和卸载。
 - **可供其他 APK 调用**：提供 AAR 和直接打包 `.so` 两种接入方式，适合工作区、AI 前端或其他需要 Linux 执行能力的 App。
 - **可接入 GUI 和终端**：Java/Kotlin API 提供结构化事件、错误建议、异步任务和独立 PTY 终端会话，界面由宿主绘制。
@@ -56,6 +66,9 @@ PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有
 | Java/Kotlin App 接入 | `pdn-engine-版本号.aar` |
 | App 自行启动进程 | `libpdn.so`、`libproot-loader.so` |
 | 源码与许可材料 | `proot-distro-nolib-v版本号-android-arm64.tar.gz` |
+| 独立 App 接入验证 | `pdn-aar-probe-版本号-debug-test.apk`、`pdn-so-probe-版本号-debug-test.apk` |
+
+两个测试 APK 是普通 Debug 测试构建，用于验证和演示 AAR / 直接 `.so` 接入；保留测试界面与“全部验收”，不作为生产应用。
 
 AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口。终端界面由宿主 App 提供。标准版与 lite 文件内容相同，任选一个导入即可。PDN 和加载器使用 `.so` 文件名供 APK 打包，但仍通过进程方式调用；`libptyjni.so` 则通过 JNI 调用。
 

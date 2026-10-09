@@ -95,6 +95,7 @@ public final class ProbeSuite {
             }
             return "pinned official offline ARM64 archive; verified, extracted and configured";
         });
+        ProbePathChecks.verify(checks, this, runtime, log);
         check(checks, "exec_stdout_stderr_workspace", () -> {
             Capture c = run(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c",
                     "printf 'PDN_EXEC\\n'; id -u; pwd; printf '%s\\n' \"$1\"; printf 'PDN_STDERR\\n' >&2; printf persist > /workspace/probe.txt", "probe", "two words")));
