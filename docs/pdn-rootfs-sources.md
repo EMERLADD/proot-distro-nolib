@@ -29,8 +29,8 @@ pins the arm64v8 build at commit `cf1f4a45447842b45e9952e0f018ae734a7341c7`
 artifact. Its size and SHA256 matched the layer descriptor in the
 [pinned OCI manifest](https://raw.githubusercontent.com/debuerreotype/docker-debian-artifacts/cf1f4a45447842b45e9952e0f018ae734a7341c7/trixie/slim/oci/blobs/image-manifest.json).
 Only the rootfs gzip layer is needed; this is not a general OCI client.
-Both download routes point to the immutable upstream commit. No verified
-independent domestic mirror of this artifact is currently configured.
+The current downloader uses one official route to the immutable upstream
+commit. No verified independent domestic mirror of this artifact is configured.
 
 ## Arch Linux ARM
 

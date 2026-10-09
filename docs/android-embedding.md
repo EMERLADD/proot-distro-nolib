@@ -16,8 +16,25 @@
 
 `libpdn.so` 与 `pdn` 内容相同，仍是可执行程序，不是提供 JNI 导出函数的共享库。
 通过 `ProcessBuilder` 或 PTY 的 `execve` 调用，不使用 `System.loadLibrary("pdn")`。
-PDN 和 loader 应来自同一次构建。当前未在 GitHub 独立发布 AAR，可本地构建引擎 AAR。`install()`、`exec()`
+PDN 和 loader 应来自同一次构建。GitHub Release 已提供独立 AAR；完整调用方式见 [AAR API](pdn-aar-api.md)。`install()`、`exec()`
 等方法属于 Kotlin 封装，负责组装路径、环境和参数数组，PDN 没有 C/JNI 方法接口。
+
+## 通过 AAR 接入
+
+从同一 Release 下载 `pdn-engine-版本号.aar`，放到 App 的 `libs/`。0.6.6 起 AAR 只包含 PDN、loader、PTY JNI 和 Java/Kotlin API；lite 文件名是字节相同的兼容别名，选一个导入。
+
+```kotlin
+dependencies {
+    implementation(files("libs/pdn-engine-0.6.6.aar"))
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+}
+```
+
+示例标准库版本与仓库 AAR 使用的 Kotlin 版本一致；已有 Kotlin 工程应按宿主依赖配置统一版本。纯 Java App 也可以调用 AAR，不需要为了调用接口添加 Kotlin Android 插件。
+
+以下 SDK、原生库解压和网络权限配置同样适用于 AAR。由宿主实现 `ProotHost`，通过 `PdnRuntime` 生成操作，使用 `PdnOperations.start()` 接收异步事件和结果；同步 `run()` 需放在后台线程。交互终端使用 `PdnTerminal`，界面和生命周期由宿主负责。
+
+目录契约、Java/Kotlin 示例、配置、取消/超时和终端关闭见 [AAR API](pdn-aar-api.md)，完整独立工程见 [AAR 示例](../examples/aar-probe/README.md)。后文直接放置两个 ELF 的步骤用于自行管理进程的接入方式；导入 AAR 后无需重复放置其中已包含的原生文件。
 
 ## 放进 APK
 
@@ -264,10 +281,10 @@ PTY 实现时还要编译并打包 `libptyjni.so`。按实际布局测量行列�
 屏幕或字号变化时调用 `resize()`；在工作线程持续读取 `Session.read()` 的字节
 送给终端模拟器，键盘输入则调用 `write()`。
 
-当前 `Session.close()` 是基础关闭接口，完整会话生命周期、多会话 PID 管理
-仍需完善。通过 `startPdnSession` 启动时，项目目录采用 `host.homeDir/workspace`；
-自定义项目路径可用 `runtime.command(runtime.loginArguments(rootfs))` 与自己的
-PTY 接入，并传入 `runtime.environment()`。
+以上 `ProotLauncher` 示例保留兼容用法；新接入推荐 `PdnTerminal` 和
+`PdnTerminalSession`，支持独立 PID/fd、多会话、退出状态和显式终止/关闭。
+配置、项目路径、输入分块和生命周期要求见 [AAR API](pdn-aar-api.md)。
+依赖旧 pr-cli 的 `startSession()` 需要宿主自行提供旧原生组件，PDN AAR 不再携带它们。
 
 ## 编译和打包
 
@@ -296,6 +313,6 @@ APK 输出是 `android/app/build/outputs/apk/debug/app-debug.apk`。
 
 ## 当前验证范围
 
-Android 宿主路径封装有单元测试与覆盖率门槛。独立 PDN 的执行、配置、安装、
-归档回归已在允许 PRoot 运行的 ARM64 Android 环境验证。rish 的 UID 2000 Android shell 中已实测版本输出及 Alpine 安装；该场景的 guest 登录
-还待确认。设备 instrumentation 测试已可打包，当前会话没有通过 ADB 执行它。
+GitHub Release 0.6.4 原件已分别验证 rish 原始 ELF 28/28、独立 AAR App 19/19、直接 `.so` App 24/24。两个 App 的实际运行身份为普通 `untrusted_app`，targetSdk 35；rish 仅作为安装和测试入口，不能代替 App 身份。
+
+本地 0.6.5 AAR 的独立 App 扩展验收 33/33，覆盖异步任务、配置、查询和双终端。0.6.6 的 Ubuntu 调用 Android 命令路径也在 MT 管理器中复现成功。各版本的原件对应关系、覆盖率和测试范围见 [测试记录](pdn-error-testing.md)；Android shell 操作见 [教程](pdn-shizuku-android-shell.md)。

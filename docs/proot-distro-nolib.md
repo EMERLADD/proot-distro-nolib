@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current project version: **0.6.2**, based on **PRoot 5.4.0-pr**.
+Current project version: **0.6.6**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
@@ -58,14 +58,14 @@ pdn login alpine
 | --- | --- | --- | --- |
 | `alpine` | Alpine 3.24.2 | 3.8 MiB | tuna, ustc, nju, official, dotsrc |
 | `ubuntu` | Ubuntu Base 24.04.5 LTS (noble) | 28.5 MiB | tuna, ustc, official |
-| `debian` | Debian 13 trixie slim, debuerreotype 20261005 | 28.8 MiB | official, github |
+| `debian` | Debian 13 trixie slim, debuerreotype 20261005 | 28.8 MiB | official |
 | `arch` | Arch Linux ARM 2026.08 | 790.9 MiB | tuna, ustc, nju, official |
 
 `arch` is Arch Linux ARM, not the x86-64 Arch Linux distribution. Its full
 upstream filesystem is about 2 GiB unpacked and includes hardware-related
 packages. Allow several GiB of free space for the archive, rootfs and updates.
-Debian's two routes retrieve the same immutable upstream GitHub artifact;
-they are not independent domestic mirrors. Rootfs provenance and checksums
+Debian uses one official route to an immutable upstream GitHub artifact;
+no independent domestic mirror is configured. Rootfs provenance and checksums
 are recorded in [the source catalogue](pdn-rootfs-sources.md).
 
 ```sh

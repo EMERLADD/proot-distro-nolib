@@ -2,122 +2,116 @@
 
 简体中文 | [English](README.en.md)
 
-**基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具，定位类似 Termux 的 proot-distro，但不依赖 Termux 环境及其动态库。**
-
-面向提供终端或命令执行能力的 Android App：把 `pdn` 放进 App 可执行的目录，就能用简单命令安装、登录和管理 Linux。无需先安装 Termux，也不需要宿主额外提供 Bash、Python、curl 或 tar。
-
 当前版本：**v0.6.6 · ARM64 Android · 早期测试版**。
-
-> 我在 **MT 管理器** 里实际用过，目前功能正常。这是我第一次做这类工具，欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 反馈问题、提出建议，一起把它完善起来。
->
-> MT 管理器是已验证的宿主环境，不代表所有 Android App 和设备都已测试。
 
 ## 目录
 
-- [已实测的三条接入路径](#已实测的三条接入路径)
-- [这是什么](#这是什么)
-- [运行条件](#运行条件)
-- [获取与安装](#获取与安装)
-- [Shizuku 与 Android shell](#shizuku-与-android-shell)
-- [ARM64 下载源](#arm64-下载源)
-- [嵌入 Android App](#嵌入-android-app)
-- [快速开始](#快速开始)
-- [本地构建](#本地构建)
-- [GitHub 自动构建](#github-自动构建)
-- [发布材料与源码](#发布材料与源码)
-- [来源与致谢](#来源与致谢)
-- [反馈](#反馈)
+- [0. 这是什么？](#0-这是什么)
+- [1. 运行条件与权限](#1-运行条件与权限)
+- [2. 下载与更新](#2-下载与更新)
+- [3. 快速开始](#3-快速开始)
+- [4. 已验证的使用场景](#4-已验证的使用场景)
+- [5. 文档导航](#5-文档导航)
+- [6. 构建与贡献](#6-构建与贡献)
+- [7. 来源与许可证](#7-来源与许可证)
+- [8. 常见问题](#8-常见问题)
+- [9. 现有局限](#9-现有局限)
 
-## 已实测的三条接入路径
+## 0. 这是什么？
 
-2026-10-09，使用 GitHub Release **v0.6.4** 的原件完成设备测试：
+**PDN 是基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具。** 它把 PRoot 引擎、下载、校验、解压和发行版管理整合进一个 ARM64 Android 程序，让 Android 设备运行 Linux 环境，无需额外安装 Termux，也不需要宿主提供 Bash、Python、curl 或 tar。
 
-| 接入方式 | 实际运行环境 | 结果 |
-| --- | --- | --- |
-| 原始 ELF | rish / Shizuku 的 Android shell，UID 2000 | **28/28 通过** |
-| AAR | 独立 App，仅导入 AAR 与 Kotlin 标准库 | **19/19 通过** |
-| 直接打包 `.so` | 独立 App，直接启动 ELF，自行读取事件及接入 PTY | **24/24 通过** |
+- **直接管理 Linux**：安装、登录、执行命令、挂载项目目录、保存配置、备份恢复和卸载。
+- **可供其他 APK 调用**：提供 AAR 和直接打包 `.so` 两种接入方式，适合工作区、AI 前端或其他需要 Linux 执行能力的 App。
+- **可接入 GUI 和终端**：Java/Kotlin API 提供结构化事件、错误建议、异步任务和独立 PTY 终端会话，界面由宿主绘制。
+- **路径由宿主决定**：程序、数据、缓存和项目目录由参数或宿主提供，不绑定 MT 管理器、Termux 或固定 App 包名。
+- **条件允许时可调试 Android**：从 Shizuku/rish 或 ADB shell 启动 PDN 后，Linux 内可调用具有继承权限的 Android 调试命令，例如 `cmd`、`settings`、`getprop`。
 
-三条路径均验证 Alpine 安装、登录/执行和启动错误分类；两种 APK 还验证初始化、事件回调、工作区及终端交互。APK 测试在 Android 14（SDK 34）的普通 `untrusted_app` 进程中执行，targetSdk 为 35；包内 PDN/loader 与 Release 原件逐字节一致。详细记录见 [实测范围与测试方法](docs/pdn-error-testing.md)，接入工程见 [AAR 示例](examples/aar-probe/README.md) 和 [.so 示例](examples/so-probe/README.md)。
+以上主要链路已经通过 **MT 管理器、AAR 构建的独立 APK、直接打包 `.so` 的独立 APK** 验证；具体版本和范围见[验证情况](#4-已验证的使用场景)。Android 调试路径验证的是 ADB shell 级权限下的系统命令，不是 Android 真 root，也不代表已验证 Linux 内独立 adb 客户端的全部功能。
 
-## 这是什么
+`nolib` 表示不依赖 Termux 的动态库。PDN 仍使用 Android 系统 `libc.so`、`libdl.so`，下载、TLS 和解压组件静态链接；AAR 接入还需宿主提供 Kotlin 标准库。
 
-从文件格式看，`pdn` 是 **ARM64 Android ELF 可执行文件**；从用途看，它是一个 **命令行 Linux 发行版管理器**，把 PRoot 引擎和常用管理功能整合进同一个程序。
+## 1. 运行条件与权限
 
-- **脱离 Termux**：运行时只动态依赖 Android 系统的 `libc.so`、`libdl.so`；下载、TLS、解压等组件静态链接。
-- **简单命令**：`pdn install ubuntu` 安装，`pdn login ubuntu` 登录，名称和命令支持 ASCII 大小写。
-- **一个程序管理 Linux**：支持执行命令、挂载目录、保存默认配置、切换 guest 账号、备份恢复和卸载。
-- **适合不同宿主 App**：路径来自环境变量或命令参数，不写死 App 包名。终端输入和 App 按钮调用可以使用同一个程序。
-- **基于 pr 的 Android 适配**：保留其 PRoot、加载器及 Android 系统调用适配，继续保留原有版权与许可证信息。
+- **架构与版本**：目前提供 ARM64 / AArch64。独立 ELF 构建目标为 Android API 24；AAR/JNI 接入最低 API 28。
+- **执行与进程跟踪**：宿主必须允许执行程序、PRoot 的进程跟踪和相关系统调用。普通 App 可按教程把程序部署到 `nativeLibraryDir`。
+- **Linux 存储**：目录必须可访问并支持 Unix 权限和符号链接，例如 App 私有目录或 Android shell 的 `/data/local/tmp`。`/sdcard` 适合下载包、备份和共享文件，不适合解压 rootfs。
+- **网络与共享文件**：在线安装需要网络权限，读取共享存储需要相应访问权限。
 
-`nolib` 表示不依赖 Termux 的动态库，并不是完全不使用任何库。它也不自带图形终端界面；交互终端由宿主 App 提供。仓库保留了 pr 的 Android App/Rust CLI 源码，它们不是本项目独立 `pdn` 的安装前提，也不代表那些组件的功能已经全部移植到 `pdn`。
+PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有效。Shizuku 是可选的权限入口，安装和运行 Linux 本身不要求它。详见[Android shell 教程](docs/pdn-shizuku-android-shell.md)和 [App 接入教程](docs/android-embedding.md)。
 
-## 运行条件
+## 2. 下载与更新
 
-- ARM64 / AArch64 Android；构建目标为 Android API 24 及以上，实际可用性还取决于宿主权限与系统限制。
-- 宿主允许执行程序及 PRoot 所需的进程跟踪、系统调用，并能访问存放 Linux 的目录。
-- Linux rootfs 放在宿主可访问、支持 Unix 权限与符号链接的目录，例如 App 私有目录或 Android shell 的 `/data/local/tmp`；`/sdcard` 适合放下载包、备份或共享文件，不适合直接解压 rootfs。
-- 宿主需有网络权限；访问共享存储需要相应权限。
+从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 获取同一版本的文件，并核对 `SHA256SUMS`：
 
-“有终端就能使用”是本项目预期的使用方式，不是绕过 Android 权限的保证。对于执行位置受限的 App，开发者可能需要通过 APK 的 `nativeLibraryDir` 部署程序并设置 `PROOT_LOADER`。参见 [Android 加载器说明](docs/targetsdk35-compatibility.md)。PRoot 也不是安全隔离边界，不提供真正的 root 权限。
+| 场景 | 文件 |
+| --- | --- |
+| Android shell / MT 终端 | `pdn`，需要外部 loader 时配套 `proot-loader` |
+| Java/Kotlin App 接入 | `pdn-engine-版本号.aar` |
+| App 自行启动进程 | `libpdn.so`、`libproot-loader.so` |
+| 源码与许可材料 | `proot-distro-nolib-v版本号-android-arm64.tar.gz` |
 
-## 获取与安装
+0.6.6 起标准 AAR 仅含 PDN、loader、PTY JNI 和 API，终端功能完整保留。`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名，两者选一个即可。`libpdn.so` 和 `libproot-loader.so` 是可执行 ELF 的 APK 文件名；PTY JNI 才是实际 JNI 共享库。
 
-优先从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 下载独立的 **`pdn`**，或下载包含源码和许可材料的完整发布包。`pdn` 是成品可执行文件，不需要先解压 rootfs 或自行编译。原始文件和完整包的 SHA256 均随版本提供。
+更新前退出旧 Linux 会话，替换程序并重新设置执行权限；已有 rootfs 不需要重装。ELF、`.so`、AAR 和 loader 应保持同一版本，`pdn version` 和 `pdn --version` 都应显示当前 PDN 版本。转发二进制时同时保留对应源码和许可证。
 
-也可以获取开发中的构建：打开 [Build pdn 工作流](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml)，选择成功运行记录，在 **Artifacts** 下载 `pdn-android-arm64-提交号`。下载产物通常需要登录 GitHub；自动构建产物有保留期限，不等同于长期 Release。
+开发中构建可从 [Actions](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml) 的 Artifacts 获取。文件结构、构建来源和更新注意事项见[构建与发布](docs/pdn-build-and-release.md)。
 
-解压下载的 artifact，再解压其中的 `proot-distro-nolib-v0.6.6-android-arm64.tar.gz`。里面同时提供：
+## 3. 快速开始
 
-- `pdn`：建议使用的命令名。
-- `proot-distro-nolib`：与 `pdn` 内容相同，任选一个即可，不必两个都放进 bin。
-- `proot-loader`：有外部加载器需求的宿主可使用；普通场景先使用内嵌加载器。
-- `jniLibs/arm64-v8a/libpdn.so`、`libproot-loader.so`：供 APK 打包使用，分别与 `pdn`、`proot-loader` 内容相同。
+### 3.1 在 Android shell 部署程序
 
-将 `pdn` 放进宿主允许执行的 bin 目录，在该目录执行：
+下面适用于允许从 `/data/local/tmp` 执行程序的 Android shell，例如 ADB 或已启动的 Shizuku/rish shell。普通终端 App 应使用自己允许执行和读写的目录；不要在 Android shell 中访问 App 私有目录初始化原始 rish。
+
+下载 `pdn` 和 `proot-loader` 后，按实际位置修改两条 `cp` 的源路径：
 
 ```sh
-chmod 755 pdn
+mkdir -p /data/local/tmp/pdn
+cp /sdcard/Download/pdn /data/local/tmp/pdn/pdn
+cp /sdcard/Download/proot-loader /data/local/tmp/pdn/proot-loader
+chmod 755 /data/local/tmp/pdn/pdn /data/local/tmp/pdn/proot-loader
+cd /data/local/tmp/pdn
 ./pdn version
 ```
 
-如果 bin 已经在 `PATH` 中，就可以直接输入 `pdn`。共享存储可能禁止执行文件，单纯 `chmod` 不能改变这个限制。
-
-### 以 MT 管理器为例
-
-下载 Release 中的 `pdn`，用 MT 管理器复制到：
-
-```text
-/data/user/0/bin.mt.plus/files/term/bin/pdn
-```
-
-这是 MT 管理器自己的终端 bin 目录。假设文件下载在 `/sdcard/Download/pdn`，也可以在 **MT 管理器的终端**执行：
+指定 Linux 和临时目录：
 
 ```sh
-cp /sdcard/Download/pdn /data/user/0/bin.mt.plus/files/term/bin/pdn
-chmod 755 /data/user/0/bin.mt.plus/files/term/bin/pdn
-pdn version
-pdn install alpine
-pdn login alpine
+export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
+export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
+export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
+mkdir -p "$PROOT_TMP_DIR"
 ```
 
-如果下载位置不同，请修改 `cp` 的源路径。更新时退出旧 Linux 会话，再替换程序并重新赋予执行权限；已有 Linux 不需要重装。若提示找不到 `pdn`，先用完整路径运行 `/data/user/0/bin.mt.plus/files/term/bin/pdn version`，检查终端 PATH。
+当前工作目录不会自动决定 rootfs 位置。Android shell 的 `HOME` 可能是 `/`，因此应显式设置目录。完整步骤和 MT 示例见[Android shell 教程](docs/pdn-shizuku-android-shell.md)。
 
-该路径只作为 MT 管理器示例，没有硬编码进 `pdn`；其他 App 应使用自己的可执行目录。原始 `pdn` 是便捷下载项，转发发布时请同时保留完整包中的对应源码与许可证。
+### 3.2 安装、登录和管理发行版
 
-## Shizuku 与 Android shell
+```sh
+./pdn list --available
+./pdn install ubuntu
+./pdn login ubuntu
+```
 
-可以从具有所需执行、目录访问及进程跟踪权限的 Android shell 使用 PDN，宿主不限于 MT 管理器。需要 Android shell 权限时，可先通过 Shizuku/rish 或 ADB 进入真实 shell，再启动 Linux；Ubuntu 中显示的 root 仍是模拟身份。
+退出 Linux 后，在宿主 shell 中执行一次命令或管理系统：
 
-**已有可用 rish 时，直接运行它，跳过初次配置。** 原始 rish 的私有目录准备必须在宿主 App 原来的终端执行，进入 UID 2000 的 Android shell 后不能再假设能访问 App 私有目录。使用期间把获得 Shizuku 授权的宿主保持在前台；本次环境即使设为电池“无限制”，进入后台仍会断连。
+```sh
+./pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
+./pdn mirrors ubuntu
+./pdn list
+```
 
-在 Android shell 中部署同版本 PDN 与 loader、设置 rootfs 和临时目录、安装 Ubuntu 后，带上 Android 运行路径登录：
+支持 Alpine、Ubuntu Base、Debian slim 和 Arch Linux ARM。官方源选择、离线归档、挂载、账号、默认配置、备份恢复和完整指令索引见[发行版管理教程](docs/pdn-distributions.md)。
+
+### 3.3 在 Linux 内调用 Android 调试命令
+
+先在已授权宿主中启动原始 `rish`，用 `id` 确认真实 Android shell 身份，再按上面部署程序。在 Android shell 中带挂载启动 Ubuntu：
 
 ```sh
 ./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
 ```
 
-在 Ubuntu 中可把长命令封装成自选名字，例如：
+Ubuntu 内定义一个自选名字的命令：
 
 ```sh
 rish() {
@@ -127,239 +121,96 @@ rish -c 'getprop ro.build.version.sdk'
 rish -c 'cmd package path android'
 ```
 
-这里的 `rish` 是自定义 Bash 函数，调用 Android shell 并使用已经继承的权限，不会再次连接 Shizuku。原始客户端在 shell 内嵌套启动未跑通，不能把两者混为一谈。
+这里的 `rish` 是 Bash 函数，使用已继承的权限调用 Android shell，不会再次连接 Shizuku。从 ADB shell 启动时无需 Shizuku；使用 Shizuku 时，把已授权宿主保持在前台，本次环境即使设置电池“无限制”也会在后台断连。
 
-2026-10-09，此流程已实测，并在 MT 管理器中复现：Ubuntu 内写入专用 Android 设置项，退出 Ubuntu 后可从 Android shell 读到同一个值，随后删除。完整目录安排、安装、函数持久化、设置验证、清理和常见问题见 [Android shell 教程](docs/pdn-shizuku-android-shell.md)。MT 是操作示例，不代表所有宿主和系统都已验证。
+原始 rish 准备、函数保存到 `.bashrc`、验证 Android 设置确实改变并清理、重连和常见报错见[完整教程](docs/pdn-shizuku-android-shell.md)。
 
-## ARM64 下载源
+### 3.4 通过 AAR 接入 App
 
-四个发行版均内置 `official` 源。Alpine、Ubuntu、Arch 默认先尝试国内镜像，
-失败后回退官方；Debian 只保留一个 `official` 源，直接下载官方 Docker rootfs 构建。
-GitHub 仓库的 `/raw/` 地址会重定向到同一文件，不作为第二个备用源。
+1. 下载标准 AAR，放入 App 的 `libs/`，导入 AAR 并提供 Kotlin 标准库。
+2. 配置网络权限和原生库解压，从宿主提供程序、数据、缓存、项目目录。
+3. 通过 `PdnRuntime` 生成操作，再用 `PdnOperations` 启动任务、接收事件和结果。
+4. 需要交互终端时使用 `PdnTerminal`，由 App 绘制界面并处理生命周期。
 
-| 发行版 | 官方来源 |
-| --- | --- |
-| Alpine | [Alpine CDN](https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/) |
-| Ubuntu | [Ubuntu Base](https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/) |
-| Debian | [debuerreotype 官方 Docker 构建](https://github.com/debuerreotype/docker-debian-artifacts) |
-| Arch | [Arch Linux ARM 官方镜像](https://fl.us.mirror.archlinuxarm.org/os/multi/) |
-
-```sh
-pdn mirrors alpine
-pdn install alpine --mirror official
+```java
+PdnRuntime pdn = new PdnRuntime(host);
+PdnOperations operations = new PdnOperations(pdn);
+PdnTask task = operations.start(pdn.install("alpine"), listener);
 ```
 
-指定 `--mirror official` 后只使用该源。所有来源下载同一个固定 ARM64 版本，
-校验预设文件大小和 SHA256，通过后才解压；不会改用未经校验的 `latest` 包。
-Kotlin 接入时调用 `pdn.install("alpine", mirror = "official")`。
+`host` 实现 `ProotHost`，`listener` 实现 `PdnListener`；`install()` 自身返回未启动的 `ProcessBuilder`。完整打包见 [App 接入教程](docs/android-embedding.md)，任务、查询、配置和终端接口见 [AAR API](docs/pdn-aar-api.md)，可运行工程见 [AAR 示例](examples/aar-probe/README.md)。
 
-## 嵌入 Android App
+### 3.5 直接打包 `.so` 接入 App
 
-Java/Kotlin 可以通过 `PdnRuntime` 生成安装、执行等操作，再用 `PdnOperations`
-接收阶段、进度、错误建议及最终结果。GUI 无需解析 CLI 输出；Linux 的 stdout/stderr
-保持独立。见 [Java/Kotlin 事件 API 与 AAR 结构](docs/pdn-events.md)。
+1. 将同版本 `libpdn.so` 和 `libproot-loader.so` 放入 `app/src/main/jniLibs/arm64-v8a/`。
+2. 配置原生库解压，通过 `context.applicationInfo.nativeLibraryDir` 获取程序位置。
+3. 使用进程参数设置 rootfs、缓存和挂载目录，通过 `ProcessBuilder` 或自己的 PTY 层启动。
+4. 从独立事件通道读取结构化结果，保留 stdout/stderr 用于 Linux 命令输出。
 
-v0.6.4 补充 PRoot、loader、初始 guest shell 和登录 shell 启动失败的具体分类。已启动的 Linux 命令非零退出及信号终止继续使用 `guest_exit`；Java/Kotlin 从原有 `PdnResult` 获取原因和建议。
+这些 ELF 不使用 `System.loadLibrary("pdn")` 调用。目录、环境和事件协议见 [App 接入教程](docs/android-embedding.md)及[事件协议](docs/pdn-events.md)，完整工程见 [.so 示例](examples/so-probe/README.md)。
 
-v0.6.3 将目录、锁、网络、校验、归档、配置、卸载与 Java 宿主失败分类到具体失败点，提供对应建议。每项如何触发测试、哪些使用故障注入以及尚未实测的情况，见 [错误分类与逐项验证](docs/pdn-error-testing.md)。
+## 4. 已验证的使用场景
 
-**AAR 已实测可用**：全新的独立 Android App 仅导入生成的 AAR 与 Kotlin 标准库，
-已进入 Alpine，并在交互终端成功执行 `apk add nano`。独立工程和构建方式见
-[AAR 验证 App](examples/aar-probe/README.md)。
-
-0.6.4 已分别通过普通 App 进程的设备验收：AAR 接入 19/19，直接打包 `.so` 接入 24/24。初始化、官方归档安装、命令执行、事件回调、PTY 交互和启动错误分类均通过；界面的官方源在线安装也成功。直接接入工程见 [.so 验证 App](examples/so-probe/README.md)，测试环境和覆盖率见 [APK 接入实测](docs/pdn-error-testing.md#064-apk-接入实测)。
-
-每个 Release 同时提供 `pdn-engine-版本号.aar`、`pdn-engine-lite-版本号.aar`、`libpdn.so`、`libproot-loader.so` 和原始 ELF `pdn`、`proot-loader`。AAR 是非插桩 Debug 引擎构建，包含封装 API 和 ARM64 原生程序；宿主需提供 Kotlin 标准库。也可以单独将两个 `.so` 放入 App 的 `jniLibs/arm64-v8a/`，由 Android 解压到 `nativeLibraryDir` 后通过进程调用。它们是原生可执行程序，不是 `System.loadLibrary` 加载的 PDN JNI API。
-
-更新时同时替换 ELF、`.so` 和 AAR，避免继续使用旧目录中的文件。`pdn version` 与 `pdn --version` 都应显示当前 PDN 版本；`Based on PRoot 5.4.0-pr` 是底层 PRoot 版本，与 PDN 版本分别维护。
-
-0.6.5 轻量 AAR 在独立 Java App 的普通进程中实测 **33/33 通过**，包括异步取消/超时、配置与结构化查询、双终端和 GUI 操作。测试范围与覆盖率见 [0.6.5 AAR 实测](docs/pdn-error-testing.md#065-aar-接口实测)。
-
-0.6.5 增加可取消、可超时的异步任务、不可变配置、独立终端会话与结构化发行版/镜像查询，并提供只含三个原生文件的轻量 AAR。0.6.6 起所有 AAR 只含 PDN、loader 和 PTY JNI，完整保留终端功能，旧 pr 原生组件仅由原 App 自行打包。Java/Kotlin 调用、AAR 结构和任务生命周期见 [AAR 接口](docs/pdn-aar-api.md)。
-
-`PdnRuntime` 提供 `install("alpine")`、`login("alpine")`、`exec("alpine", listOf("/bin/echo", "hello"))` 和 `remove("alpine")`，返回 `ProcessBuilder`，调用 `.start()` 启动。
-
-示例 App 提供 Alpine 软件安装面板：输入包名或点选常用软件，点击安装即可；自动更新索引，并可查看已安装软件和执行日志。界面通过 Kotlin `exec()` 接口调用 Linux 内的 `apk`。
-
-实测：通过 GUI 在 Alpine 中安装 `curl`，随后在 Alpine 中执行 `curl -v https://example.com/` 可正常访问。图形界面安装、Linux 程序运行和 HTTPS 访问已跑通。
-
-目录安排、Gradle 打包配置、Kotlin API、安装/执行命令和 PTY 接入示例见 [Android App 接入教程](docs/android-embedding.md)。正式转发这些文件时同时提供完整发布包中的对应源码和许可材料。
-
-## 快速开始
-
-默认 Linux 存储目录是 `$HOME/.local/share/pdn/rootfs`。也可以先指定宿主可访问的私有目录：
-
-```sh
-export PDN_ROOTFS_DIR="$HOME/linux"
-pdn list --available
-pdn install alpine
-pdn login alpine
-```
-
-也支持：
-
-```sh
-pdn install Ubuntu
-pdn install debian
-pdn install arch
-pdn ls
-pdn login ubuntu
-```
-
-退出 Linux 后执行管理操作。已有 rootfs 可以放到 `$PDN_ROOTFS_DIR/名字/`，或者使用 `pdn login --rootfs /完整/rootfs/路径`，不需要重新安装。
-
-### 支持的发行版与下载
-
-| 名称 | 固定版本 | 架构 |
+| 场景 | 版本与范围 | 结果 |
 | --- | --- | --- |
-| Alpine | 3.24.2 | ARM64 |
-| Ubuntu Base | 24.04.5 LTS | ARM64 |
-| Debian slim | 13 trixie，20261005 | ARM64 |
-| Arch Linux ARM | 2026.08 | ARM64 |
+| MT 管理器 / Android shell | 0.6.6：Ubuntu 内调用 Android 命令，写入测试设置，退出后核对并删除；MT 已复现 | 通过 |
+| 原始 ELF / rish | GitHub Release 0.6.4 原件：Alpine 安装、执行和启动错误分类 | **28/28** |
+| AAR 独立 APK | Release 0.6.4 原件：初始化、安装、执行、事件、工作区和终端 | **19/19** |
+| 直接 `.so` 独立 APK | Release 0.6.4 原件：独立进程、事件和 PTY 接入 | **24/24** |
+| 扩展 AAR 独立 APK | 本地 0.6.5：异步取消/超时、配置、查询、双终端和 GUI | **33/33** |
 
-下载会检查固定大小和 SHA256。部分发行版有国内外多个源，失败时按顺序切换；目前还没有延迟测速排名和断点续传。Debian 仅保留一个官方上游入口。Arch 压缩包约 791 MiB，请预留数 GiB 空间。
+两种 APK 路径在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验证；0.6.4 包内 PDN/loader 与 Release 原件逐字节一致。GUI 安装 Alpine 软件、`apk add nano` 和安装 curl 后的 HTTPS 访问也已验证。
 
-```sh
-pdn mirrors ubuntu
-pdn install ubuntu --mirror tuna
-pdn install alpine --archive /路径/对应固定版本的rootfs.tar.gz
-```
+这些是明确版本和环境下的记录，不是所有功能在所有宿主上的兼容性保证。详细方法、故障注入范围与覆盖率见[测试记录](docs/pdn-error-testing.md)。
 
-`install --archive` 仍要求匹配内置版本的校验值；它不是任意归档导入。来源和校验值见 [rootfs 来源目录](docs/pdn-rootfs-sources.md)。
+## 5. 文档导航
 
-### 执行、挂载与默认配置
-
-```sh
-pdn exec ubuntu -- /usr/bin/id
-pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
-pdn login ubuntu --bind /sdcard:/mnt/shared
-pdn config ubuntu --bind /sdcard:/mnt/shared --work-dir /root --env LANG=C.UTF-8
-pdn login ubuntu
-```
-
-`--bind` / `-b` 可以重复指定；guest 修改挂载文件会直接修改宿主文件。临时挂载只对当前会话有效，`config` 保存的挂载会在后续登录与执行时自动加载。
-
-```sh
-pdn config ubuntu --show
-pdn login ubuntu --no-config
-pdn config ubuntu --clear
-pdn login ubuntu --user root --work-dir /tmp --env EXAMPLE='two words'
-```
-
-`config` 每次保存会替换整套默认配置。命令行上的账号、工作目录与环境变量覆盖默认值，挂载则追加；`--user` 使用 guest 中已有的账号名或数字 UID，可带数字 GID。默认是模拟 root，不会创建账号。
-
-### 备份与恢复
-
-先退出该 Linux 的会话：
-
-```sh
-pdn backup ubuntu /sdcard/ubuntu.tar.gz
-pdn restore ubuntu-copy /sdcard/ubuntu.tar.gz
-pdn login ubuntu-copy
-```
-
-备份文件必须在源 rootfs 之外，恢复必须使用新名字；两者都不会覆盖已有目标。备份保留 Linux 文件数据和 PRoot 内部链接的迁移关系，排除宿主启动配置、临时 loader、运行时目录内容及特殊节点。换 App 后请重新设置挂载目录。
-
-目录会补齐 owner rwx 权限，不恢复宿主所有者和 setuid/setgid；这是一份适合无 root 环境迁移的 rootfs 备份。详细边界、归档限制和中断处理见 [完整手册](docs/proot-distro-nolib.md)。
-
-### 指令索引
-
-| 指令 | 用途 |
+| 我想做什么 | 文档 |
 | --- | --- |
-| `install` | 安装内置发行版 |
-| `mirrors` | 查看 rootfs 下载源 |
-| `list` / `ls` | 查看已安装系统；`--available` 查看可安装版本 |
-| `login` | 交互登录，也支持 `-- COMMAND` |
-| `exec` | 执行指定 guest 命令 |
-| `config` | 保存、查看、清除默认启动参数 |
-| `backup` / `restore` | 备份与恢复到新名字 |
-| `uninstall` / `remove` | 确认后删除系统及其中全部数据；`--yes` 跳过确认 |
-| `version` / `help` | 查看版本、帮助 |
-| `proot` | 直接使用底层 PRoot 参数 |
+| 在 Android shell / MT 中运行 Linux，并调试 Android | [Android shell 教程](docs/pdn-shizuku-android-shell.md) |
+| 安装、登录、挂载、配置、备份或卸载 Linux | [发行版管理教程](docs/pdn-distributions.md) |
+| 给其他 APK 嵌入 PDN | [App 接入教程](docs/android-embedding.md) |
+| 查 Java/Kotlin 配置、任务、查询和终端接口 | [AAR API](docs/pdn-aar-api.md) |
+| 自己接事件或排查分类错误 | [事件协议](docs/pdn-events.md)、[测试与错误分类](docs/pdn-error-testing.md) |
+| 查上游归档与 SHA256 | [rootfs 来源（英文）](docs/pdn-rootfs-sources.md) |
+| 本地构建、CI 或发布源码 | [构建与发布](docs/pdn-build-and-release.md) |
+| 排查目录、版本、运行权限和终端问题 | [常见问题](docs/pdn-faq.md) |
+| 查完整 CLI 细节 | [原生 CLI 手册（英文）](docs/proot-distro-nolib.md) |
 
-## 本地构建
+## 6. 构建与贡献
 
-独立 `pdn` 构建不需要 Java、Gradle 或 Rust。需要 Git、Make、Clang/LLVM 工具、curl、tar、xz/bzip2、pkg-config 和 Android NDK。第一次构建需联网下载带固定校验值的依赖源码。
+独立 PDN 构建不需要 Java、Gradle 或 Rust，AAR 则需 Android/Gradle 工具链。构建依赖、NDK 配置、原生与 AAR 产物、测试、CI 和许可证交付见[构建与发布](docs/pdn-build-and-release.md)。
 
-```sh
-git clone https://github.com/EMERLADD/proot-distro-nolib.git
-cd proot-distro-nolib
-git submodule update --init --depth 1 vendor/samba
-make NDK_PATH=/你的/Android/NDK/目录
-```
+欢迎通过 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) 提交问题、想法或文档改进，附上宿主 App、Android 版本、`pdn version`、复现命令和错误输出。不要包含密码、Token、设备序列号或其他隐私信息。变更记录见 [CHANGELOG](CHANGELOG.md)。
 
-在 Linux x86_64 主机上，使用 NDK 自带的 LLVM 工具，例如：
+## 7. 来源与许可证
 
-```sh
-export NDK_PATH="$HOME/Android/Sdk/ndk/26.3.11579264"
-export PATH="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-make NDK_PATH="$NDK_PATH"
-```
+项目基于 [oonid/pr](https://github.com/oonid/pr)，保留其 Android PRoot 适配和原作者信息。引擎来自 [PRoot](https://github.com/proot-me/proot) / [Termux PRoot](https://github.com/termux/proot)，使用方式参考 [proot-distro](https://github.com/termux/proot-distro)。
 
-在 ARM64 Android 本机编译时，需要能在 Android 上运行的 Clang/LLVM 工具，再使用 NDK 的 sysroot；不能直接运行上面的 Linux x86_64 编译器。构建工具可以来自 Termux，但产物运行不依赖 Termux。
+构建使用 [talloc / Samba](https://www.samba.org/)、[curl](https://curl.se/)、[Mbed TLS](https://github.com/Mbed-TLS/mbedtls)、[libarchive](https://www.libarchive.org/) 和 [zlib](https://zlib.net/)。引擎沿用 GPL-2.0-or-later，talloc 为 LGPL-3.0-or-later；各组件范围见 [LICENSE](LICENSE) 和发布包中的许可材料，不能统一声明为 MIT。
 
-输出位于 `build/proot-distro-nolib/arm64/`。构建会检查 ELF 动态依赖、RPATH 和残留的宿主路径；不安装 App，也不改写宿主 bin。
+转发二进制时同时保留对应源码、第三方许可证和构建信息。详见[发布材料](docs/pdn-build-and-release.md)。
 
-```sh
-make help
-make test
-make package
-make clean
-```
+## 8. 常见问题
 
-`make test` 必须在允许 PRoot 运行的 ARM64 Android 环境执行，还需要 Python 3 和仓库测试使用的 BusyBox fixture。各版本的回归与覆盖率记录见 [更新记录](CHANGELOG.md)；Ubuntu/Debian/Arch/Alpine 的核心链路已验证，不代表所有设备兼容性。
-
-`make package` 先编译，再打包已提交的源码和产物。打包前需提交项目文件，确保源码对应当前提交；输出在 `build/packages/`。更换编译器、NDK 或依赖编译参数时先 `make clean`，避免复用旧静态库。
-
-## GitHub 自动构建
-
-工作流文件：[`.github/workflows/ci.yml`](.github/workflows/ci.yml)。推送到 `main`、推送 `v*` 标签、Pull Request 或手动 **Run workflow** 都会触发。
-
-流程使用 Ubuntu 24.04 与固定 NDK `26.3.11579264`：
-
-1. 获取仓库及构建所需的 talloc 子模块源码。
-2. 从固定来源下载、校验并静态编译依赖。
-3. 编译 ARM64 `pdn` 与 loader，检查动态依赖及宿主路径。
-4. 打包二进制、许可证、使用材料和对应源码，生成 SHA256。
-5. 单独构建引擎 AAR，逐字节核对其中的 PDN 和 loader 与原始 ELF，更新附件 SHA256。
-6. 上传 Actions artifact，保留 30 天。
-7. `main` 推送包含尚未发布的版本号时，自动创建对应 `v版本号` 标签和预发布 Release；同版本已发布时跳过，下一次发布先递增补丁版本号。`v*` 标签推送也可以发布，但标签必须与代码版本一致。
-
-Linux runner 执行交叉编译与产物检查，**不会被当成 Android 运行测试通过**。Pull Request 和手动构建只生成附件；发布步骤仅在 `main` 或版本标签推送后执行。
-
-仅构建引擎时，在 `android/` 执行 `sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar`，无需配置 GUI 和终端库模块；先按上文构建原生 PDN 与 loader。
-
-原 pr App 的构建保留在 [Legacy pr Android App](.github/workflows/legacy-pr.yml)，仅手动触发；它不属于独立 `pdn` 的默认构建流程。
-
-## 发布材料与源码
-
-发布包包含：
-
-| 文件 | 内容 |
+| 问题 | 快速检查 |
 | --- | --- |
-| `pdn`、`proot-distro-nolib`、`proot-loader` | ARM64 可执行程序与可选 loader |
-| `jniLibs/arm64-v8a/` | APK 使用的 `libpdn.so` 与匹配的 `libproot-loader.so` |
-| `SHA256SUMS` | 包内程序及两个 APK 原生库文件名产物的校验值 |
-| `BUILD-INFO.txt` | 项目版本、源码提交号、talloc 来源提交号 |
-| `README.md`、`README.en.md`、`CHANGELOG.md`、`docs/` | 项目介绍、更新记录和详细使用说明 |
-| `LICENSE`、`licenses/` | 项目许可证映射与第三方许可文本 |
-| `source.tar.gz` | 对应仓库源码、构建所需的 talloc 源码，以及四个依赖的原始源码归档 |
+| rootfs 或临时目录不可访问 | 检查真实身份、显式目录变量、目录存在性和权限。 |
+| 更新后仍显示旧版本 | 用完整路径运行，核对 PATH、已复制文件和 APK 内嵌副本。 |
+| Ubuntu 内找不到 rish 或一直出现 `>` | 先定义 Bash 函数；Ctrl+C 取消未结束的输入，完整复制代码块。 |
+| Shizuku/rish 断连 | 宿主保持前台，检查授权和服务；重启后重新建立会话。 |
+| App 中不能执行 `.so` | 检查 `nativeLibraryDir`、原生库解压和匹配 loader。 |
+| 命令执行失败但没抛 Java 异常 | 检查 `PdnResult.isSuccess()`、错误码、原因和建议。 |
 
-发布目录还提供独立的 `pdn-engine-版本号.aar`、`pdn`、`proot-loader`、`libpdn.so`、`libproot-loader.so`；外部 `SHA256SUMS` 同时校验 AAR、原始 ELF、两个 `.so` 和完整 `.tar.gz`。可在支持该工具的环境执行 `sha256sum -c SHA256SUMS`。源码包可独立解压后用上述 NDK 工具链运行 `make`；四个依赖归档已包含，编译时仍会验证其校验值。它不包含 Android SDK/NDK 本身。
+具体命令和排查路径见[常见问题](docs/pdn-faq.md)。
 
-转发二进制时请一起保留这些材料、对应源码与第三方许可证，不要只留下一个改名后的程序。项目继承上游的许可证，不把所有组件统一宣称为 MIT；具体范围见 [LICENSE](LICENSE) 和源文件中的声明。
+## 9. 现有局限
 
-## 来源与致谢
+- **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
+- **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不属于本次调试链路验收范围。
+- **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
+- **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
+- **发布与更新**：正式 Release/R8 混淆和 Maven 发布尚未验收；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
+- **旧 pr 接口**：0.6.6 AAR 已去掉旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。
 
-- [oonid/pr](https://github.com/oonid/pr)：本项目基底，提供 Android PRoot 适配及原有 App/CLI 实现。
-- [PRoot](https://github.com/proot-me/proot)、[Termux PRoot](https://github.com/termux/proot)：PRoot 引擎及 Android 相关改动；本仓库引擎源代码沿用 GPL-2.0-or-later 声明。
-- [Termux proot-distro](https://github.com/termux/proot-distro)：使用方式与发行版管理思路的参考；独立 `pdn` 不要求安装它。
-- [talloc / Samba](https://www.samba.org/)、[curl](https://curl.se/)、[Mbed TLS](https://github.com/Mbed-TLS/mbedtls)、[libarchive](https://www.libarchive.org/)、[zlib](https://zlib.net/)：构建中使用的组件。talloc 源文件声明 LGPL-3.0-or-later；其余组件许可随发布包附带。
-
-`nolib` 指运行时脱离 Termux，不抹去代码来源或上游贡献。原作者版权、许可证和 `pdn version` 中的基底信息继续保留。
-
-## 反馈
-
-欢迎提交 [Issue](https://github.com/EMERLADD/proot-distro-nolib/issues)，描述宿主 App、Android 版本、`pdn version`、复现命令和错误输出即可。不要贴密码、Token、设备序列号或其他隐私信息。
-
-想法、建议、文档改进也欢迎。当前暂不支持 OCI/Docker 镜像、跨架构模拟、自动镜像测速或后台会话管理，后续按实际需求逐步完善。
+各版本的实际验证范围见[测试记录](docs/pdn-error-testing.md)。

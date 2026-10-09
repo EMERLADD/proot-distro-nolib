@@ -2,6 +2,8 @@
 
 PDN 0.6.4 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
 
+当前 SDK 的异步任务、不可变配置、结构化查询和独立终端见 [AAR API](pdn-aar-api.md)。下文保留同步 `run()` 和协议 v1 的接入说明，仍可使用；交互终端推荐 `PdnTerminal`。
+
 ## 调用关系
 
 ```text
