@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前本地 ELF 与 AAR：**v0.6.10 · ARM64 Android · 早期测试版**。本轮补齐被 seccomp 拦截的 `faccessat2`、`renameat2` 兼容处理，避免丢弃标志；此前 `openat2` / tar 修复与三种接入的验证记录见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
+当前本地 ELF 与 AAR：**v0.6.11 · ARM64 Android · 早期测试版**。提供可选的 guest `/dev/full` 兼容；此前 syscall 修复与接入验收结果见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
 
 ## 目录
 
@@ -20,6 +20,12 @@
 ## 0. 这是什么？
 
 **PDN 是基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具。** 它把 PRoot 引擎、下载、校验、解压和发行版管理整合进一个 ARM64 Android 程序，让 Android 设备运行 Linux 环境，无需额外安装 Termux，也不需要宿主提供 Bash、Python、curl 或 tar。
+
+<p align="center">
+  <img src="docs/images/mt-ubuntu-highlighted.png" alt="MT 管理器内置终端通过 PDN 进入 Ubuntu，黄色框标出 MT 私有目录" width="420">
+</p>
+
+**实机演示：从 MT 管理器进入 Ubuntu。** 图中使用 MT 管理器内置终端模拟器，宿主是普通 App 权限下的 Android Shell；黄色框标出了 MT 私有目录 `/data/user/0/bin.mt.plus/files/term/home`。执行 `pdn login Ubuntu` 后进入 Ubuntu 24.04 LTS（ARM64）。Linux 中的 `root` 是 PRoot 模拟身份，不代表 Android 已取得 root；这条运行路径不需要 Termux 或 Shizuku。截图保留当时的版本号，见[未经标注的原图](docs/images/mt-ubuntu-original.jpg)。
 
 **启动轻快**：同一份 Alpine ARM64 归档，在清空环境变量、使用新 HOME 的 Termux 中，PDN 启动耗时约 **35 ms**，proot-distro 约 **269 ms**。
 

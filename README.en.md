@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.10 · ARM64 Android · Early test release**. This update handles blocked `faccessat2` and `renameat2` without discarding flags. See [test records](docs/pdn-error-testing.md) for the earlier `openat2` / tar fix and verification of all three integration paths. Downloads are available from [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases).
+Current local ELF and AAR: **v0.6.11 · ARM64 Android · Early test release**. Optional guest `/dev/full` compatibility is available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
 
 ## Contents
 
@@ -20,6 +20,12 @@ Current local ELF and AAR: **v0.6.10 · ARM64 Android · Early test release**. T
 ## 0. What is this?
 
 **PDN is a standalone Android Linux distribution manager based on [pr](https://github.com/oonid/pr).** It combines the PRoot engine, downloads, verification, extraction and distribution management in one ARM64 Android program. It lets Android devices run Linux environments without installing Termux or requiring the host to provide Bash, Python, curl or tar.
+
+<p align="center">
+  <img src="docs/images/mt-ubuntu-highlighted.png" alt="Ubuntu running through PDN in MT Manager’s built-in terminal, with the MT private directory highlighted" width="420">
+</p>
+
+**Device demonstration: from MT Manager into Ubuntu.** MT Manager’s built-in terminal emulator runs an Android shell with ordinary App privileges. The yellow outline marks MT’s private directory, `/data/user/0/bin.mt.plus/files/term/home`. Running `pdn login Ubuntu` enters Ubuntu 24.04 LTS (ARM64). Linux `root` is simulated by PRoot and does not grant Android root privileges; this path requires neither Termux nor Shizuku. The screenshot retains its original version number; see the [unannotated original](docs/images/mt-ubuntu-original.jpg).
 
 **Quick startup**: with the same Alpine ARM64 archive, cleared environment variables and a fresh HOME in Termux, PDN started in about **35 ms**, compared with **269 ms** for proot-distro.
 

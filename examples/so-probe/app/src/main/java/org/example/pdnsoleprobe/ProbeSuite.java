@@ -71,8 +71,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.10"), "version: " + c.stderr());
-            return "native PDN 0.6.10, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.11"), "version: " + c.stderr());
+            return "native PDN 0.6.11, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -129,6 +129,22 @@ public final class ProbeSuite {
                 try { deleteTree(temporary); }
                 finally { Files.deleteIfExists(probe.toPath()); }
             }
+        });
+        check(checks, "optional_dev_full", () -> {
+            ProcessBuilder builder = runtime.exec("alpine", Arrays.asList("/bin/sh", "-c",
+                    "test -c /dev/full || exit 21; "
+                    + "test \"$(/bin/busybox stat -c '%t:%T' /dev/full)\" = '1:7' || exit 22; "
+                    + "if printf x > /dev/full; then exit 23; fi; "
+                    + "if /bin/busybox dd if=/dev/zero of=/dev/full bs=1 count=1; then exit 25; fi; "
+                    + "exec 3<> /dev/full; if printf x >&3; then exit 24; fi; exec 3>&-; "
+                    + "/bin/busybox dd if=/dev/full bs=4 count=1 2>/dev/null | /bin/busybox od -An -t x1; "
+                    + "printf PDN_FULL_OK"));
+            builder.environment().put("PROOT_EMULATE_DEV_FULL", "1");
+            Capture c = run(builder);
+            require(c.result.isSuccess(), "dev/full: " + c.stderr() + " " + c.result.getMessage());
+            require(c.stdout().contains("00 00 00 00") && c.stdout().endsWith("PDN_FULL_OK"), "zero read: " + c.stdout());
+            require(c.stderr().contains("No space left on device"), "write must report ENOSPC: " + c.stderr());
+            return "opt-in guest character device; ENOSPC through redirection and duplicated descriptor; zero read";
         });
         check(checks, "guest_tar_directory_roundtrip", () -> {
             File temporary = Files.createTempDirectory(runtime.getProjectDir().toPath(), "tar-regression-").toFile();

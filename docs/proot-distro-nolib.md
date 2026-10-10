@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current native ELF version: **0.6.10**, based on **PRoot 5.4.0-pr**.
+Current native ELF version: **0.6.11**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
@@ -516,3 +516,19 @@ When an inherited Android seccomp filter traps `openat2`, PDN returns `ENOSYS` i
 ### Blocked access and rename calls
 
 Blocked `faccessat2` and `renameat2` also return `ENOSYS`. PDN does not drop access-check flags or turn `RENAME_NOREPLACE`, `RENAME_EXCHANGE` or `RENAME_WHITEOUT` into an ordinary rename. The caller must choose an appropriate fallback; software requiring these operations without a fallback receives an unsupported-syscall error. This policy applies to blocked calls, including zero flags, and leaves the existing unblocked syscall path unchanged.
+
+
+### Optional guest /dev/full
+
+On ARM64, set `PROOT_EMULATE_DEV_FULL=1` in the Android host environment before launching a guest:
+
+```sh
+PROOT_EMULATE_DEV_FULL=1 pdn login alpine
+PROOT_EMULATE_DEV_FULL=1 pdn exec alpine -- /bin/sh -c 'printf x > /dev/full'
+```
+
+For AAR hosts, set the variable on the returned `ProcessBuilder` environment before starting the process. A value of `0`, another value, or an unset variable leaves the feature disabled.
+
+When the native host `/dev/full` is absent or inaccessible, this supplies a guest compatibility device. It does not create an Android kernel device. Reads return zeros and writable writes fail with `ENOSPC`; descriptors retain identity across duplication and process inheritance. An explicit bind of another file over `/dev/full` retains its behavior. Ordinary files and `/dev/zero` are unaffected.
+
+Enabling compatibility adds read/write syscall tracing and has overhead. Default sessions retain their existing acceleration policy. This implements common synchronous device operations, not a complete virtual kernel; advanced asynchronous I/O interfaces are outside its supported scope. Emulated reads may return a short result of at most 64 KiB; callers must handle short reads normally. The emulation supports native 64-bit guest calls; `preadv2` and `pwritev2` return `EOPNOTSUPP`. The device cannot be memory-mapped. Host-side manager operations still need a real host `/dev/full` for that test.

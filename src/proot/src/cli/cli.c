@@ -484,6 +484,16 @@ int proot_main(int argc, char *const argv[])
 	if (NULL == getenv("PROOT_NO_MOUNTINFO"))
 		initialize_extension(tracee, mountinfo_callback, NULL);
 
+	const char *emulate_full = getenv("PROOT_EMULATE_DEV_FULL");
+	if (emulate_full != NULL && strcmp(emulate_full, "1") == 0) {
+		int full_status = initialize_extension(tracee, dev_full_callback, NULL);
+		if (full_status < 0) {
+			errno = -full_status;
+			note(tracee, ERROR, SYSTEM, "cannot initialize guest /dev/full compatibility");
+			goto error;
+		}
+	}
+
 	/* Start the first tracee.  */
 	status = launch_process(tracee, &argv[status]);
 	if (status < 0) {

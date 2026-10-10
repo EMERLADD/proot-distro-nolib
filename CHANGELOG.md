@@ -1,5 +1,14 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.11 — 2026-10-10
+
+- 增加可选 ARM64 guest `/dev/full` 兼容，以 `PROOT_EMULATE_DEV_FULL=1` 启用；默认不增加读写 syscall 追踪。
+- 支持读取全零、写入 ENOSPC、访问模式、设备信息及常用同步 I/O；利用实际 inode 保持 fd 复制、继承、复用和传递的一致性。
+- 补齐带标签指针、受保护缓冲区、向量边界与 statx 参数检查，并同步新版 ELF、`.so` 与 AAR。
+- 读取允许最多 64 KiB 的短读；仅支持原生 64 位 guest ABI，v2 定位向量 I/O 与异步 I/O 不在当前支持范围。
+
+验证：原生 238 通过 / 2 跳过；新增扩展行覆盖率 86.78%。AAR 测试 APK 50/50、直接 `.so` 测试 APK 42/42。中英文 README 增加 MT 内置终端进入 Ubuntu 的演示截图与目录高亮。
+
 ## v0.6.10 — 2026-10-10
 
 - 修复被 seccomp 拦截的 `faccessat2`、`renameat2` 兼容分支，返回 `ENOSYS` 交由调用方选择回退，不再静默丢弃访问检查和重命名标志。
