@@ -6,7 +6,7 @@
 
 | 版本 | 验证范围 | 结果 |
 | --- | --- | --- |
-| 0.6.9 | 继承 openat2 SIGSYS 与两种 App 接入 | 原生 224 通过 / 2 跳过；AAR APK 49/49；直接 .so APK 41/41；GNU tar 压力测试通过；修改行覆盖率 100%；MT 新 ELF 复测待反馈 |
+| 0.6.9 | 继承 openat2 SIGSYS 与两种 App 接入 | 原生 224 通过 / 2 跳过；AAR APK 49/49；直接 .so APK 41/41；GNU tar 压力测试通过；修改行覆盖率 100%；MT 新 ELF 诊断与完整压力测试通过 |
 | 0.6.8 | 继承 statx SIGSYS 的入口参数恢复 | 原生 223 通过 / 2 跳过；5 组文件压力测试；修改行覆盖率 100%；AAR/APK 未重建 |
 | 0.6.7 | 原始 ELF seccomp：Shell 加速及安全回退 | 原生 222 通过 / 2 跳过；路径 14/14；修改行覆盖率 85.71%；AAR/APK 未重建 |
 | 0.6.3 | 原生错误分类、JVM、rish 实机补测 | 原生 168 通过 / 2 跳过；JVM 53/53；rish 40/40 |
@@ -28,6 +28,7 @@
 
 | 接入 | 验收结果 | openat2 路径 |
 | --- | --- | --- |
+| 原始 ELF / MT 普通 App 启动 Ubuntu | 原诊断及完整压力通过 | 实际继承过滤器；GNU tar 解压与目录对比正常；无故障注入 |
 | AAR / 普通 App、targetSdk 35 | 49/49 | 继承 Seccomp 2；三次真实 SIGSYS；ENOSYS；openat 创建/读写回退；tar 往返 |
 | 直接 .so / 普通 App、targetSdk 35 | 41/41 | 同样验证实际 App 过滤器与回退，不以 Shell 通过替代 |
 
@@ -35,7 +36,7 @@
 
 另外在既有 Ubuntu 中，由 Android shell 启动器安装真实 openat2 TRAP 后启动同一 0.6.9 ELF，运行完整文件压力脚本：2050/2050 文件、50/50 链接、Errors 0、RESULT PASS、进程退出码 0，目录比较和 SHA256 清单一致。所有工作文件通过专用临时 bind 目录隔离，验收后清理。这是 GNU tar 的继承过滤器回归，不是原 MT 新会话的替代验收。
 
-原 MT 会话已证实错误与回退，但安装新 ELF 后仍需退出旧 Ubuntu、重新登录并重启 SSH，才能宣告原 MT 的新版实测完成。当前记录不把临时诊断库的成功冒充新版 MT 验收。
+最后通过 socat 连接 MT 外层普通 Android shell，核对其 PDN 为 0.6.9，SHA256 与交付原件一致，由该 shell 新启动 Ubuntu 执行原诊断及完整压力脚本。进程真实继承 Seccomp 2 / 一个过滤器，GNU tar 1.35 创建、列出、解压均退出 0，文件类型及内容正确，目录对比退出 0。完整压力脚本同样得到 Errors 0、2050/2050 文件、50/50 链接、RESULT PASS，进程退出 0。此次没有注入诊断库或额外过滤器，原 MT 环境的新版复测已完成。日志保存于交付目录 `v0.6.9/report/mt-diagnose.log` 与 `mt-stress.log`；专用临时 bind 目录已清理，已有 Ubuntu 和原诊断脚本保留。
 
 ## 0.6.8 statx SIGSYS 与文件压力测试
 
