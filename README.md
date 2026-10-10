@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前版本：**v0.6.6 · ARM64 Android · 早期测试版**。
+当前原始 ELF：**v0.6.7 · ARM64 Android · 早期测试版**。已发布 Release 与 AAR 为 **v0.6.6**；本轮仅更新原始 ELF 和对应 `.so` 副本。
 
 ## 目录
 
@@ -226,7 +226,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 - **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
 - **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不属于本次调试链路验收范围。
-- **执行性能**：默认关闭 PRoot 自带的 seccomp 加速；本次压缩和 C 编译比 Termux proot-distro 耗时更长。启动与运行任务分别测试，见[任务对比](docs/pdn-error-testing.md#066-短中长任务实测)。
+- **执行性能**：原始 ELF 在宿主无继承 seccomp 过滤器时自动尝试加速；已有过滤器、查询失败或显式禁用时保留完整追踪。普通 App 与现有 AAR 继续兼容策略。Shell 压缩测试耗时下降约 54%，见[加速验收](docs/pdn-error-testing.md#067-原始-elf-seccomp-加速)。
 - **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
 - **发布与更新**：Maven 发布尚未实现；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。

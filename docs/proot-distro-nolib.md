@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current project version: **0.6.6**, based on **PRoot 5.4.0-pr**.
+Current native ELF version: **0.6.7**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
@@ -487,3 +487,24 @@ its apk indexes. Each candidate mirror's checksum file matched the pinned hash;
 range downloads succeeded for USTC, NJU, the official CDN and dotsrc. TUNA had
 one connection timeout during these probes, after successful use in v0.3.0.
 Mirror availability varies by network; fallback does not imply a speed ranking.
+
+
+## Seccomp acceleration
+
+The native engine checks `PR_GET_SECCOMP` in its tracer before forking. It
+attempts to install its own acceleration filter only when the result is zero
+and `PROOT_NO_SECCOMP` is absent. Existing filters and query failures keep full
+syscall tracing. Filter installation failure also keeps full tracing.
+
+To allow automatic selection, run `unset PROOT_NO_SECCOMP` before `pdn login`
+or `pdn exec`. To disable acceleration, use `export PROOT_NO_SECCOMP=1`.
+Any existing value, including `0` or an empty string, disables acceleration.
+Engine verbose output contains `ptrace acceleration ... enabled` when the
+filter is active; `built-in accelerators: ... seccomp_filter = yes` in version
+output only confirms compile-time support.
+
+The existing published AAR still sets the disable variable. Ordinary App
+processes generally inherit Android filters and retain the compatibility path.
+This native ELF stage does not promise acceleration for MT's ordinary terminal,
+build an AAR/APK, or change Android SIGSYS handling. Verification and performance
+results are recorded in [the test record](pdn-error-testing.md#067-原始-elf-seccomp-加速).

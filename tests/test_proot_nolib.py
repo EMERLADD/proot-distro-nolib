@@ -83,6 +83,32 @@ class ProotNolibTests(unittest.TestCase):
             self.assertIn("guest groups isolated", result.stdout)
         self.assertEqual(os.getgroups(), before)
 
+    def test_explicit_seccomp_disable_preserves_variable_presence(self):
+        for value in ("1", "0", ""):
+            with self.subTest(value=value):
+                env = dict(self.env, PROOT_NO_SECCOMP=value)
+                result = self.invoke(["--verbose=1", "-0", str(self.probe), "groups"], env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("guest groups isolated", result.stdout)
+                self.assertNotIn("ptrace acceleration", result.stderr)
+
+    def test_inherited_seccomp_filter_uses_full_tracing(self):
+        self.assert_seccomp_fallback("exec-inherited-filter")
+
+    def test_denied_seccomp_query_uses_full_tracing(self):
+        self.assert_seccomp_fallback("exec-denied-seccomp-query")
+
+    def assert_seccomp_fallback(self, launcher):
+        env = dict(self.env)
+        env.pop("PROOT_NO_SECCOMP")
+        result = subprocess.run(
+            [str(self.probe), launcher, str(BINARY), "--verbose=1", "-0", str(self.probe), "groups"],
+            env=env, capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("guest groups isolated", result.stdout)
+        self.assertNotIn("ptrace acceleration", result.stderr)
+
     def test_help_and_version_without_host_environment(self):
         for option in ("--help", "--version", "-V", "--about"):
             env = {"PATH": "/system/bin"}
@@ -90,7 +116,7 @@ class ProotNolibTests(unittest.TestCase):
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("proot-distro-nolib 0.6.6", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.7", result.stdout)
             self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
             if option == "--help":
@@ -99,7 +125,7 @@ class ProotNolibTests(unittest.TestCase):
             else:
                 logo, version, _ = result.stdout.split("\n\n", 2)
                 self.assertEqual(len(logo.splitlines()), 5)
-                self.assertEqual(version, "proot-distro-nolib 0.6.6")
+                self.assertEqual(version, "proot-distro-nolib 0.6.7")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()

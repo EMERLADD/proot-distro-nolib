@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current version: **v0.6.6 · ARM64 Android · Early test release**.
+Current native ELF: **v0.6.7 · ARM64 Android · Early test release**. The published Release and AAR remain **v0.6.6**; this stage updates only native ELF files and their `.so` copies.
 
 ## Contents
 
@@ -226,7 +226,7 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
-- **Execution performance**: PRoot’s own seccomp acceleration is disabled by default; compression and C compilation took longer than Termux proot-distro in these tests. Startup and workload timings are measured separately; see the [workload comparison (Chinese)](docs/pdn-error-testing.md#066-短中长任务实测).
+- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Shell compression took about 54% less time in this test; see [verification (Chinese)](docs/pdn-error-testing.md#067-原始-elf-seccomp-加速).
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.

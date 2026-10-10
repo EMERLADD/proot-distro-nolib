@@ -6,12 +6,44 @@
 
 | 版本 | 验证范围 | 结果 |
 | --- | --- | --- |
+| 0.6.7 | 原始 ELF seccomp：Shell 加速及安全回退 | 原生 222 通过 / 2 跳过；路径 14/14；修改行覆盖率 85.71%；AAR/APK 未重建 |
 | 0.6.3 | 原生错误分类、JVM、rish 实机补测 | 原生 168 通过 / 2 跳过；JVM 53/53；rish 40/40 |
 | 0.6.4 | 启动错误、Release 原始 ELF、独立 AAR APK、直接 `.so` APK | 原生 209 通过 / 2 跳过；JVM 54/54；rish 28/28；AAR 19/19；`.so` 24/24 |
 | 0.6.5 | 本地 AAR 独立 App：异步任务、配置、查询、双终端 | 实机 33/33；SDK 合并行覆盖率 90.42% |
 | 0.6.6 | AAR 组件、Ubuntu 调试与三条路径实机验收 | SDK 90/90；打包 9/9；原生回归 16/16；rish 14/14；AAR 47/47；`.so` 38/38；MT 复现成功 |
 
 两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 组件精简那一轮未重新验收 APK；后续 Release 原件实测见本文路径边界记录。
+
+## 0.6.7 原始 ELF seccomp 加速
+
+本轮只更新原始 ELF、匹配 loader 和改名后的 `.so` 副本；既有 AAR 和已发布 Release 保持 0.6.6，不代表普通 App 已获得加速。LD_PRELOAD 反馈仍只记录。
+
+宿主 `PR_GET_SECCOMP == 0` 且不存在 `PROOT_NO_SECCOMP` 时尝试安装 PRoot 过滤器；已有过滤器、查询失败、显式禁用或安装失败继续完整追踪。Android shell 实测 `Seccomp: 0`，verbose 日志确认 `ptrace acceleration ... enabled`，不是仅凭版本输出中的编译能力判断。
+
+| 检查 | 结果 |
+| --- | --- |
+| 引擎回归 | 19/19 |
+| 管理器、事件、启动、配置、安装、归档与系统错误回归 | 203 通过，2 跳过 |
+| Android shell 策略及功能 | 10/10：自动启用、禁用值 1/0/空值、继承过滤器、查询 EPERM、SIGSYS、安装、身份、文件读写删除 |
+| 加速路径边界 | 14/14：guest /usr、嵌套 bind、路径组件边界、symlink、缺失目标等 |
+| LLVM 修改行覆盖率 | seccomp 6/6 可执行行；计入未覆盖的 User-Agent 常量修改行为 6/7（85.71%），不代表整个引擎覆盖率 |
+| 评审 | 规格及质量评审通过 |
+
+性能对照使用同一候选 ELF、同一 Alpine 3.24.2 rootfs，在单个已连接的 Android shell 中交替运行自动加速和显式禁用，各 3 次。计时包含一次 `pdn exec` 及 guest 命令，排除 rish 建连、安装与下载。64 MiB 内容为零填充文件；压缩解压后核对 SHA256。文件任务验证 1000 个文件、读取最后一个文件并删除目录。
+
+| 任务 | 自动加速中位数 | 显式禁用中位数 | 用时减少 |
+| --- | ---: | ---: | ---: |
+| 启动 `/bin/sh -c true` | 29 ms | 37 ms | 21.62% |
+| 64 MiB tar/gzip 压缩解压 | 1706 ms | 3679 ms | 53.63% |
+| 1000 个文件创建、检查、删除 | 2133 ms | 3403 ms | 37.32% |
+
+这是候选内部加速/禁用对照，没有重新测试 Termux proot-distro，也没有测本轮 C 编译或 Claude 下载速度。样本较少、有调度与缓存波动，不能推广成所有任务或普通 App 的固定收益。普通 MT 终端若继承 Android seccomp 过滤器仍走兼容路径。
+
+复测入口为 `scripts/test-pdn-seccomp.sh PDN LOADER ALPINE_ARCHIVE PROBE NEW_DIRECTORY`；probe 由 `tests/test_proot_nolib.py` 编译。脚本要求宿主无继承过滤器，自动加速未启用就失败。继承过滤器和查询失败由测试 probe 安装真实内核 BPF 过滤器触发，发行程序没有测试开关。路径测试沿用 `scripts/test-pdn-paths.sh`，本轮测试副本仅移除其强制禁用变量，并在运行前 unset。
+
+LLVM 普通插桩在 child exec 后无法写出该子进程的计数，补采构建仅通过链接器 `--wrap=execvp` 在调用原函数前执行 `__llvm_profile_write_file()`。写出钩子仅存在于测试构建，正常发行 ELF 未链接该对象。最后按源行核对执行计数，原始采集缓存验收后删除；正常产物和覆盖率摘要保留。
+
+交付目录 `/sdcard/yyd/PDN/v0.6.7/` 保存版本产物和报告，顶层原始 ELF/loader/`.so` 别名同步更新。未本机构建 AAR/APK，未发布新 GitHub Release。
 
 ## 事件与错误分类
 

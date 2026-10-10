@@ -23,6 +23,7 @@
 #include <sched.h>      /* CLONE_*,  */
 #include <sys/types.h>  /* pid_t, */
 #include <sys/ptrace.h> /* ptrace(1), PTRACE_*, */
+#include <sys/prctl.h>
 #include <sys/types.h>  /* waitpid(2), */
 #include <sys/wait.h>   /* waitpid(2), */
 #include <sys/utsname.h> /* uname(2), */
@@ -89,6 +90,8 @@ int launch_process(Tracee *tracee, char *const argv[])
 	long status;
 	pid_t pid;
 	int channel[2] = {-1, -1};
+	bool enable_seccomp = getenv("PROOT_NO_SECCOMP") == NULL
+		&& prctl(PR_GET_SECCOMP, 0, 0, 0, 0) == 0;
 
 	if (pdn_events_bootstrapping()) {
 		if (pipe2(channel, O_CLOEXEC | O_NONBLOCK) < 0) {
@@ -136,9 +139,8 @@ int launch_process(Tracee *tracee, char *const argv[])
 		 * does the same thing. */
 		kill(getpid(), SIGSTOP);
 
-		/* Seccomp disabled: Android zygote seccomp filter conflicts
-		 * with proot's BPF filter, causing SIGSYS on app processes. */
-		(void) tracee;
+		if (enable_seccomp)
+			enable_syscall_filtering(tracee);
 
 		/* Now process is ptraced, so the current rootfs is already the
 		 * guest rootfs.  Note: Valgrind can't handle execve(2) on
@@ -445,7 +447,8 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 	 * elsewhere, i.e in the ptrace emulation when single
 	 * stepping.  */
 	if (tracee->restart_how == 0) {
-		tracee->restart_how = PTRACE_SYSCALL;
+		tracee->restart_how = tracee->seccomp == ENABLED && !sysexit_necessary
+			? PTRACE_CONT : PTRACE_SYSCALL;
 	}
 
 	/* Not a signal-stop by default.  */

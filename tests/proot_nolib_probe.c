@@ -14,6 +14,34 @@
 
 int main(int argc, char **argv)
 {
+    if (argc >= 3 && (strcmp(argv[1], "exec-inherited-filter") == 0 ||
+                      strcmp(argv[1], "exec-denied-seccomp-query") == 0)) {
+        int deny_query = strcmp(argv[1], "exec-denied-seccomp-query") == 0;
+        struct sock_filter allow[] = {
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        struct sock_filter deny[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_prctl, 0, 3),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, PR_GET_SECCOMP, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        struct sock_fprog program = {
+            deny_query ? sizeof(deny) / sizeof(deny[0]) : sizeof(allow) / sizeof(allow[0]),
+            deny_query ? deny : allow,
+        };
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+            prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0)
+            return 40;
+        errno = 0;
+        int mode = prctl(PR_GET_SECCOMP, 0, 0, 0, 0);
+        if (deny_query ? mode != -1 || errno != EPERM : mode != SECCOMP_MODE_FILTER)
+            return 41;
+        execv(argv[2], argv + 2);
+        return 42;
+    }
     if (argc != 2)
         return 2;
 

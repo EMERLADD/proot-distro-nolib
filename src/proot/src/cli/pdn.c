@@ -379,7 +379,6 @@ int pdn_login(int argc, char *const argv[])
     if (!S_ISDIR(temp_stat.st_mode)) { result = temp_error(temp, temp_source, ENOTDIR); goto done; }
     if (access(temp, W_OK | X_OK) < 0) { result = temp_error(temp, temp_source, errno); goto done; }
     setenv("PROOT_TMP_DIR", temp, 1);
-    if (!nonempty("PROOT_NO_SECCOMP")) setenv("PROOT_NO_SECCOMP", "1", 1);
     unsetenv("LD_PRELOAD");
     unsetenv("LD_LIBRARY_PATH");
     unsetenv("ENV");
