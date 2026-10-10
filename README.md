@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前原始 ELF：**v0.6.7 · ARM64 Android · 早期测试版**。已发布 Release 与 AAR 为 **v0.6.6**；本轮仅更新原始 ELF 和对应 `.so` 副本。
+当前原始 ELF：**v0.6.8 · ARM64 Android · 早期测试版**。已发布 Release 与 AAR 为 **v0.6.6**；本轮仅更新原始 ELF 和对应 `.so` 副本。
 
 ## 目录
 

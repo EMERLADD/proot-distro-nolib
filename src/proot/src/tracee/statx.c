@@ -5,7 +5,7 @@
 #include "tracee/mem.h"
 
 int handle_statx_syscall(Tracee *tracee, bool from_sigsys) {
-	RegVersion regVersion = from_sigsys ? CURRENT : ORIGINAL;
+	RegVersion regVersion = from_sigsys && tracee->seccomp == ENABLED ? CURRENT : ORIGINAL;
 	struct statx_syscall_state state = {};
 	char guest_path[PATH_MAX] = {};
 	struct stat stat_buf = {};
