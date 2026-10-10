@@ -141,6 +141,38 @@ class ProotNolibTests(unittest.TestCase):
                 self.assertNotIn("ptrace acceleration", result.stderr)
                 self.assertFalse(list(self.tmp.glob("openat2-probe-*")))
 
+    def test_inherited_faccessat2_trap_returns_enosys_for_fallback(self):
+        self.assert_flagged_syscall_fallback(
+            "faccessat2", 5,
+            "faccessat2 returned ENOSYS; invalid path returned EFAULT; faccessat fallback passed",
+        )
+
+    def test_inherited_renameat2_trap_returns_enosys_without_mutation(self):
+        self.assert_flagged_syscall_fallback(
+            "renameat2", 6,
+            "renameat2 returned ENOSYS without mutation; invalid path returned EFAULT; renameat fallback passed",
+        )
+
+    def assert_flagged_syscall_fallback(self, syscall, traps, message):
+        for disabled in (True, False):
+            with self.subTest(disabled=disabled):
+                env = dict(self.env)
+                if not disabled:
+                    env.pop("PROOT_NO_SECCOMP")
+                result = subprocess.run(
+                    [str(self.probe), f"exec-inherited-{syscall}-trap", str(BINARY),
+                     "--verbose=3", "-0", str(self.probe), syscall],
+                    env=env, capture_output=True, text=True, timeout=20,
+                )
+                self.assertFalse(list(self.tmp.glob(f"{syscall}-probe-*")), result.stderr)
+                self.assertEqual(result.stderr.count(f"seccomp SIGSYS: {syscall}("), traps, result.stderr)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    result.stdout,
+                    f"inherited {syscall} TRAP filter active; seccomp mode=2\n{message}\n",
+                )
+                self.assertNotIn("ptrace acceleration", result.stderr)
+
     def assert_seccomp_fallback(self, launcher):
         env = dict(self.env)
         env.pop("PROOT_NO_SECCOMP")
@@ -159,7 +191,7 @@ class ProotNolibTests(unittest.TestCase):
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("proot-distro-nolib 0.6.9", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.10", result.stdout)
             self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
             if option == "--help":
@@ -168,7 +200,7 @@ class ProotNolibTests(unittest.TestCase):
             else:
                 logo, version, _ = result.stdout.split("\n\n", 2)
                 self.assertEqual(len(logo.splitlines()), 5)
-                self.assertEqual(version, "proot-distro-nolib 0.6.9")
+                self.assertEqual(version, "proot-distro-nolib 0.6.10")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()

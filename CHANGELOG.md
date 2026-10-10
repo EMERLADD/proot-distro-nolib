@@ -1,5 +1,11 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.10 — 2026-10-10
+
+- 修复被 seccomp 拦截的 `faccessat2`、`renameat2` 兼容分支，返回 `ENOSYS` 交由调用方选择回退，不再静默丢弃访问检查和重命名标志。
+- 为两个系统调用增加真实继承 BPF TRAP 回归，检查原文件内容、显式旧调用回退与临时文件清理。
+- 更新原始 ELF、`.so`、AAR 的版本；关闭已定位为 Claude 配置注入的 LD_PRELOAD 反馈记录。
+
 ## v0.6.9 — 2026-10-10
 
 - 修复 Android App 继承过滤器拦截 `openat2` 时错误转换参数的问题；返回 `ENOSYS` 让调用方自行回退，不丢弃路径约束。

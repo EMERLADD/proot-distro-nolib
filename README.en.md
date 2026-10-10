@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.9 · ARM64 Android · Early test release**. GitHub Release **v0.6.9** provides ELF, `.so`, AAR and ordinary test APKs for both App integration methods. This release fixes tar extraction failures caused by blocked `openat2` handling in Android Apps; MT, AAR APK and direct `.so` APK verification passed.
+Current local ELF and AAR: **v0.6.10 · ARM64 Android · Early test release**. This update handles blocked `faccessat2` and `renameat2` without discarding flags. See [test records](docs/pdn-error-testing.md) for the earlier `openat2` / tar fix and verification of all three integration paths. Downloads are available from [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases).
 
 ## Contents
 

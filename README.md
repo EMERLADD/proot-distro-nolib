@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前本地 ELF 与 AAR：**v0.6.9 · ARM64 Android · 早期测试版**。GitHub Release 为 **v0.6.9**，提供原始 ELF、`.so`、AAR 与两种接入方式的普通测试 APK。本轮修复 Android App 中 `openat2` 兼容处理导致的 tar 解压失败，MT、AAR APK 和直接 `.so` APK 均已验收通过。
+当前本地 ELF 与 AAR：**v0.6.10 · ARM64 Android · 早期测试版**。本轮补齐被 seccomp 拦截的 `faccessat2`、`renameat2` 兼容处理，避免丢弃标志；此前 `openat2` / tar 修复与三种接入的验证记录见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
 
 ## 目录
 

@@ -6,6 +6,7 @@
 
 | 版本 | 验证范围 | 结果 |
 | --- | --- | --- |
+| 0.6.10 | faccessat2 / renameat2 继承 SIGSYS | 原生 226 通过 / 2 跳过；修改行覆盖率 100%（3/3）；AAR APK 49/49、直接 .so APK 41/41 |
 | 0.6.9 | 继承 openat2 SIGSYS 与两种 App 接入 | 原生 224 通过 / 2 跳过；AAR APK 49/49；直接 .so APK 41/41；GNU tar 压力测试通过；修改行覆盖率 100%；MT 新 ELF 诊断与完整压力测试通过 |
 | 0.6.8 | 继承 statx SIGSYS 的入口参数恢复 | 原生 223 通过 / 2 跳过；5 组文件压力测试；修改行覆盖率 100%；AAR/APK 未重建 |
 | 0.6.7 | 原始 ELF seccomp：Shell 加速及安全回退 | 原生 222 通过 / 2 跳过；路径 14/14；修改行覆盖率 85.71%；AAR/APK 未重建 |
@@ -15,6 +16,16 @@
 | 0.6.6 | AAR 组件、Ubuntu 调试与三条路径实机验收 | SDK 90/90；打包 9/9；原生回归 16/16；rish 14/14；AAR 47/47；`.so` 38/38；MT 复现成功 |
 
 两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 组件精简那一轮未重新验收 APK；后续 Release 原件实测见本文路径边界记录。
+
+## 0.6.10 访问与重命名标志兼容
+
+真实继承 BPF `RET_TRAP` 分别拦截 `faccessat2`、`renameat2`，在 `PROOT_NO_SECCOMP` 存在与不存在时执行相同用例。旧 0.6.9 四组均失败：访问检查丢弃标志，重命名返回成功并改变文件。新版只在被拦截路径返回 ENOSYS，交由调用方决定是否回退；未被拦截路径不变。
+
+访问用例覆盖零标志、AT_EACCESS、AT_SYMLINK_NOFOLLOW、未知标志和不存在的目标，恰有五次 SIGSYS；检查文件内容、inode、模式、大小和链接目标保持不变，显式 faccessat 回退可用。重命名覆盖零标志、NOREPLACE、EXCHANGE、WHITEOUT、未知标志和新目标，恰有六次 SIGSYS；每次均检查源与目标内容不变、没有误创建目标，显式 renameat 回退成功。无效路径指针在原有入口翻译阶段得到 EFAULT，不计入 SIGSYS 次数。测试没有注入返回值，也没有给发行程序添加故障开关。
+
+引擎 23/23；管理器 203 通过 / 2 跳过；合计 226 通过 / 2 跳过。LLVM 修改行覆盖率 100%（两个 ENOSYS 返回与 User-Agent 共三行），不是全引擎覆盖率。User-Agent 覆盖使用受控的不存在 CA 文件触发下载失败，不计为成功下载验收。临时测试树清理通过。
+
+两种普通 Debug 测试 APK 使用同一新版 PDN/loader，ZIP 完整性、签名及内置原生文件逐字节核对通过。AAR APK 49/49、直接 `.so` APK 41/41；验证初始化、安装、命令、事件、任务与 PTY，并回归原 openat2/tar 用例。新增访问/重命名标志用例由前述真实继承过滤器测试覆盖，本轮没有把它们新增为 APK 检查项，也没有再次验收 MT。
 
 ## 0.6.9 Android App openat2 回退
 

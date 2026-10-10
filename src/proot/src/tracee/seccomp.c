@@ -747,9 +747,7 @@ static int handle_seccomp_event_common(Tracee *tracee)
 		break;
 
 	case PR_faccessat2:
-		set_sysnum(tracee, PR_faccessat);
-		poke_reg(tracee, SYSARG_4, 0);
-		restart_syscall_after_seccomp(tracee);
+		set_result_after_seccomp(tracee, -ENOSYS);
 		break;
 
 	case PR_openat2:
@@ -757,8 +755,7 @@ static int handle_seccomp_event_common(Tracee *tracee)
 		break;
 
 	case PR_renameat2:
-		set_sysnum(tracee, PR_renameat);
-		restart_syscall_after_seccomp(tracee);
+		set_result_after_seccomp(tracee, -ENOSYS);
 		break;
 
 	case PR_process_madvise:

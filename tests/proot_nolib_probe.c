@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/filter.h>
+#include <linux/fs.h>
 #include <linux/openat2.h>
 #include <linux/seccomp.h>
 #include <linux/stat.h>
@@ -16,6 +17,136 @@
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+static int check_payload(int directory, const char *path, const char *expected)
+{
+    char content[32] = {0};
+    int file = openat(directory, path, O_RDONLY);
+    if (file < 0) return 0;
+    ssize_t count = read(file, content, sizeof(content));
+    close(file);
+    return count == strlen(expected) && memcmp(content, expected, count) == 0;
+}
+
+static int probe_faccessat2(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    char directory[PATH_MAX];
+    int status = 80, parent = -1, file = -1;
+    if (!tmp || !*tmp) tmp = "/tmp";
+    if (snprintf(directory, sizeof(directory), "%s/faccessat2-probe-XXXXXX", tmp) >= sizeof(directory) ||
+        !mkdtemp(directory))
+        return status;
+    parent = open(directory, O_RDONLY | O_DIRECTORY);
+    if (parent < 0) goto cleanup;
+    file = openat(parent, "payload", O_CREAT | O_EXCL | O_RDWR, 0600);
+    if (file < 0 || write(file, "payload", 7) != 7 || symlinkat("payload", parent, "link") != 0)
+        goto cleanup;
+    struct stat before, after;
+    if (fstat(file, &before) != 0) goto cleanup;
+    const int flags[] = { 0, AT_EACCESS, AT_SYMLINK_NOFOLLOW, 0x40000000, 0 };
+    const char *paths[] = { "payload", "payload", "link", "payload", "missing" };
+    status = 0;
+    for (int i = 0; i < 5; i++) {
+        errno = 0;
+        long result = syscall(__NR_faccessat2, parent, paths[i], F_OK, flags[i]);
+        fprintf(stderr, "faccessat2 case %d: result=%ld errno=%d\n", i, result, errno);
+        if (result != -1 || errno != ENOSYS) status = 81;
+    }
+    errno = 0;
+    if (syscall(__NR_faccessat2, parent, (void *)1, F_OK, 0) != -1 || errno != EFAULT)
+        status = 82;
+    char link[32] = {0};
+    if (syscall(__NR_faccessat, parent, "payload", F_OK) != 0 ||
+        !check_payload(parent, "payload", "payload") || fstatat(parent, "payload", &after, 0) != 0 ||
+        before.st_ino != after.st_ino || before.st_mode != after.st_mode || before.st_size != after.st_size ||
+        readlinkat(parent, "link", link, sizeof(link)) != 7 || memcmp(link, "payload", 7) != 0)
+        status = 83;
+    if (!status) puts("faccessat2 returned ENOSYS; invalid path returned EFAULT; faccessat fallback passed");
+cleanup:
+    if (file >= 0) close(file);
+    if (parent >= 0) {
+        if (unlinkat(parent, "link", 0) != 0 && errno != ENOENT) status = 84;
+        if (unlinkat(parent, "payload", 0) != 0 && errno != ENOENT) status = 85;
+        close(parent);
+    }
+    if (rmdir(directory) != 0) status = 86;
+    return status;
+}
+
+static int probe_renameat2(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    char directory[PATH_MAX];
+    int status = 90, parent = -1, source = -1, destination = -1;
+    if (!tmp || !*tmp) tmp = "/tmp";
+    if (snprintf(directory, sizeof(directory), "%s/renameat2-probe-XXXXXX", tmp) >= sizeof(directory) ||
+        !mkdtemp(directory))
+        return status;
+    parent = open(directory, O_RDONLY | O_DIRECTORY);
+    if (parent < 0 || mkdirat(parent, "source", 0700) != 0 ||
+        mkdirat(parent, "destination", 0700) != 0)
+        goto cleanup;
+    source = openat(parent, "source", O_RDONLY | O_DIRECTORY);
+    destination = openat(parent, "destination", O_RDONLY | O_DIRECTORY);
+    if (source < 0 || destination < 0) goto cleanup;
+    const unsigned flags[] = { 0, RENAME_NOREPLACE, RENAME_EXCHANGE, RENAME_WHITEOUT, 0x40000000, 0 };
+    status = 0;
+    for (int i = 0; i < 6; i++) {
+        int file = openat(source, "payload", O_CREAT | O_TRUNC | O_WRONLY, 0600);
+        if (file < 0) { status = 91; goto cleanup; }
+        if (write(file, "source payload", 14) != 14) status = 91;
+        close(file);
+        file = openat(destination, "payload", O_CREAT | O_TRUNC | O_WRONLY, 0600);
+        if (file < 0) { status = 91; goto cleanup; }
+        if (write(file, "destination payload", 19) != 19) status = 91;
+        close(file);
+        errno = 0;
+        long result = syscall(__NR_renameat2, source, "payload", destination,
+                              i == 5 ? "unwanted" : "payload", flags[i]);
+        fprintf(stderr, "renameat2 case %d: result=%ld errno=%d\n", i, result, errno);
+        if (result != -1 || errno != ENOSYS) status = 92;
+        struct stat metadata;
+        if (!check_payload(source, "payload", "source payload") ||
+            !check_payload(destination, "payload", "destination payload") ||
+            fstatat(destination, "unwanted", &metadata, 0) != -1 || errno != ENOENT)
+            {
+                fprintf(stderr, "renameat2 case %d mutated paths\n", i);
+                status = 93;
+            }
+    }
+    errno = 0;
+    if (syscall(__NR_renameat2, source, (void *)1, destination, "payload", 0) != -1 || errno != EFAULT)
+        status = 94;
+    errno = 0;
+    if (syscall(__NR_renameat2, source, "payload", destination, (void *)1, 0) != -1 || errno != EFAULT)
+        status = 94;
+    struct stat metadata;
+    if (syscall(__NR_renameat, source, "payload", destination, "fallback") != 0 ||
+        !check_payload(destination, "fallback", "source payload") ||
+        !check_payload(destination, "payload", "destination payload") ||
+        fstatat(source, "payload", &metadata, 0) != -1 || errno != ENOENT)
+        status = 95;
+    if (!status) puts("renameat2 returned ENOSYS without mutation; invalid path returned EFAULT; renameat fallback passed");
+cleanup:
+    if (source >= 0) {
+        if (unlinkat(source, "payload", 0) != 0 && errno != ENOENT) status = 96;
+        close(source);
+    }
+    if (destination >= 0) {
+        const char *paths[] = { "payload", "unwanted", "fallback" };
+        for (int i = 0; i < 3; i++)
+            if (unlinkat(destination, paths[i], 0) != 0 && errno != ENOENT) status = 97;
+        close(destination);
+    }
+    if (parent >= 0) {
+        if (unlinkat(parent, "source", AT_REMOVEDIR) != 0 && errno != ENOENT) status = 98;
+        if (unlinkat(parent, "destination", AT_REMOVEDIR) != 0 && errno != ENOENT) status = 98;
+        close(parent);
+    }
+    if (rmdir(directory) != 0) status = 99;
+    return status;
+}
 
 static int probe_openat2(void)
 {
@@ -139,10 +270,19 @@ int main(int argc, char **argv)
     if (argc >= 3 && (strcmp(argv[1], "exec-inherited-filter") == 0 ||
                       strcmp(argv[1], "exec-inherited-statx-trap") == 0 ||
                       strcmp(argv[1], "exec-inherited-openat2-trap") == 0 ||
+                      strcmp(argv[1], "exec-inherited-faccessat2-trap") == 0 ||
+                      strcmp(argv[1], "exec-inherited-renameat2-trap") == 0 ||
                       strcmp(argv[1], "exec-denied-seccomp-query") == 0)) {
         int deny_query = strcmp(argv[1], "exec-denied-seccomp-query") == 0;
         int trap_statx = strcmp(argv[1], "exec-inherited-statx-trap") == 0;
         int trap_openat2 = strcmp(argv[1], "exec-inherited-openat2-trap") == 0;
+        int trap_faccessat2 = strcmp(argv[1], "exec-inherited-faccessat2-trap") == 0;
+        int trap_renameat2 = strcmp(argv[1], "exec-inherited-renameat2-trap") == 0;
+        int trap_enabled = trap_statx || trap_openat2 || trap_faccessat2 || trap_renameat2;
+        int trap_syscall = trap_openat2 ? __NR_openat2 : trap_faccessat2 ? __NR_faccessat2 :
+                           trap_renameat2 ? __NR_renameat2 : __NR_statx;
+        const char *trap_name = trap_openat2 ? "openat2" : trap_faccessat2 ? "faccessat2" :
+                                trap_renameat2 ? "renameat2" : "statx";
         struct sock_filter allow[] = {
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
@@ -156,13 +296,13 @@ int main(int argc, char **argv)
         };
         struct sock_filter trap[] = {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, trap_openat2 ? __NR_openat2 : __NR_statx, 0, 1),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, trap_syscall, 0, 1),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
         struct sock_fprog program = {
-            deny_query ? sizeof(deny) / sizeof(deny[0]) : trap_statx || trap_openat2 ? sizeof(trap) / sizeof(trap[0]) : sizeof(allow) / sizeof(allow[0]),
-            deny_query ? deny : trap_statx || trap_openat2 ? trap : allow,
+            deny_query ? sizeof(deny) / sizeof(deny[0]) : trap_enabled ? sizeof(trap) / sizeof(trap[0]) : sizeof(allow) / sizeof(allow[0]),
+            deny_query ? deny : trap_enabled ? trap : allow,
         };
         if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
             prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0)
@@ -171,8 +311,8 @@ int main(int argc, char **argv)
         int mode = prctl(PR_GET_SECCOMP, 0, 0, 0, 0);
         if (deny_query ? mode != -1 || errno != EPERM : mode != SECCOMP_MODE_FILTER)
             return 41;
-        if (trap_statx || trap_openat2) {
-            printf("inherited %s TRAP filter active; seccomp mode=2\n", trap_openat2 ? "openat2" : "statx");
+        if (trap_enabled) {
+            printf("inherited %s TRAP filter active; seccomp mode=2\n", trap_name);
             fflush(stdout);
         }
         execv(argv[2], argv + 2);
@@ -180,6 +320,12 @@ int main(int argc, char **argv)
     }
     if (argc != 2)
         return 2;
+
+    if (strcmp(argv[1], "faccessat2") == 0)
+        return probe_faccessat2();
+
+    if (strcmp(argv[1], "renameat2") == 0)
+        return probe_renameat2();
 
     if (strcmp(argv[1], "statx") == 0)
         return probe_statx();

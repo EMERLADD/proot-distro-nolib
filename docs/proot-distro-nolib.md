@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current native ELF version: **0.6.9**, based on **PRoot 5.4.0-pr**.
+Current native ELF version: **0.6.10**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
@@ -512,3 +512,7 @@ results are recorded in [the test record](pdn-error-testing.md#067-原始-elf-se
 ### Blocked openat2 in Android App environments
 
 When an inherited Android seccomp filter traps `openat2`, PDN returns `ENOSYS` instead of rewriting its structure-pointer arguments as `openat` flags. Programs such as GNU tar can then select their own `openat` fallback. PDN does not silently discard `openat2` resolution constraints. Programs requiring `openat2` without a fallback receive an unsupported-syscall error. Calls not trapped by seccomp retain their existing behavior.
+
+### Blocked access and rename calls
+
+Blocked `faccessat2` and `renameat2` also return `ENOSYS`. PDN does not drop access-check flags or turn `RENAME_NOREPLACE`, `RENAME_EXCHANGE` or `RENAME_WHITEOUT` into an ordinary rename. The caller must choose an appropriate fallback; software requiring these operations without a fallback receives an unsupported-syscall error. This policy applies to blocked calls, including zero flags, and leaves the existing unblocked syscall path unchanged.
