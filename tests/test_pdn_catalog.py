@@ -54,7 +54,7 @@ class CatalogTests(unittest.TestCase):
         self.root.parent.rename(parent)
         self.env["PDN_ROOTFS_DIR"] = str(parent)
         rows = self.data("distributions", "list", "--json")
-        self.assertEqual(rows, [{"name": "Ubuntu", "rootfs": str(parent / "Ubuntu")}])
+        self.assertEqual(rows, [{"name": "Ubuntu", "rootfs": str(parent / "Ubuntu"), "instance": None}])
 
     def test_mirrors_metadata(self):
         rows = self.data("mirrors", "mirrors", "alpine", "--json")
@@ -88,16 +88,18 @@ class CatalogTests(unittest.TestCase):
 
     def test_sigterm_reaps_guest_process_tree(self):
         pid_file = self.root / "root" / "child-pids"
-        script = "sleep 120 & child=$!; printf '%s %s' $$ $child > /root/child-pids; wait"
+        script = "/bin/busybox sleep 120 & child=$!; printf '%s %s' $$ $child > /root/child-pids; wait"
         process = subprocess.Popen([str(fixture.BINARY), "exec", "Ubuntu", "--", "/bin/sh", "-c", script],
                                    env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 5
-            while not pid_file.exists() and process.poll() is None and time.monotonic() < deadline:
+            pids = []
+            while process.poll() is None and time.monotonic() < deadline:
+                if pid_file.exists():
+                    pids = [int(value) for value in pid_file.read_text().split()]
+                    if len(pids) == 2: break
                 time.sleep(0.02)
-            self.assertTrue(pid_file.exists(), "guest command did not start")
-            pids = [int(value) for value in pid_file.read_text().split()]
-            self.assertEqual(len(pids), 2)
+            self.assertEqual(len(pids), 2, "guest command did not publish both process IDs")
             process.send_signal(signal.SIGTERM)
             process.communicate(timeout=5)
             for pid in pids:
@@ -106,7 +108,7 @@ class CatalogTests(unittest.TestCase):
         finally:
             if process.poll() is None:
                 process.kill()
-                process.communicate(timeout=5)
+            process.communicate(timeout=5)
 
     def test_human_output_unchanged(self):
         self.assertEqual(self.invoke("list").stdout, "Ubuntu\n")

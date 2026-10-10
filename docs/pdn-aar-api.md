@@ -94,6 +94,21 @@ PRoot、loader、guest shell 启动失败沿用 `PdnResult` 的分类、消息�
 
 需要自行读取 PTY 时可使用 `PdnTerminalSession.start(builder, rows, cols)`。读取返回正数表示字节数，-1 表示 PTY 挂断，0 表示暂无数据或 EOF；结合 `poll()` 判断退出，并在退出后排空剩余输出。不要与高层 `PdnTerminal` 同时读取同一 fd。新会话严格使用完整的 `ProcessBuilder.environment()`，清空环境会真的移除继承变量。
 
+## 安装别名与独立实例
+
+```kotlin
+val operation = pdn.installAs("alpine", "ai-python", mirror = "official")
+```
+
+```java
+ProcessBuilder operation = pdn.installAs("alpine", "ai-python");
+ProcessBuilder offline = pdn.installAs("alpine", "ai-node", null, archiveFile);
+```
+
+这与 `install()` 一样返回 `ProcessBuilder`，应交给已有操作接口执行。第三、第四参数分别为镜像与固定版本归档，二者互斥。后续 exec、login、backup 和 remove 使用实例名。不同实例的 rootfs 独立；显式绑定的共享项目目录仍然共享。
+
+元数据保存在 rootfs 的 `.pdn-instance`。安装在暂存目录写完后才发布；恢复保留可知的来源版本和摘要，生成新 ID、名称与时间。结构损坏时 `list --json` 返回 `instance_metadata_invalid`，不输出半截 JSON；元数据写入失败返回 `instance_metadata_failed` 并回滚暂存目录。元数据可被 guest 修改，不能作为安全身份或授权依据。
+
 ## 发行版与镜像
 
 ```java
@@ -103,7 +118,7 @@ List<PdnDistributionInfo> installed = catalog.installed();
 List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 ```
 
-查询是同步操作，GUI 应在后台调用。返回列表和条目不可修改。可安装条目提供名称、固定版本、架构和下载字节数；已安装条目提供名称与 rootfs 路径，未知版本、架构和大小为 null，不从当前下载目录推断已有系统的版本。
+查询是同步操作，GUI 应在后台调用。返回列表和条目不可修改。可安装条目提供名称、固定版本、架构和下载字节数；已安装条目提供名称与 rootfs 路径；`getInstance()` 返回可选的不可变 `PdnInstanceInfo`。其中包含稳定 ID、实例名、发行版及版本、架构、来源、来源 URL、归档 SHA256 和 Unix 秒创建时间。旧 rootfs 的实例信息为 null，查询不会改写它；来源未知的恢复实例可以保留 null 字段，不根据当前下载目录推断历史版本。
 
 镜像条目提供发行版、镜像名称、base URL、完整归档 URL、顺序与官方源标记。顺序是内置回退优先级，不是实时测速排名。
 

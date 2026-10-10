@@ -71,6 +71,8 @@ class InstallTests(unittest.TestCase):
 #include <mbedtls/md.h>
 #include <archive.h>
 #include <sys/file.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 static int test_flock(int fd, int operation) {{
     const char *fault = getenv("TEST_FLOCK_ERRNO");
     if (fault) {{ errno = atoi(fault); return -1; }}
@@ -103,7 +105,7 @@ static int test_openat(int parent, const char *name, int flags, ...) {{
 #define openat test_openat
 #define flock test_flock
 #define mbedtls_md_file(info, path, digest) (getenv("TEST_HASH_FAIL") ? -1 : mbedtls_md_file(info, path, digest))
-#define rename(source, destination) (getenv("TEST_PUBLISH_FAIL") ? (errno = EIO, -1) : rename(source, destination))
+#define syscall(number, sourcefd, source, destinationfd, destination, flags) (getenv("TEST_PUBLISH_FAIL") ? (errno = EIO, -1) : syscall(number, sourcefd, source, destinationfd, destination, flags))
 #define archive_write_data_block(out, data, size, offset) (getenv("TEST_EXTRACT_FAIL") ? (archive_set_error(out, EIO, "injected extraction write failure"), ARCHIVE_FATAL) : archive_write_data_block(out, data, size, offset))
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
 int pdn_login(int argc, char *const argv[]) {{
@@ -155,7 +157,7 @@ int main(int argc, char **argv) {{
             flags += ["-fprofile-instr-generate", "-fcoverage-mapping", "-DPDN_TEST_COVERAGE"]
             runtime = subprocess.check_output([compiler, "-print-resource-dir"], text=True).strip()
             flags += [f"{runtime}/lib/linux/libclang_rt.profile-aarch64-android.a"]
-        subprocess.run([compiler, *flags, str(source), str(PROJECT / "src/proot/src/cli/pdn_events.c"), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
+        subprocess.run([compiler, *flags, str(source), str(PROJECT / "src/proot/src/cli/pdn_events.c"), str(PROJECT / "src/proot/src/cli/pdn_instance.c"), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
                         "-lcurl", "-larchive", "-lmbedtls", "-lmbedx509", "-lmbedcrypto", "-lz",
                         "-o", str(cls.harness)], check=True)
         if os.environ.get("PDN_COVERAGE"):

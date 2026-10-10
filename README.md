@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前本地 ELF 与 AAR：**v0.6.11 · ARM64 Android · 早期测试版**。提供可选的 guest `/dev/full` 兼容；此前 syscall 修复与接入验收结果见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
+当前本地 ELF 与 AAR：**v0.6.12 · ARM64 Android · 早期测试版**。支持安装别名和稳定实例元数据；此前 syscall 修复与接入验收结果见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
 
 ## 目录
 
@@ -127,6 +127,17 @@ mkdir -p "$PROOT_TMP_DIR"
 ```
 
 支持 Alpine、Ubuntu Base、Debian slim 和 Arch Linux ARM。官方源选择、离线归档、挂载、账号、默认配置、备份恢复和完整指令索引见[发行版管理教程](docs/pdn-distributions.md)。
+
+同一发行版可以安装成不同实例；各自拥有独立 rootfs：
+
+```sh
+./pdn install alpine --name ai-python
+./pdn install alpine --name ai-node
+./pdn login ai-python
+./pdn list --json
+```
+
+名称最多 128 个 ASCII 字符，首字符为字母、数字或下划线，后续还允许点和短横线；名称冲突不区分大小写。新实例记录稳定 ID、来源、版本、摘要和创建时间。旧 rootfs 查询为 `instance: null`，不会自动改写；备份恢复为新实例时生成新 ID。
 
 ### 3.3 在 Linux 内调用 Android 调试命令
 

@@ -199,6 +199,27 @@ class PdnRuntimeTest {
         assertThrows(IllegalArgumentException::class.java) { pdn.clearConfig("../x") }
         assertThrows(IllegalArgumentException::class.java) { pdn.saveConfig("../x", listOf("--user", "root")) }
     }
+    @Test fun namedInstallsPreserveSourceOptionsAndValidateAsciiBoundaries() {
+        val host = host()
+        binaries(host)
+        val runtime = PdnRuntime(host)
+        val archive = File(temporary.root, "local archive.tar.gz")
+        val name = "A" + "a".repeat(127)
+        assertEquals(runtime.command(listOf("install", "alpine", "--name", name)), runtime.installAs("alpine", name).command())
+        assertEquals(runtime.command(listOf("install", "alpine", "--name", "ai-python", "--mirror", "official")),
+            runtime.installAs("alpine", "ai-python", "official").command())
+        assertEquals(runtime.command(listOf("install", "alpine", "--name", "_instance.1", "--archive", archive.absolutePath)),
+            runtime.installAs("alpine", "_instance.1", archive = archive).command())
+        for (invalid in listOf("", "a".repeat(129), "中文", "é", ".hidden", "--help", "../a", "a b", "a\u0000b", "a\nb")) {
+            assertThrows(IllegalArgumentException::class.java) { runtime.installAs("alpine", invalid) }
+        }
+        assertThrows(IllegalArgumentException::class.java) { runtime.installAs("--help", "alias") }
+        assertThrows(IllegalArgumentException::class.java) { runtime.installAs("alpine", "alias", "official", archive) }
+        for (mirror in listOf("", " ", "--help", "a\u0000b")) {
+            assertThrows(IllegalArgumentException::class.java) { runtime.installAs("alpine", "alias", mirror) }
+        }
+    }
+
     @Test fun configurationUsesLiteralArgvAndWholeOperationOverrides() {
         val host = host()
         binaries(host)

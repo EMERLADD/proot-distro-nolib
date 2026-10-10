@@ -122,3 +122,16 @@ pdn login ubuntu-copy
 | `proot` | 直接使用底层 PRoot 参数 |
 
 结构化查询支持 `list --json`、`list --available --json` 和 `mirrors 名称 --json`。GUI 可使用 AAR 的类型化查询及事件接口，无需解析供人阅读的终端文本。
+
+## 安装别名与元数据
+
+```sh
+pdn install alpine --name ai-python --mirror official
+pdn install alpine --archive /path/alpine.tar.gz --name ai-node
+pdn exec ai-python -- /bin/sh -c 'echo hello'
+pdn list --json
+pdn backup ai-python /path/ai-python.tar.gz
+pdn restore ai-restored /path/ai-python.tar.gz
+```
+
+新安装实例在 `.pdn-instance` 中保存稳定 ID 与来源信息。旧 rootfs 的 JSON `instance` 为 null，查询只读。restore 生成新的实例身份并保留可知的来源；名称已存在时拒绝覆盖。安装别名不提供直接 clone 或 rename。

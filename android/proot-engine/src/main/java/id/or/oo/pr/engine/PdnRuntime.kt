@@ -86,6 +86,19 @@ class PdnRuntime @JvmOverloads constructor(
         return processBuilder(args)
     }
 
+    @JvmOverloads
+    fun installAs(distro: String, instanceName: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
+        require(instanceName.length <= 128 && Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*").matches(instanceName)) { "Invalid instance name: $instanceName" }
+        val args = mutableListOf("install", distroName(distro), "--name", instanceName)
+        require(mirror == null || archive == null) { "Choose either a mirror or a local archive" }
+        if (mirror != null) {
+            require(mirror.isNotBlank() && !mirror.startsWith("-")) { "A mirror name is required" }
+            args += listOf("--mirror", mirror)
+        }
+        if (archive != null) args += listOf("--archive", archive.absolutePath)
+        return processBuilder(args)
+    }
+
     fun remove(name: String): ProcessBuilder = processBuilder(listOf("remove", distroName(name), "--yes"))
 
     @JvmOverloads

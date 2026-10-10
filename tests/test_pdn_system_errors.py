@@ -43,7 +43,7 @@ int proot_main(int argc, char *const argv[]) {
         cls.harness = directory / "pdn"
         native = fixture.PROJECT / "src/proot/src/cli"
         subprocess.run([compiler, *flags, str(source),
-                        *(str(native / name) for name in ("pdn.c", "pdn_config.c", "pdn_remove.c", "pdn_events.c")),
+                        *(str(native / name) for name in ("pdn.c", "pdn_config.c", "pdn_remove.c", "pdn_events.c", "pdn_instance.c")),
                         f"-I{fixture.PROJECT / 'src/proot/src'}", "-o", str(cls.harness)], check=True)
         if os.environ.get("PDN_COVERAGE"):
             shutil.copy2(cls.harness, fixture.PROJECT / "build/pdn-system-coverage-harness")

@@ -45,6 +45,24 @@ public final class NativeRuntime {
     public ProcessBuilder install(String name, String mirror, File archive) throws IOException {
         return processBuilder(Arrays.asList("install", name, archive == null ? "--mirror" : "--archive", archive == null ? mirror : archive.getAbsolutePath()));
     }
+    public ProcessBuilder installAs(String distro, String instanceName) throws IOException {
+        return installAs(distro, instanceName, null, null);
+    }
+    public ProcessBuilder installAs(String distro, String instanceName, String mirror) throws IOException {
+        return installAs(distro, instanceName, mirror, null);
+    }
+    public ProcessBuilder installAs(String distro, String instanceName, String mirror, File archive) throws IOException {
+        if (distro == null || !distro.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")) throw new IllegalArgumentException("Invalid distro name");
+        if (instanceName == null || instanceName.length() > 128 || !instanceName.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")) throw new IllegalArgumentException("Invalid instance name");
+        if (mirror != null && archive != null) throw new IllegalArgumentException("Choose either a mirror or a local archive");
+        List<String> args = new ArrayList<>(Arrays.asList("install", distro, "--name", instanceName));
+        if (mirror != null) {
+            if (mirror.trim().isEmpty() || mirror.startsWith("-")) throw new IllegalArgumentException("A mirror name is required");
+            args.add("--mirror"); args.add(mirror);
+        }
+        if (archive != null) { args.add("--archive"); args.add(archive.getAbsolutePath()); }
+        return processBuilder(args);
+    }
     public ProcessBuilder exec(String name, List<String> cmd) throws IOException { return exec(new File(rootfs, name), cmd); }
     public ProcessBuilder exec(File root, List<String> cmd) throws IOException {
         List<String> a = new ArrayList<>(loginArguments(root)); a.set(0, "exec"); a.add("--"); a.addAll(cmd); return processBuilder(a);

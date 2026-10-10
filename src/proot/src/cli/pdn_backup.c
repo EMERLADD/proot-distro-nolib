@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "pdn_events.h"
+#include "pdn_instance.h"
 
 char *pdn_rootfs_base(void);
 static volatile sig_atomic_t stopped;
@@ -75,10 +76,10 @@ static void rootfs_problem(int code)
                        "Set PDN_ROOTFS_DIR to a writable directory");
 }
 
-static int valid_name(const char *name)
+static int valid_backup_name(const char *name)
 {
     const unsigned char *p = (const unsigned char *)name;
-    if (!*p || *p == '.') return 0;
+    if (!p || !*p || *p == '.') return 0;
     for (; *p; p++)
         if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
               (*p >= '0' && *p <= '9') || *p == '.' || *p == '_' || *p == '-')) return 0;
@@ -344,7 +345,7 @@ int pdn_archive(const char *name, const char *file, int restoring)
     struct archive *out = NULL;
     struct limits limits = {0};
     pdn_events_stage("preparing");
-    if (!valid_name(name) || !*file) { problem("archive_invalid", "invalid name or archive path"); return 2; }
+    if (!(restoring ? pdn_instance_valid_name(name) : valid_backup_name(name)) || !*file) { problem("archive_invalid", "invalid name or archive path"); return 2; }
     stopped = 0;
     action.sa_handler = interrupt_archive;
     sigemptyset(&action.sa_mask);
@@ -382,7 +383,13 @@ int pdn_archive(const char *name, const char *file, int restoring)
         if (lstat("bin", &st) < 0 || (!S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode))) {
             problem("archive_invalid", "archive does not contain a Linux rootfs at its top level"); goto done;
         }
-        if (stopped || fchdir(basefd) < 0) goto done;
+        int instancefd = open(".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (instancefd < 0) { system_error("instance_metadata_failed", "cannot open restored instance", errno); goto done; }
+        int metadata_result = pdn_instance_restore(instancefd, name);
+        close(instancefd);
+        if (metadata_result < 0) goto done;
+        if (stopped) goto done;
+        if (fchdir(basefd) < 0) { system_error("publish_failed", "cannot enter rootfs directory", errno); goto done; }
         pdn_events_stage("publishing");
         free(found); found = lookup(basefd, name, &count);
         if (count < 0) { system_error("publish_failed", "cannot publish rootfs without replacing an existing entry", errno); goto done; }
@@ -396,6 +403,8 @@ int pdn_archive(const char *name, const char *file, int restoring)
         rootfd = openat(basefd, found, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
         if (rootfd < 0 || fstat(rootfd, &st) < 0) { system_error("file_io_failed", "rootfs unavailable or in use; exit its sessions before backup", errno); goto done; }
         if (acquire_lock(rootfd, "rootfs unavailable or in use; exit its sessions before backup") < 0) goto done;
+        struct pdn_instance instance;
+        if (pdn_instance_read(rootfd, &instance) < 0) { system_error("instance_metadata_failed", "cannot read backup instance metadata", errno); goto done; }
         if (asprintf(&rootpath, "%s/%s", resolved, found) < 0) { problem("out_of_memory", "cannot allocate backup path"); goto done; }
         destination = strdup(file);
         if (!destination) { problem("out_of_memory", "cannot allocate backup path"); goto done; }

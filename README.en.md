@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.11 · ARM64 Android · Early test release**. Optional guest `/dev/full` compatibility is available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
+Current local ELF and AAR: **v0.6.12 · ARM64 Android · Early test release**. Named installations and stable instance metadata are available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
 
 ## Contents
 
@@ -127,6 +127,17 @@ After exiting Linux, execute a command or manage the system from the host shell:
 ```
 
 Alpine, Ubuntu Base, Debian slim and Arch Linux ARM are supported. See [distribution management](docs/pdn-distributions.en.md) for official sources, offline archives, binds, accounts, default configuration, backups and the full command index.
+
+Install the same distribution under separate names, each with its own rootfs:
+
+```sh
+./pdn install alpine --name ai-python
+./pdn install alpine --name ai-node
+./pdn login ai-python
+./pdn list --json
+```
+
+Names contain up to 128 ASCII letters, digits, underscores, dots or hyphens, starting with a letter, digit or underscore. Collisions are case insensitive. New instances record a stable ID, provenance, version, digest and creation time. Legacy rootfs queries return `instance: null` without modifying them; restoring a backup creates a fresh ID.
 
 ### 3.3 Call Android debugging commands from Linux
 

@@ -1,5 +1,14 @@
 # proot-distro-nolib 更新记录
 
+## v0.6.12 — 2026-10-10
+
+- 增加 `install DISTRO --name INSTANCE`，允许同一发行版安装为多个独立 rootfs，保留原安装调用方式。
+- 新实例保存稳定随机 ID、名称、来源、版本、架构、摘要与创建时间；JSON 和 AAR 查询兼容无元数据的旧 rootfs，且不修改它们。
+- 安装在暂存目录写完元数据后原子发布并拒绝覆盖；备份保留来源，恢复生成新的实例 ID、名称和时间。
+- AAR 增加 Java/Kotlin `installAs` 与不可变 `PdnInstanceInfo`；同步原始 ELF、直接 `.so` 接入和两种独立测试 App。
+
+验证：原生 254 通过 / 2 个既有环境限制跳过，SDK 97/97，打包与发布边界 14/14。新增元数据模块行覆盖率 100%，本轮修改 C 行覆盖率 98.38%，SDK 总体行覆盖率 86.33%。实机四路径与 GUI 结果见测试记录。
+
 ## v0.6.11 — 2026-10-10
 
 - 增加可选 ARM64 guest `/dev/full` 兼容，以 `PROOT_EMULATE_DEV_FULL=1` 启用；默认不增加读写 syscall 追踪。

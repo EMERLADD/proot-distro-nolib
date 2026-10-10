@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current native ELF version: **0.6.11**, based on **PRoot 5.4.0-pr**.
+Current native ELF version: **0.6.12**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project

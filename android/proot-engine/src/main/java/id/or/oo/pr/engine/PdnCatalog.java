@@ -67,10 +67,52 @@ public final class PdnCatalog {
                 JSONObject row = rows.getJSONObject(i);
                 String name = string(row, "name");
                 if (available) values.add(new PdnDistributionInfo(name, string(row, "version"), string(row, "architecture"), number(row, "download_size"), null));
-                else values.add(new PdnDistributionInfo(name, null, null, null, string(row, "rootfs")));
+                else values.add(new PdnDistributionInfo(name, null, null, null, string(row, "rootfs"), instance(row, name)));
             }
             return Collections.unmodifiableList(values);
         } catch (Exception failure) { throw invalid(failure); }
+    }
+
+    private static PdnInstanceInfo instance(JSONObject row, String rowName) throws JSONException {
+        if (!row.has("instance") || row.isNull("instance")) return null;
+        JSONObject object = row.getJSONObject("instance");
+        long version = number(object, "version");
+        String id = string(object, "id");
+        String name = string(object, "name");
+        String architecture = string(object, "architecture");
+        String source = string(object, "source");
+        String distro = nullableString(object, "distro");
+        String distroVersion = nullableString(object, "distro_version");
+        String sourceUrl = nullableString(object, "source_url");
+        String sha256 = nullableString(object, "sha256");
+        long createdAt = number(object, "created_at");
+        if (version != 1 || !id.matches("[0-9a-f]{32}") || !name.equals(rowName)
+                || name.length() > 128 || !name.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")
+                || !architecture.equals("aarch64")
+                || !(source.equals("archive") || source.equals("mirror") || source.equals("restore"))
+                || (sha256 != null && !sha256.matches("[0-9a-f]{64}"))
+                || (distro != null && (distro.length() > 128 || !distro.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")))
+                || !optionalAscii(distroVersion, 128) || !optionalAscii(sourceUrl, 2048)
+                || (!source.equals("restore") && (distro == null || distroVersion == null || sha256 == null))
+                || (source.equals("mirror") && sourceUrl == null)) {
+            throw new IllegalArgumentException("Invalid instance metadata");
+        }
+        return new PdnInstanceInfo((int)version, id, name, distro, distroVersion, architecture,
+            source, sourceUrl, sha256, createdAt);
+    }
+
+    private static boolean optionalAscii(String value, int limit) {
+        if (value == null) return true;
+        if (value.isEmpty() || value.length() > limit) return false;
+        for (int i = 0; i < value.length(); i++) if (value.charAt(i) < 32 || value.charAt(i) > 126) return false;
+        return true;
+    }
+
+    private static String nullableString(JSONObject object, String key) throws JSONException {
+        Object value = object.get(key);
+        if (value == JSONObject.NULL) return null;
+        if (!(value instanceof String)) throw new IllegalArgumentException("Invalid " + key);
+        return (String)value;
     }
 
     static List<PdnMirrorInfo> mirrorRows(byte[] bytes) throws PdnHostException {

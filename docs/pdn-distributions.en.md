@@ -122,3 +122,16 @@ Directory owner rwx permissions are added where necessary; host ownership and se
 | `proot` | Use underlying PRoot options directly |
 
 Structured queries support `list --json`, `list --available --json` and `mirrors NAME --json`. GUI hosts can use typed AAR queries and events instead of parsing human-readable terminal output.
+
+## Installation aliases and metadata
+
+```sh
+pdn install alpine --name ai-python --mirror official
+pdn install alpine --archive /path/alpine.tar.gz --name ai-node
+pdn exec ai-python -- /bin/sh -c 'echo hello'
+pdn list --json
+pdn backup ai-python /path/ai-python.tar.gz
+pdn restore ai-restored /path/ai-python.tar.gz
+```
+
+New installations store a stable ID and provenance in `.pdn-instance`. Legacy rootfs entries have JSON `instance: null`; queries are read only. Restore creates a fresh identity and retains known provenance, refusing existing names. Aliases do not add direct clone or rename operations.

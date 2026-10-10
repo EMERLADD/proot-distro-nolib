@@ -74,8 +74,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.11"), "version: " + c.stderr());
-            return "native PDN 0.6.11, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.12"), "version: " + c.stderr());
+            return "native PDN 0.6.12, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -94,6 +94,58 @@ public final class ProbeSuite {
                 require(c.events.stream().anyMatch(e -> "stage".equals(e.getType())), "installation callbacks");
             }
             return "pinned official offline ARM64 archive; verified, extracted and configured";
+        });
+        check(checks, "named_instances", () -> {
+            File archive = new File(host.getCacheDir(), "alpine.tar.gz");
+            File backup = new File(host.getCacheDir(), "instance-" + java.util.UUID.randomUUID() + ".tar.gz");
+            try {
+                Capture a = run(runtime.installAs("alpine", "ai-python", null, archive));
+                Capture b = run(runtime.installAs("alpine", "ai-node", null, archive));
+                require(a.result.isSuccess() && b.result.isSuccess(), "alias installs: " + a.stderr() + b.stderr());
+                Capture listing = run(runtime.processBuilder(Arrays.asList("list", "--json")));
+                require(listing.result.isSuccess(), "instance listing: " + listing.stderr());
+                JSONArray rows = new JSONObject(listing.stdout()).getJSONArray("distributions");
+                JSONObject first = null, second = null;
+                for (int i = 0; i < rows.length(); i++) {
+                    JSONObject row = rows.getJSONObject(i);
+                    if ("ai-python".equals(row.getString("name"))) first = row.getJSONObject("instance");
+                    if ("ai-node".equals(row.getString("name"))) second = row.getJSONObject("instance");
+                }
+                require(first != null && second != null, "instance metadata missing");
+                require(!first.getString("id").equals(second.getString("id")), "instance IDs must differ");
+                require("alpine".equals(first.getString("distro")) && "archive".equals(first.getString("source")), "instance provenance");
+                id.or.oo.pr.engine.PdnInstanceInfo typedInfo = runtime.catalog().installed().stream().filter(row -> "ai-python".equals(row.getName())).findFirst().get().getInstance();
+                require(typedInfo != null && first.getString("id").equals(typedInfo.getId()) && "alpine".equals(typedInfo.getDistro()), "typed SDK instance query");
+                Capture conflict = run(runtime.installAs("alpine", "AI-PYTHON", null, archive));
+                require(!conflict.result.isSuccess() && "rootfs_exists".equals(conflict.result.getCode()), "case-insensitive alias collision");
+                Capture write = run(runtime.exec("ai-python", Arrays.asList("/bin/sh", "-c", "printf INSTANCE_A > /tmp/pdn-instance-proof")));
+                Capture separate = run(runtime.exec("ai-node", Arrays.asList("/bin/sh", "-c", "test ! -e /tmp/pdn-instance-proof")));
+                require(write.result.isSuccess() && separate.result.isSuccess(), "isolated rootfs contents");
+                Capture saved = run(runtime.processBuilder(Arrays.asList("backup", "ai-python", backup.getAbsolutePath())));
+                Capture restored = run(runtime.processBuilder(Arrays.asList("restore", "ai-restored", backup.getAbsolutePath())));
+                require(saved.result.isSuccess() && restored.result.isSuccess(), "instance restore: " + saved.stderr() + restored.stderr());
+                Capture after = run(runtime.processBuilder(Arrays.asList("list", "--json")));
+                require(after.result.isSuccess(), "restored listing");
+                JSONArray restoredRows = new JSONObject(after.stdout()).getJSONArray("distributions");
+                boolean found = false;
+                for (int i = 0; i < restoredRows.length(); i++) {
+                    JSONObject row = restoredRows.getJSONObject(i);
+                    JSONObject info = row.getJSONObject("instance");
+                    if ("ai-python".equals(row.getString("name"))) require(first.getString("id").equals(info.getString("id")), "stable instance ID");
+                    if ("ai-restored".equals(row.getString("name"))) {
+                        found = true;
+                        require(!first.getString("id").equals(info.getString("id")), "restore must generate a new ID");
+                        require("restore".equals(info.getString("source")) && first.getString("sha256").equals(info.getString("sha256")), "restore provenance");
+                    }
+                }
+                require(found, "restored instance missing");
+                Capture read = run(runtime.exec("ai-restored", Arrays.asList("/bin/sh", "-c", "cat /tmp/pdn-instance-proof")));
+                require(read.result.isSuccess() && "INSTANCE_A".equals(read.stdout()), "restored instance contents");
+                return "same distro aliases, stable distinct IDs, structured provenance, conflict refusal, isolated files and fresh restore identity";
+            } finally {
+                for (String name : Arrays.asList("ai-restored", "ai-node", "ai-python")) run(runtime.remove(name));
+                Files.deleteIfExists(backup.toPath());
+            }
         });
         ProbePathChecks.verify(checks, this, runtime, log);
         check(checks, "exec_stdout_stderr_workspace", () -> {

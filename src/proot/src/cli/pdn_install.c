@@ -13,11 +13,13 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "pdn_distros.h"
 #include "pdn_events.h"
 #include "pdn_json.h"
+#include "pdn_instance.h"
 #include <sys/wait.h>
 
 char *pdn_rootfs_base(void);
@@ -183,7 +185,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
     curl = curl_easy_init();
     if (!curl) { fclose(transfer.file); return problem("download_failed", "cannot initialize HTTPS"); }
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.11");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.12");
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -644,11 +646,14 @@ static int initialize_arch(void)
     return 0;
 }
 
-int pdn_install(const char *name, const char *local_archive, const char *mirror_name)
+int pdn_install_as(const char *name, const char *local_archive, const char *mirror_name, const char *alias)
 {
     struct distro distro;
     pdn_events_stage("preparing");
     if (find_distro(name, &distro) < 0) return problem("distro_unknown", "unknown distro; run pdn list --available") != 0;
+    const char *instance_name = alias ? alias : distro.name;
+    if (!pdn_instance_valid_name(instance_name)) return problem("name_invalid", "invalid instance name; use at most 128 ASCII name characters") != 0;
+    if (local_archive && mirror_name) return problem("invalid_arguments", "archive and mirror options are mutually exclusive") != 0;
     const struct mirror *mirrors = distro.mirrors;
     size_t count = 0, i;
     while (count < 5 && mirrors[count].name) count++;
@@ -694,7 +699,7 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
         else system_error("lock_failed", "cannot acquire install lock; another install may be running", saved);
         goto done;
     }
-    int existing = exists_distro(distro.name);
+    int existing = exists_distro(instance_name);
     if (existing < 0) goto done;
     if (existing) { problem("rootfs_exists", "rootfs already exists; no files changed"); goto done; }
     if (!mkdtemp(stage)) { system_error("file_io_failed", "cannot create installation directory", errno); goto done; }
@@ -722,21 +727,28 @@ int pdn_install(const char *name, const char *local_archive, const char *mirror_
     if (extract(&distro, archive) != 0 || configure(&distro, &mirrors[downloaded]) != 0 || cancelled) goto restore;
     if (!strcmp(distro.name, "arch") && initialize_arch() < 0) goto restore;
     if (cancelled) goto restore;
+    int instancefd = open(".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (instancefd < 0) { system_error("instance_metadata_failed", "cannot open staged instance", errno); goto restore; }
+    int metadata_result = pdn_instance_create(instancefd, instance_name, distro.name, distro.version,
+                                             distro.sha256, local_archive ? "archive" : "mirror",
+                                             local_archive ? NULL : mirrors[downloaded].url);
+    close(instancefd);
+    if (metadata_result < 0 || cancelled) goto restore;
     if (fchdir(basefd) < 0) { system_error("publish_failed", "cannot enter rootfs directory", errno); goto restore; }
-    existing = exists_distro(distro.name);
+    existing = exists_distro(instance_name);
     if (existing < 0) goto restore;
     if (existing) { problem("rootfs_exists", "rootfs appeared during installation; refusing to replace it"); goto restore; }
     pdn_events_stage("publishing");
     {
         char source[sizeof(stage) + 8];
         snprintf(source, sizeof(source), "%s/rootfs", stage);
-        if (rename(source, distro.name) < 0) {
+        if (syscall(SYS_renameat2, basefd, source, basefd, instance_name, 1) < 0) {
             if (errno == EEXIST) problem("rootfs_exists", "cannot finish installation");
             else system_error("publish_failed", "cannot finish installation", errno);
             goto restore;
         }
     }
-    printf("%s installed. Run: pdn login %s\n", distro.name, distro.name);
+    printf("%s installed. Run: pdn login %s\n", instance_name, instance_name);
     result = 0;
 restore:
     sigaction(SIGINT, &old_int, NULL);
@@ -751,4 +763,9 @@ done:
     free(archive); free(base);
     if (cancelled) pdn_events_cancelled(cancelled);
     return result;
+}
+
+int pdn_install(const char *name, const char *local_archive, const char *mirror_name)
+{
+    return pdn_install_as(name, local_archive, mirror_name, NULL);
 }

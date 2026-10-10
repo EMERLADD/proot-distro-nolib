@@ -11,9 +11,10 @@
 #include "cli/pdn_config.h"
 #include "cli/pdn_events.h"
 #include "cli/pdn_json.h"
+#include "cli/pdn_instance.h"
 
 #ifdef PDN_WITH_INSTALL
-int pdn_install(const char *name, const char *local_archive, const char *mirror_name);
+int pdn_install_as(const char *name, const char *local_archive, const char *mirror_name, const char *alias);
 int pdn_mirrors(const char *name);
 int pdn_available(void);
 int pdn_available_json(void);
@@ -118,7 +119,7 @@ static int help(void)
     puts("pdn - proot-distro-nolib\n"
          "Usage:\n"
 #ifdef PDN_WITH_INSTALL
-         "  pdn install NAME [--mirror NAME | --archive PATH]\n"
+         "  pdn install DISTRO [--name INSTANCE] [--mirror NAME | --archive PATH]\n"
          "  pdn mirrors [NAME] [--json]\n  pdn list --available [--json]\n"
          "  pdn backup NAME FILE.tar.gz\n  pdn restore NAME FILE.tar.gz\n"
 #endif
@@ -442,9 +443,11 @@ done:
 
 static int list(int json)
 {
-    char *base = pdn_rootfs_base();
+    char *base = pdn_rootfs_base(), *buffer = NULL;
     struct dirent **entries;
-    int count, i, emitted = 0;
+    int count, emitted = 0, result = 0;
+    size_t size = 0;
+    FILE *output = stdout;
     if (!base) return coded_fail(nonempty("PDN_ROOTFS_DIR") || nonempty("HOME") ? "out_of_memory" : "invalid_argument", "set PDN_ROOTFS_DIR or HOME", "list");
     count = scandir(base, &entries, NULL, alphasort);
     if (count < 0) {
@@ -453,24 +456,49 @@ static int list(int json)
         if (saved == ENOENT) { puts(json ? "{\"version\":1,\"distributions\":[]}" : "No local rootfs found."); return 0; }
         return root_error(strerror(saved), "rootfs directory", saved);
     }
-    if (json) fputs("{\"version\":1,\"distributions\":[", stdout);
-    for (i = 0; i < count; i++) {
+    if (json) {
+        output = open_memstream(&buffer, &size);
+        if (!output) { result = coded_fail("out_of_memory", "cannot allocate instance listing", "list"); goto done; }
+        fputs("{\"version\":1,\"distributions\":[", output);
+    }
+    for (int i = 0; i < count; i++) {
         char *path = join(base, entries[i]->d_name);
         if (valid_name(entries[i]->d_name) && directory(path)) {
             if (json) {
-                if (emitted++) fputc(',', stdout);
-                fputs("{\"name\":", stdout);
-                pdn_json_string(stdout, entries[i]->d_name);
-                fputs(",\"rootfs\":", stdout);
-                pdn_json_string(stdout, path);
-                fputc('}', stdout);
+                struct pdn_instance instance;
+                int rootfd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+                if (rootfd < 0) { result = root_error(strerror(errno), path, errno); free(path); break; }
+                int status = pdn_instance_read(rootfd, &instance), saved = errno;
+                close(rootfd);
+                if (status < 0 || (status > 0 && strcmp(instance.name, entries[i]->d_name))) {
+                    fprintf(stderr, "pdn: invalid instance metadata for %s: %s\n", entries[i]->d_name, strerror(status < 0 ? saved : EINVAL));
+                    pdn_events_system_problem("instance_metadata_invalid", "Cannot read valid instance metadata", "Inspect .pdn-instance or restore a valid backup; plain list and explicit rootfs execution remain available", status < 0 ? saved : EINVAL);
+                    result = 2; free(path); break;
+                }
+                if (emitted++) fputc(',', output);
+                fputs("{\"name\":", output);
+                pdn_json_string(output, entries[i]->d_name);
+                fputs(",\"rootfs\":", output);
+                pdn_json_string(output, path);
+                fputs(",\"instance\":", output);
+                if (status) pdn_instance_json(output, &instance);
+                else fputs("null", output);
+                fputc('}', output);
             } else puts(entries[i]->d_name);
         }
-        free(path); free(entries[i]);
+        free(path);
     }
-    if (json) puts("]}");
-    free(entries); free(base);
-    return 0;
+    if (json) {
+        fputs("]}\n", output);
+        if (ferror(output)) result = coded_fail("file_io_failed", "cannot prepare instance listing", "list");
+        if (fclose(output) != 0 && !result) result = coded_fail("file_io_failed", "cannot finish instance listing", "list");
+        output = NULL;
+        if (!result && fwrite(buffer, 1, size, stdout) != size) result = coded_fail("file_io_failed", "cannot write instance listing", "list");
+    }
+done:
+    for (int i = 0; i < count; i++) free(entries[i]);
+    free(entries); free(base); free(buffer);
+    return result;
 }
 
 static int dispatch(int argc, char *const argv[])
@@ -497,10 +525,15 @@ static int dispatch(int argc, char *const argv[])
         if (equal(argv[1], "install")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3) return fail("missing distro", "run list --available");
-            if (argc == 3) return pdn_install(argv[2], NULL, NULL);
-            if (argc == 5 && equal(argv[3], "--archive")) return pdn_install(argv[2], argv[4], NULL);
-            if (argc == 5 && equal(argv[3], "--mirror")) return pdn_install(argv[2], NULL, argv[4]);
-            return fail("usage", "install NAME [--mirror NAME | --archive PATH]");
+            const char *alias = NULL, *archive = NULL, *mirror = NULL;
+            for (int i = 3; i < argc; i += 2) {
+                if (i + 1 >= argc) return fail("missing option value", argv[i]);
+                if (equal(argv[i], "--name") && !alias) alias = argv[i + 1];
+                else if (equal(argv[i], "--archive") && !archive && !mirror) archive = argv[i + 1];
+                else if (equal(argv[i], "--mirror") && !mirror && !archive) mirror = argv[i + 1];
+                else return fail("unexpected or duplicate install option", argv[i]);
+            }
+            return pdn_install_as(argv[2], archive, mirror, alias);
         }
 #endif
         if (equal(argv[1], "login") || equal(argv[1], "exec") || equal(argv[1], "config")) return pdn_login(argc, argv);
