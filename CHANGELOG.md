@@ -4,7 +4,7 @@
 
 - 增加 `clone SOURCE TARGET` 与 `rename SOURCE TARGET`，以及 Java/Kotlin 同名方法；来源兼容旧名称，目标沿用 128 字符名称限制。
 - clone 创建独立 rootfs、生成新 ID 和创建时间、标记 `source=clone`，保留已知发行版来源；rename 保留 ID、创建时间和来源，只更新名称。
-- 迁移实例自身的宿主绝对软链接、link2symlink backing 链接和 bind 路径；兼容 Android 路径别名及 rootfs 目录软链接别名，不改相邻实例与外部 bind。
+- 迁移实例自身的宿主绝对软链接、link2symlink backing 链接和 bind 路径。修复 App 使用 `/data/user/0`、引擎规范化为 `/data/data` 时，clone 将内部 `.l2s` 错判为外部 backing 而失败的问题；也兼容 rootfs 目录软链接别名，不改相邻实例与外部 bind。
 - 操作期间持有全局安装锁和来源 rootfs 排他锁；拒绝覆盖、活动会话、损坏元数据和不安全配置，支持仅改变大小写的 rename。
 - rename 为软链接、配置和元数据保留回滚记录，普通失败或 SIGINT/SIGTERM 时恢复；配置及元数据快照保留原始字节与权限，回滚失败保留恢复文件并明确报错。SIGKILL 或断电后的恢复仍为后续工作。
 
