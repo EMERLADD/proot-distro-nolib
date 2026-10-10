@@ -114,3 +114,7 @@ Deliver matching ELF, `.so`, AAR and loader files, refreshing unversioned aliase
 - [talloc / Samba](https://www.samba.org/), [curl](https://curl.se/), [Mbed TLS](https://github.com/Mbed-TLS/mbedtls), [libarchive](https://www.libarchive.org/), [zlib](https://zlib.net/): build components. talloc sources declare LGPL-3.0-or-later; other license texts are bundled.
 
 The entire project is not declared MIT. See [LICENSE](../LICENSE) and individual source declarations for scope. `nolib` means independence from Termux dynamic libraries at runtime, without removing upstream origins, copyrights or contributions.
+
+## Device acceptance before publication
+
+CI creates draft Releases. Before publishing, verify the exact candidate artifacts in four independent Android App builds: AAR Debug, AAR Release with R8, direct SO Debug, and direct SO Release with R8. Confirm actual class renaming, signatures, manifests and embedded native bytes, then exercise initialization, installation, commands, events and PTY on Android. Linux cross-compilation does not replace this gate. Release test Apps use a Debug test key and are not production-signed. Publish the draft only after all four pass.

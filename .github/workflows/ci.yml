@@ -46,6 +46,7 @@ jobs:
       - name: Package and verify AAR
         run: |
           python3 -m unittest discover -s tests -p test_release_packaging.py -v
+          python3 -m unittest discover -s tests -p test_release_publish.py -v
           python3 scripts/package-aar.py android/proot-engine/build/outputs/aar/proot-engine-debug.aar
       - name: Verify package checksums
         working-directory: build/packages

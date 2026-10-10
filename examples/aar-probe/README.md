@@ -39,7 +39,7 @@ Termux 内使用：
 ./gradlew -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.5（versionCode 6）。
+输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.7（versionCode 8）。
 
 ## 界面与验收
 

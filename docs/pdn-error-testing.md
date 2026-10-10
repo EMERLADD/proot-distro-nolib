@@ -18,6 +18,23 @@
 
 两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 组件精简那一轮未重新验收 APK；后续 Release 原件实测见本文路径边界记录。
 
+## 0.6.11 发布原件四种 App 验收
+
+使用 GitHub Release 0.6.11 的实际 AAR、PDN 和 loader 重新构建四种测试 APK，下载校验及 APK 内 PDN/loader 字节核对通过。此前本地构建的结果与这一轮发布原件验收分开记录。
+
+| 接入方式 | 无混淆 Debug | Release / R8 | 实际改名类数 |
+| --- | --- | --- | --- |
+| AAR | 50/50 | 50/50 | 32 个 SDK 类 |
+| 直接 `.so` | 42/42 | 42/42 | 34 个示例类 |
+
+四种均通过独立普通 App 中的初始化、内置官方归档安装、命令、事件、错误、PTY 与 tar、可选 /dev/full 检查。这里使用 suiteOnly instrumentation，不把接口/PTY 验收写成 GUI 按钮验收。Release 启用 R8 混淆、优化和资源压缩，使用默认优化/JNI 规则；mapping 确认实际类名改变。ZIP、签名、包名、minSdk 28、targetSdk 35、Debug/非 debuggable Release 属性检查通过；测试 APK 均使用本地 Debug 测试密钥，不是生产签名。报告、mapping、校验记录位于 `build/v0611-release-matrix/`。
+
+两个 R8 Release APK 另完成实际 GUI 按钮验收，AAR 50/50、直接 `.so` 42/42，报告均包含 `gui_controls_tested=true`；初始化、安装按钮处理、命令、打开终端、输入、resize、Ctrl-C、关闭与全部验收通过。后台启动受限制时先把测试 Activity 带到前台；Shizuku 连接中断后恢复再验收，未把连接问题计为引擎故障。
+
+MT 普通终端通过独立临时目录运行同一发布 PDN/loader，进入既有 Ubuntu。设备类型、1:7 设备号、读取全零、dd 写入 ENOSPC 与复制描述符写入失败通过；2000 个数据文件和一个可执行文件的 tar.gz 打包、解压、目录对比、相对符号链接及执行读取通过。临时宿主目录与 guest 测试树自动删除，未替换既有 MT 程序或发行版。首轮夹具的相对链接写错，修正为 source 内的 bin/codex 后重跑通过。
+
+本轮发现 CI 在四种实机验收前自动公开了 0.6.11 原生附件。发布脚本现改为仅创建草稿 Release，四种候选原件验收通过后再公开；默认提交与推送仍自动进行。草稿创建、已有版本不覆盖、缺失附件、摘要不匹配及版本标签不匹配共 5 项检查通过，原有打包测试 9/9。
+
 ## 0.6.11 可选 guest /dev/full
 
 `PROOT_EMULATE_DEV_FULL=1` 启用虚拟设备，其余值与未设置保持默认行为。真实 guest 调用覆盖读取全零、标量/向量/定位写入 ENOSPC、只读/只写/O_PATH、受保护与无效缓冲区、带标签的大块 malloc 指针、向量数量/长度溢出、跨页短读、设备 stat/statx、参数校验、seek、mmap/truncate/ioctl/sync 拒绝，以及不支持的 v2/数据传输调用。

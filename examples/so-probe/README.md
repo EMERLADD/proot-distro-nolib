@@ -33,7 +33,7 @@ Termux 内使用：
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.3（versionCode 4）。
+输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.5（versionCode 6）。
 
 ## 运行验收
 

@@ -44,7 +44,7 @@ Linux CI 负责交叉编译和打包检查；实机验证范围见上方记录�
 EOF
 commit=${RELEASE_COMMIT:-$(git rev-parse HEAD)}
 gh release create "$tag" --repo "$repository" --target "$commit" \
-    --title "$tag — proot-distro-nolib ARM64" --prerelease \
+    --title "$tag — proot-distro-nolib ARM64" --prerelease --draft \
     --notes-file "$notes" \
     "build/packages/$package" "build/packages/$aar" "build/packages/$lite" \
     build/packages/pdn build/packages/proot-loader \

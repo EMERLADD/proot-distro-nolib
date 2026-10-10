@@ -198,6 +198,7 @@ Commit message policy:
 - Keep the PDN version, download User-Agent, current-version documentation and tests consistent.
 - When delivering PDN artifacts, refresh unversioned ELF, `.so` and AAR aliases in the delivery directory and verify both `version` and `--version` against the current version. Preserve versioned historical artifacts.
 - When updating App version metadata, increment versionName's patch component and versionCode.
+- Before publishing PDN releases or test APKs, validate AAR and direct `.so` integration in both unminified Debug and R8-minified Release Apps on Android. Check actual mapping, packaged native bytes, signatures, initialization, installation, commands, events and PTY. CI creates draft Releases; publish only after the four-path acceptance passes.
 - Commit completed project changes by default and push to the current branch's established remote unless instructed otherwise.
 - Honor explicit instructions to skip APK builds, including when changing App version metadata.
 

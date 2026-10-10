@@ -72,7 +72,7 @@ sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
 4. 打包二进制、许可文本、使用材料与对应源码，生成 SHA256。
 5. 单独构建引擎 AAR，执行 JVM 测试和覆盖率检查，核对 AAR 内 PDN/loader 与原始 ELF 的字节一致性，更新附件 SHA256。
 6. 上传 Actions artifact，保留 30 天。
-7. `main` 推送包含尚未发布的版本号时，自动创建对应版本标签及预发布 Release；同版本已发布则跳过。版本标签推送也可发布，但标签需与代码版本一致。
+7. `main` 推送包含尚未发布的版本号时，自动创建对应版本标签及草稿预发布 Release；同版本已发布则跳过。版本标签推送也可发布，但标签需与代码版本一致。
 
 Pull Request 和手动构建仅生成附件，发布仅在 `main` 或版本标签推送后进行。Linux runner 的交叉编译与产物检查不能替代 Android 实机运行验收。
 
@@ -114,3 +114,7 @@ sha256sum -c SHA256SUMS
 - [talloc / Samba](https://www.samba.org/)、[curl](https://curl.se/)、[Mbed TLS](https://github.com/Mbed-TLS/mbedtls)、[libarchive](https://www.libarchive.org/)、[zlib](https://zlib.net/)：使用的构建组件；talloc 源文件声明 LGPL-3.0-or-later，其余许可附在发布包中。
 
 项目不统一宣称为 MIT；许可证范围见 [LICENSE](../LICENSE) 和源文件声明。`nolib` 说明运行不依赖 Termux 动态库，不抹去上游来源、版权或贡献。
+
+## 发布前实机验收
+
+CI 只创建草稿 Release。公开发布前，使用候选附件原件完成四种独立 App 验收：AAR Debug、AAR Release/R8、直接 `.so` Debug、直接 `.so` Release/R8。核对实际类名混淆、签名、Manifest、APK 内原生文件字节，并在 Android 验证初始化、发行版安装、命令、事件和 PTY。四种全部通过后才公开草稿并上传测试 APK。Release 测试 APK 使用 Debug 测试密钥，不是生产签名。Linux CI 的编译成功不替代这一步。
