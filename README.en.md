@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current native ELF: **v0.6.8 · ARM64 Android · Early test release**. The published Release and AAR remain **v0.6.6**; this stage updates only native ELF files and their `.so` copies.
+Current local ELF and AAR: **v0.6.9 · ARM64 Android · Early test release**. The published GitHub Release remains **v0.6.6**; this stage builds matching ELF, `.so`, AAR and test APKs for both App integration methods.
 
 ## Contents
 

@@ -74,8 +74,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.6"), "version: " + c.stderr());
-            return "native PDN 0.6.6, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.9"), "version: " + c.stderr());
+            return "native PDN 0.6.9, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -105,6 +105,51 @@ public final class ProbeSuite {
             require(new String(Files.readAllBytes(new File(runtime.getProjectDir(), "probe.txt").toPath()), StandardCharsets.UTF_8).equals("persist"), "workspace persistence");
             require(c.events.stream().anyMatch(e -> "running".equals(e.getStage())), "guest started event");
             return "fake root, exact argv, independent streams and shared project file";
+        });
+        check(checks, "openat2_inherited_app_filter", () -> {
+            String status = new String(Files.readAllBytes(new File("/proc/self/status").toPath()), StandardCharsets.UTF_8);
+            require(java.util.regex.Pattern.compile("(?m)^Seccomp:\\s*2\\s*$").matcher(status).find(), "inherited App seccomp filter missing");
+            File probe = new File(runtime.getProjectDir(), "openat2-probe");
+            File temporary = null;
+            try {
+                try (java.io.InputStream input = context.getAssets().open("openat2-probe")) {
+                    Files.copy(input, probe.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                require(probe.setExecutable(true, false), "probe executable");
+                temporary = Files.createTempDirectory(runtime.getProjectDir().toPath(), "openat2-regression-").toFile();
+                ProcessBuilder builder = runtime.exec("alpine", Arrays.asList("/bin/sh", "-c",
+                        "TMPDIR=/workspace/" + temporary.getName() + " exec /workspace/openat2-probe openat2"));
+                builder.environment().put("PROOT_VERBOSE", "3");
+                Capture c = run(builder);
+                require(c.result.isSuccess(), "openat2: " + c.stderr() + " " + c.result.getMessage());
+                require(c.stdout().equals("openat2 directory, create and invalid-pointer returned ENOSYS; openat fallback passed; payload=inherited openat2 fallback payload\n"), "openat2 output: " + c.stdout());
+                int trapped = c.stderr().split(java.util.regex.Pattern.quote("seccomp SIGSYS: openat2("), -1).length - 1;
+                require(trapped == 3, "expected three inherited openat2 SIGSYS traps, got " + trapped + ": " + c.stderr());
+                String[] remaining = temporary.list();
+                require(remaining != null && remaining.length == 0, "probe filesystem cleanup");
+                return "App seccomp mode=2; three real SIGSYS traps; ENOSYS without creation; openat directory/create/write/read fallback";
+            } finally {
+                try { deleteTree(temporary); }
+                finally { Files.deleteIfExists(probe.toPath()); }
+            }
+        });
+        check(checks, "guest_tar_directory_roundtrip", () -> {
+            File temporary = Files.createTempDirectory(runtime.getProjectDir().toPath(), "tar-regression-").toFile();
+            try {
+                String directory = "/workspace/" + temporary.getName();
+                Capture c = run(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c",
+                        "set -e; cd " + directory + "; mkdir -p source/bin extracted; "
+                        + "printf 'PDN_TAR_PAYLOAD\\n' > source/bin/payload; "
+                        + "/bin/busybox tar -cf archive.tar -C source .; "
+                        + "/bin/busybox tar -xf archive.tar -C extracted; "
+                        + "/bin/busybox cmp source/bin/payload extracted/bin/payload; "
+                        + "cat extracted/bin/payload; rm -rf source extracted archive.tar")));
+                require(c.result.isSuccess(), "tar directory roundtrip: " + c.stderr());
+                require(c.stdout().equals("PDN_TAR_PAYLOAD\n"), "tar payload: " + c.stdout());
+                String[] remaining = temporary.list();
+                require(remaining != null && remaining.length == 0, "tar filesystem cleanup");
+                return "guest directory creation, file write, tar pack/unpack and exact readback";
+            } finally { deleteTree(temporary); }
         });
         check(checks, "guest_nonzero", () -> {
             Capture c = run(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", "exit 17")));
@@ -193,6 +238,21 @@ public final class ProbeSuite {
         Files.write(new File(context.getFilesDir(), "acceptance.json").toPath(), report.toString(2).getBytes(StandardCharsets.UTF_8));
         log.accept(success ? "ALL CHECKS PASSED" : "CHECKS FAILED — see acceptance.json");
         return report;
+    }
+
+    private static void deleteTree(File directory) throws java.io.IOException {
+        if (directory == null || !Files.exists(directory.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
+        Files.walkFileTree(directory.toPath(), new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+            @Override public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attributes) throws java.io.IOException {
+                Files.delete(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+            @Override public java.nio.file.FileVisitResult postVisitDirectory(java.nio.file.Path path, java.io.IOException failure) throws java.io.IOException {
+                if (failure != null) throw failure;
+                Files.delete(path);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     private File fixture(String name, String selected) throws Exception {

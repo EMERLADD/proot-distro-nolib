@@ -12,7 +12,7 @@
 
 ## 构建
 
-先执行 `prepare.sh`，将 Release 0.6.6 PDN AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
+先执行 `prepare.sh`，将 当前版本 PDN AAR 放入 `app/libs/pdn-engine.aar`，并准备官方 Alpine 归档供验收使用。脚本可指定 Release 目录和归档路径；只导入 AAR 可以构建，但完整验收还需要归档 asset。然后在本目录执行：
 
 ```sh
 ./prepare.sh
@@ -39,7 +39,7 @@ Termux 内使用：
 ./gradlew -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.4（versionCode 5）。
+输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.5（versionCode 6）。
 
 ## 界面与验收
 
@@ -101,3 +101,13 @@ adb shell am instrument -w org.example.pdnprobe/.ProbeInstrumentation > release-
 AAR 校验值见 [AAR.sha256](AAR.sha256)。本地 AAR 文件不纳入 Git；单独复制此项目后放入同一 AAR 即可构建，完整验收还需准备归档 asset。
 
 归档 asset 使用 `alpine-rootfs.archive` 文件名保存原始 gzip 字节；`.gz` 后缀会被当前构建工具自动解压并改名。PDN 从内容识别压缩格式，并按内置大小和 SHA256 校验。验收使用 `NOFOLLOW_LINKS` 检查 `/bin/sh` 入口，因为 Alpine 的绝对符号链接指向 guest 的 `/bin/busybox`，Android 宿主不能按自己的 `/bin` 判断它是否存在。
+
+## 离线自动验收
+
+`prepare.sh` 会编译静态 ARM64 文件操作探针并修正 Bionic TLS 对齐，需要 Android NDK、C 编译器和 Python 3。探针只存在于测试 APK 的 assets，不属于发行 ELF 或 AAR。
+
+可使用 APK 内的官方 Alpine 归档直接运行完整接口验收，避免 GUI 在线安装的下载等待。它仍在普通 App 进程中运行，覆盖真实继承的 seccomp、三次 `openat2` SIGSYS、`ENOSYS` 与调用方 `openat` 回退、tar 往返、事件和 PTY；此模式不执行 GUI 点击验收。
+
+```sh
+adb shell am instrument -e suiteOnly true -w -r org.example.pdnprobe/.ProbeInstrumentation
+```

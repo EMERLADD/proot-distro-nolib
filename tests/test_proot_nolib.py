@@ -119,6 +119,28 @@ class ProotNolibTests(unittest.TestCase):
                 self.assertNotIn("ptrace acceleration", result.stderr)
                 self.assertFalse(list(self.tmp.glob("statx-probe-*")))
 
+    def test_inherited_openat2_trap_returns_enosys_for_fallback(self):
+        for disabled in (True, False):
+            with self.subTest(disabled=disabled):
+                env = dict(self.env)
+                if not disabled:
+                    env.pop("PROOT_NO_SECCOMP")
+                result = subprocess.run(
+                    [str(self.probe), "exec-inherited-openat2-trap", str(BINARY),
+                     "--verbose=3", "-0", str(self.probe), "openat2"],
+                    env=env, capture_output=True, text=True, timeout=20,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    result.stdout,
+                    "inherited openat2 TRAP filter active; seccomp mode=2\n"
+                    "openat2 directory, create and invalid-pointer returned ENOSYS; "
+                    "openat fallback passed; payload=inherited openat2 fallback payload\n",
+                )
+                self.assertEqual(result.stderr.count("seccomp SIGSYS: openat2("), 3)
+                self.assertNotIn("ptrace acceleration", result.stderr)
+                self.assertFalse(list(self.tmp.glob("openat2-probe-*")))
+
     def assert_seccomp_fallback(self, launcher):
         env = dict(self.env)
         env.pop("PROOT_NO_SECCOMP")
@@ -137,7 +159,7 @@ class ProotNolibTests(unittest.TestCase):
                 env["LLVM_PROFILE_FILE"] = self.env["LLVM_PROFILE_FILE"]
             result = self.invoke([option], env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("proot-distro-nolib 0.6.8", result.stdout)
+            self.assertIn("proot-distro-nolib 0.6.9", result.stdout)
             self.assertIn("Based on PRoot 5.4.0-pr.", result.stdout)
             self.assertIn("Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.", result.stdout)
             if option == "--help":
@@ -146,7 +168,7 @@ class ProotNolibTests(unittest.TestCase):
             else:
                 logo, version, _ = result.stdout.split("\n\n", 2)
                 self.assertEqual(len(logo.splitlines()), 5)
-                self.assertEqual(version, "proot-distro-nolib 0.6.8")
+                self.assertEqual(version, "proot-distro-nolib 0.6.9")
 
     def test_login_uses_tmpdir(self):
         self.assert_login()

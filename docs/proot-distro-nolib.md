@@ -1,6 +1,6 @@
 # proot-distro-nolib engine
 
-Current native ELF version: **0.6.8**, based on **PRoot 5.4.0-pr**.
+Current native ELF version: **0.6.9**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
@@ -508,3 +508,7 @@ processes generally inherit Android filters and retain the compatibility path.
 This native ELF stage does not promise acceleration for MT's ordinary terminal,
 build an AAR/APK, or change Android SIGSYS handling. Verification and performance
 results are recorded in [the test record](pdn-error-testing.md#067-原始-elf-seccomp-加速).
+
+### Blocked openat2 in Android App environments
+
+When an inherited Android seccomp filter traps `openat2`, PDN returns `ENOSYS` instead of rewriting its structure-pointer arguments as `openat` flags. Programs such as GNU tar can then select their own `openat` fallback. PDN does not silently discard `openat2` resolution constraints. Programs requiring `openat2` without a fallback receive an unsupported-syscall error. Calls not trapped by seccomp retain their existing behavior.

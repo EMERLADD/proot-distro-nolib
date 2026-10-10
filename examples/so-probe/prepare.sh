@@ -25,3 +25,5 @@ if [ "${PDN_PROBE_NATIVE_COVERAGE:-0}" = 1 ]; then
 fi
 "$compiler" $termux_flag $coverage_flags --target=aarch64-linux-android28 --sysroot="$sysroot_dir" -resource-dir="$resource_dir" -shared -fPIC -O2 -Wall -Wextra -Werror -L"$toolchain_dir/lib/clang/17/lib/linux/aarch64" -Wl,-z,max-page-size=16384 "$probe_dir/native/probepty.c" -o "$probe_dir/app/src/main/jniLibs/arm64-v8a/libprobepty.so"
 sha256sum "$release_dir/libpdn.so" "$probe_dir/app/src/main/jniLibs/arm64-v8a/libpdn.so" "$release_dir/libproot-loader.so" "$probe_dir/app/src/main/jniLibs/arm64-v8a/libproot-loader.so" "$archive_path"
+
+sh "$repo_dir/scripts/build-pdn-openat2-probe.sh" "$probe_dir/app/src/main/assets/openat2-probe"

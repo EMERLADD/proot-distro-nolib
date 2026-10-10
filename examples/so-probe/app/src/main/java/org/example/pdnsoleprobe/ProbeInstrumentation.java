@@ -13,8 +13,10 @@ import org.json.JSONObject;
 
 public final class ProbeInstrumentation extends Instrumentation {
     private boolean nativeCoverage;
+    private boolean suiteOnly;
     @Override public void onCreate(Bundle arguments) {
         nativeCoverage = arguments != null && "true".equals(arguments.getString("nativeCoverage"));
+        suiteOnly = arguments != null && "true".equals(arguments.getString("suiteOnly"));
         super.onCreate(arguments); start();
     }
     private void click(MainActivity activity, String label, boolean expectSuccess) throws Exception {
@@ -44,24 +46,34 @@ public final class ProbeInstrumentation extends Instrumentation {
         MainActivity activity = null;
         try {
             Files.deleteIfExists(new File(getTargetContext().getFilesDir(), "acceptance.json").toPath());
-            activity = (MainActivity) startActivitySync(new Intent(getTargetContext(), MainActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            click(activity, "初始化", true);
-            boolean[] installed = new boolean[1];
-            MainActivity started = activity;
-            runOnMainSync(() -> installed[0] = started.isInstalled());
-            click(activity, "安装 Alpine", !installed[0]);
-            click(activity, "执行命令", true);
-            click(activity, "打开终端", true);
-            click(activity, "发送到终端", true);
-            click(activity, "32×96", true);
-            click(activity, "Ctrl-C", true);
-            click(activity, "关闭终端", true);
-            click(activity, "发送到终端", false);
-            click(activity, "全部验收", true);
-            JSONObject report = new JSONObject(new String(Files.readAllBytes(
-                    new File(getTargetContext().getFilesDir(), "acceptance.json").toPath()), StandardCharsets.UTF_8));
-            report.put("gui_controls_tested", true);
+            JSONObject report;
+            if (suiteOnly) {
+                report = new ProbeSuite(getTargetContext(), line -> {
+                    Bundle progress = new Bundle();
+                    progress.putString("stream", line + "\n");
+                    sendStatus(0, progress);
+                }).verify();
+                report.put("suite_only", true);
+            } else {
+                activity = (MainActivity) startActivitySync(new Intent(getTargetContext(), MainActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                click(activity, "初始化", true);
+                boolean[] installed = new boolean[1];
+                MainActivity started = activity;
+                runOnMainSync(() -> installed[0] = started.isInstalled());
+                click(activity, "安装 Alpine", !installed[0]);
+                click(activity, "执行命令", true);
+                click(activity, "打开终端", true);
+                click(activity, "发送到终端", true);
+                click(activity, "32×96", true);
+                click(activity, "Ctrl-C", true);
+                click(activity, "关闭终端", true);
+                click(activity, "发送到终端", false);
+                click(activity, "全部验收", true);
+                report = new JSONObject(new String(Files.readAllBytes(
+                        new File(getTargetContext().getFilesDir(), "acceptance.json").toPath()), StandardCharsets.UTF_8));
+                report.put("gui_controls_tested", true);
+            }
             Files.write(new File(getTargetContext().getFilesDir(), "acceptance.json").toPath(),
                     report.toString(2).getBytes(StandardCharsets.UTF_8));
             result.putString("stream", report.toString(2) + "\n");

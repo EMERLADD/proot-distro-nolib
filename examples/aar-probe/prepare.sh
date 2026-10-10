@@ -11,3 +11,5 @@ cp "$aar_path" "$probe_dir/app/libs/pdn-engine.aar"
 rm -f "$probe_dir/app/src/main/assets/alpine.tar.gz"
 cp "$archive_path" "$probe_dir/app/src/main/assets/alpine-rootfs.archive"
 sha256sum "$aar_path" "$probe_dir/app/libs/pdn-engine.aar" "$archive_path"
+
+sh "$repo_dir/scripts/build-pdn-openat2-probe.sh" "$probe_dir/app/src/main/assets/openat2-probe"

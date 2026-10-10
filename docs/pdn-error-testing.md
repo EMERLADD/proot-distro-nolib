@@ -6,6 +6,7 @@
 
 | 版本 | 验证范围 | 结果 |
 | --- | --- | --- |
+| 0.6.9 | 继承 openat2 SIGSYS 与两种 App 接入 | 原生 224 通过 / 2 跳过；AAR APK 49/49；直接 .so APK 41/41；GNU tar 压力测试通过；修改行覆盖率 100%；MT 新 ELF 复测待反馈 |
 | 0.6.8 | 继承 statx SIGSYS 的入口参数恢复 | 原生 223 通过 / 2 跳过；5 组文件压力测试；修改行覆盖率 100%；AAR/APK 未重建 |
 | 0.6.7 | 原始 ELF seccomp：Shell 加速及安全回退 | 原生 222 通过 / 2 跳过；路径 14/14；修改行覆盖率 85.71%；AAR/APK 未重建 |
 | 0.6.3 | 原生错误分类、JVM、rish 实机补测 | 原生 168 通过 / 2 跳过；JVM 53/53；rish 40/40 |
@@ -14,6 +15,27 @@
 | 0.6.6 | AAR 组件、Ubuntu 调试与三条路径实机验收 | SDK 90/90；打包 9/9；原生回归 16/16；rish 14/14；AAR 47/47；`.so` 38/38；MT 复现成功 |
 
 两种独立 APK 在 Android 14（SDK 34）、targetSdk 35 的普通 `untrusted_app` 进程中验收。Release 0.6.4 的 APK 内 PDN/loader 与发布原件逐字节一致；0.6.5 属于本地构建验收；0.6.6 组件精简那一轮未重新验收 APK；后续 Release 原件实测见本文路径边界记录。
+
+## 0.6.9 Android App openat2 回退
+
+在 MT 启动的 Ubuntu 中通过本地 SSH 复现 GNU tar 1.35 解压失败：普通文件创建、stat、打包正常，解压报 `Cannot open: Is a directory`。记录实际调用发现 tar 用 `openat2` 打开 `bin/`、`voice/`，参数为 flags `0x28c000`、mode 0、resolve `RESOLVE_BENEATH`、size 24，却得到 EISDIR。旧 SIGSYS 分支改成 openat 时没有解析 open_how，导致结构体指针被当成 flags。只在该会话的临时诊断库中令 openat2 返回 ENOSYS，tar 回退 openat 后退出码为 0，目录对比退出码为 0。诊断库和测试树已清理，未修改系统或发行程序。
+
+修复仅让被拦截的 openat2 返回 ENOSYS，由调用方决定是否回退；不会把 resolve 约束默默降级。需要 openat2 且不提供回退的程序仍得到不支持。未被过滤器拦截的调用保持现有处理。
+
+自动回归安装真实继承 BPF RET_TRAP 过滤器，分别保留/移除 PROOT_NO_SECCOMP，验证目录打开、创建、无效结构体指针都返回 ENOSYS，且恰有三次 openat2 SIGSYS。检查没有误创建文件，再用 openat 打开目录、创建、写入、读取并核对权限和清理。旧 0.6.8 两组失败；新 0.6.9 两组通过。引擎 21/21、管理器 203 通过 / 2 跳过；LLVM 本轮两行可执行 C 修改（SIGSYS 返回与 User-Agent）覆盖率 100%，不是全引擎覆盖率。
+
+两个独立 Debug 测试 APK 的原生 ELF、loader 与本轮原件逐字节一致，APK 签名和 ZIP 校验通过。标准 AAR 仍仅包含 PDN、loader、PTY JNI，其兼容 lite 文件名与标准 AAR 字节相同。
+
+| 接入 | 验收结果 | openat2 路径 |
+| --- | --- | --- |
+| AAR / 普通 App、targetSdk 35 | 49/49 | 继承 Seccomp 2；三次真实 SIGSYS；ENOSYS；openat 创建/读写回退；tar 往返 |
+| 直接 .so / 普通 App、targetSdk 35 | 41/41 | 同样验证实际 App 过滤器与回退，不以 Shell 通过替代 |
+
+此次使用 `am instrument -e suiteOnly true -w -r PACKAGE/.ProbeInstrumentation`，以 APK 内官方 Alpine 归档运行完整接口验收，包括事件和 PTY；没有把 GUI 在线下载等待计入结果，也不声称本轮执行了全部 GUI 点击流程。探针是独立静态 Bionic ELF，TLS 对齐 64 字节，只打包在测试 APK assets 中，发行 ELF 与 AAR 不包含故障开关。
+
+另外在既有 Ubuntu 中，由 Android shell 启动器安装真实 openat2 TRAP 后启动同一 0.6.9 ELF，运行完整文件压力脚本：2050/2050 文件、50/50 链接、Errors 0、RESULT PASS、进程退出码 0，目录比较和 SHA256 清单一致。所有工作文件通过专用临时 bind 目录隔离，验收后清理。这是 GNU tar 的继承过滤器回归，不是原 MT 新会话的替代验收。
+
+原 MT 会话已证实错误与回退，但安装新 ELF 后仍需退出旧 Ubuntu、重新登录并重启 SSH，才能宣告原 MT 的新版实测完成。当前记录不把临时诊断库的成功冒充新版 MT 验收。
 
 ## 0.6.8 statx SIGSYS 与文件压力测试
 

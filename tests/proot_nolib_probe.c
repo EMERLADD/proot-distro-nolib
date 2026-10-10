@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/filter.h>
+#include <linux/openat2.h>
 #include <linux/seccomp.h>
 #include <linux/stat.h>
 #include <netinet/in.h>
@@ -15,6 +16,70 @@
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+static int probe_openat2(void)
+{
+    const char payload[] = "inherited openat2 fallback payload\n";
+    const char *tmp = getenv("TMPDIR");
+    char directory[PATH_MAX], content[sizeof(payload)] = {0};
+    int status = 60, parent = -1, bin = -1, file = -1;
+    if (!tmp || !*tmp) tmp = "/tmp";
+    if (snprintf(directory, sizeof(directory), "%s/openat2-probe-XXXXXX", tmp) >= sizeof(directory) ||
+        !mkdtemp(directory))
+        return status;
+    parent = open(directory, O_RDONLY | O_DIRECTORY);
+    if (parent < 0 || mkdirat(parent, "bin", 0700) != 0) goto cleanup;
+    struct open_how how[] = {
+        { .flags = 0x28c000, .resolve = RESOLVE_BENEATH },
+        { .flags = O_CREAT | O_EXCL | O_RDWR, .mode = 0600, .resolve = RESOLVE_BENEATH },
+    };
+    const char *paths[] = { "bin/", "unwanted", "invalid" };
+    for (int i = 0; i < 3; i++) {
+        errno = 0;
+        int result = syscall(__NR_openat2, parent, paths[i],
+                             i == 2 ? (void *)1 : &how[i], sizeof(struct open_how));
+        if (result != -1 || errno != ENOSYS) {
+            fprintf(stderr, "openat2 case %d failed: result=%d errno=%d\n", i, result, errno);
+            if (result >= 0) close(result);
+            status = 61 + i;
+            goto cleanup;
+        }
+    }
+    struct stat metadata;
+    for (int i = 1; i < 3; i++) {
+        errno = 0;
+        if (fstatat(parent, paths[i], &metadata, 0) != -1 || errno != ENOENT) {
+            status = 64;
+            goto cleanup;
+        }
+    }
+    bin = openat(parent, "bin/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (bin < 0) goto cleanup;
+    file = openat(bin, "payload", O_CREAT | O_EXCL | O_RDWR, 0600);
+    if (file < 0 || write(file, payload, sizeof(payload) - 1) != sizeof(payload) - 1 ||
+        pread(file, content, sizeof(content), 0) != sizeof(payload) - 1 ||
+        memcmp(content, payload, sizeof(payload)) != 0 || fstat(file, &metadata) != 0 ||
+        !S_ISREG(metadata.st_mode) || (metadata.st_mode & 0777) != 0600) {
+        status = 65;
+        goto cleanup;
+    }
+    printf("openat2 directory, create and invalid-pointer returned ENOSYS; openat fallback passed; payload=%s", content);
+    status = 0;
+cleanup:
+    if (file >= 0) close(file);
+    if (bin >= 0) {
+        if (unlinkat(bin, "payload", 0) != 0 && errno != ENOENT) status = 66;
+        close(bin);
+    }
+    if (parent >= 0) {
+        if (unlinkat(parent, "unwanted", 0) != 0 && errno != ENOENT) status = 67;
+        if (unlinkat(parent, "invalid", 0) != 0 && errno != ENOENT) status = 68;
+        if (unlinkat(parent, "bin", AT_REMOVEDIR) != 0 && errno != ENOENT) status = 69;
+        close(parent);
+    }
+    if (rmdir(directory) != 0) status = 70;
+    return status;
+}
 
 static int probe_statx(void)
 {
@@ -73,9 +138,11 @@ int main(int argc, char **argv)
 {
     if (argc >= 3 && (strcmp(argv[1], "exec-inherited-filter") == 0 ||
                       strcmp(argv[1], "exec-inherited-statx-trap") == 0 ||
+                      strcmp(argv[1], "exec-inherited-openat2-trap") == 0 ||
                       strcmp(argv[1], "exec-denied-seccomp-query") == 0)) {
         int deny_query = strcmp(argv[1], "exec-denied-seccomp-query") == 0;
         int trap_statx = strcmp(argv[1], "exec-inherited-statx-trap") == 0;
+        int trap_openat2 = strcmp(argv[1], "exec-inherited-openat2-trap") == 0;
         struct sock_filter allow[] = {
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
@@ -89,13 +156,13 @@ int main(int argc, char **argv)
         };
         struct sock_filter trap[] = {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_statx, 0, 1),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, trap_openat2 ? __NR_openat2 : __NR_statx, 0, 1),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRAP),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
         struct sock_fprog program = {
-            deny_query ? sizeof(deny) / sizeof(deny[0]) : trap_statx ? sizeof(trap) / sizeof(trap[0]) : sizeof(allow) / sizeof(allow[0]),
-            deny_query ? deny : trap_statx ? trap : allow,
+            deny_query ? sizeof(deny) / sizeof(deny[0]) : trap_statx || trap_openat2 ? sizeof(trap) / sizeof(trap[0]) : sizeof(allow) / sizeof(allow[0]),
+            deny_query ? deny : trap_statx || trap_openat2 ? trap : allow,
         };
         if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
             prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0)
@@ -104,8 +171,8 @@ int main(int argc, char **argv)
         int mode = prctl(PR_GET_SECCOMP, 0, 0, 0, 0);
         if (deny_query ? mode != -1 || errno != EPERM : mode != SECCOMP_MODE_FILTER)
             return 41;
-        if (trap_statx) {
-            puts("inherited statx TRAP filter active; seccomp mode=2");
+        if (trap_statx || trap_openat2) {
+            printf("inherited %s TRAP filter active; seccomp mode=2\n", trap_openat2 ? "openat2" : "statx");
             fflush(stdout);
         }
         execv(argv[2], argv + 2);
@@ -116,6 +183,9 @@ int main(int argc, char **argv)
 
     if (strcmp(argv[1], "statx") == 0)
         return probe_statx();
+
+    if (strcmp(argv[1], "openat2") == 0)
+        return probe_openat2();
 
     if (strcmp(argv[1], "groups-exec") == 0) {
         gid_t list[3];

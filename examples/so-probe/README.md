@@ -33,7 +33,7 @@ Termux 内使用：
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.2（versionCode 3）。
+输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.3（versionCode 4）。
 
 ## 运行验收
 
@@ -79,3 +79,13 @@ PDN_PROBE_NATIVE_COVERAGE=1 ./prepare.sh
 ```
 
 运行 instrumentation 时增加 `-e nativeCoverage true`，结束后生成 `files/coverage.ec` 和 `files/native-coverage.profraw`。LLVM 只插桩本工程的 PTY JNI，Release PDN/loader 保持原样。正常构建不启用这些采集开关。
+
+## 离线自动验收
+
+`prepare.sh` 会编译静态 ARM64 文件操作探针并修正 Bionic TLS 对齐，需要 Android NDK、C 编译器和 Python 3。探针只存在于测试 APK 的 assets，不属于发行 ELF 或 AAR。
+
+可使用 APK 内的官方 Alpine 归档直接运行完整接口验收，避免 GUI 在线安装的下载等待。它仍在普通 App 进程中运行，覆盖真实继承的 seccomp、三次 `openat2` SIGSYS、`ENOSYS` 与调用方 `openat` 回退、tar 往返、事件和 PTY；此模式不执行 GUI 点击验收。
+
+```sh
+adb shell am instrument -e suiteOnly true -w -r org.example.pdnsoleprobe/.ProbeInstrumentation
+```
