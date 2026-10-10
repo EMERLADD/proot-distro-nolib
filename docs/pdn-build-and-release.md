@@ -72,9 +72,9 @@ sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
 4. 打包二进制、许可文本、使用材料与对应源码，生成 SHA256。
 5. 单独构建引擎 AAR，执行 JVM 测试和覆盖率检查，核对 AAR 内 PDN/loader 与原始 ELF 的字节一致性，更新附件 SHA256。
 6. 上传 Actions artifact，保留 30 天。
-7. `main` 推送包含尚未发布的版本号时，自动创建对应版本标签及草稿预发布 Release；同版本已发布则跳过。版本标签推送也可发布，但标签需与代码版本一致。
+7. `main` 推送包含尚未发布的版本号时，自动创建对应版本的草稿预发布 Release；同版本 Release 或草稿已存在则跳过。版本标签推送也可创建草稿，但标签需与代码版本一致。
 
-Pull Request 和手动构建仅生成附件，发布仅在 `main` 或版本标签推送后进行。Linux runner 的交叉编译与产物检查不能替代 Android 实机运行验收。
+Pull Request 和手动构建仅生成附件，草稿创建仅在 `main` 或版本标签推送后进行；公开发布需等待实机验收。Linux runner 的交叉编译与产物检查不能替代 Android 实机运行验收。
 
 开发构建可从 [Actions](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml) 的成功运行中下载 `pdn-android-arm64-提交号`。下载通常需要登录 GitHub，且有保留期限，不等于长期 Release。
 

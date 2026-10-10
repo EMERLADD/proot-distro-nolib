@@ -72,9 +72,9 @@ Using Ubuntu 24.04 and pinned NDK `26.3.11579264`, it:
 4. Packages binaries, licenses, documentation and corresponding source, generating SHA256.
 5. Builds the engine AAR, runs JVM tests and the coverage gate, compares its PDN/loader bytes with the original ELF files, and updates attachment checksums.
 6. Uploads Actions artifacts with a 30-day retention period.
-7. Creates the matching version tag and prerelease when a `main` push contains an unpublished version. Already published versions are skipped. Version-tag pushes may also publish, but the tag must match the code version.
+7. Creates a prerelease draft for the matching version when a `main` push contains a new version. Existing releases or drafts are skipped. Version-tag pushes may also create a draft, but the tag must match the code version.
 
-Pull Requests and manual builds produce artifacts only. Publication runs on `main` or version-tag pushes. Linux runner checks do not replace Android device acceptance tests.
+Pull Requests and manual builds produce artifacts only. Draft creation runs on `main` or version-tag pushes; public publication waits for device acceptance. Linux runner checks do not replace Android device acceptance tests.
 
 Development artifacts named `pdn-android-arm64-COMMIT` can be downloaded from successful [Actions runs](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml). Downloads usually require a GitHub login and expire; these are not permanent Releases.
 
