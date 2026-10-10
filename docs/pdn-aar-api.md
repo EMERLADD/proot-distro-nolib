@@ -126,6 +126,6 @@ List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 
 ## 验证与发布范围
 
-构建提供非插桩 Debug AAR、对应 ELF 和 `.so`，并保留旧 lite 下载名作为字节相同的别名。标准和 Termux 构建都不向 AAR 打包旧 pr 原生组件；发布脚本再次过滤，验证三项原生文件、API 元数据、字节一致性和校验值。各版本的构建、单元测试、打包与独立 APK 实机结果见 [测试记录](pdn-error-testing.md)。
+构建提供非插桩 AAR、对应 ELF 和 `.so`，并保留旧 lite 下载名作为字节相同的别名。标准和 Termux 构建都不向 AAR 打包旧 pr 原生组件；发布脚本再次过滤，验证三项原生文件、API 元数据、字节一致性和校验值。各版本的构建、单元测试、打包与独立 APK 实机结果见 [测试记录](pdn-error-testing.md)。
 
 现有 AAR 已通过开启 R8 混淆、优化和资源压缩的非 debuggable Release 测试 App 验收。使用 Android 默认优化/JNI 规则，无需额外保留整个 SDK；测试 APK 使用本地 Debug 密钥签名。当前未提供 Maven 发布、终端渲染控件或自动后台服务。独立 App 的构建与测试方式见 [AAR 验证工程](../examples/aar-probe/README.md)。
