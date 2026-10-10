@@ -5,6 +5,7 @@
 - 修复 Android App 继承过滤器拦截 `openat2` 时错误转换参数的问题；返回 `ENOSYS` 让调用方自行回退，不丢弃路径约束。
 - 增加真实 BPF TRAP 回归和两种测试 APK 的 App seccomp 验收，更新原始 ELF、`.so` 与本地 AAR。
 - 两个独立测试 APK 增加基于内置官方归档的离线接口验收入口。
+- MT 原环境 GNU tar 解压及 2050 文件 / 50 链接压力测试通过；AAR APK 49/49、直接 `.so` APK 41/41 通过。Release 附两个普通 Debug 测试 APK，非生产应用；实机 APK 使用本地构建，原生发布附件由 CI 构建。
 
 ## v0.6.6 — 2026-10-09
 

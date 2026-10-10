@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.9 · ARM64 Android · Early test release**. The published GitHub Release remains **v0.6.6**; this stage builds matching ELF, `.so`, AAR and test APKs for both App integration methods.
+Current local ELF and AAR: **v0.6.9 · ARM64 Android · Early test release**. GitHub Release **v0.6.9** provides ELF, `.so`, AAR and ordinary test APKs for both App integration methods. This release fixes tar extraction failures caused by blocked `openat2` handling in Android Apps; MT, AAR APK and direct `.so` APK verification passed.
 
 ## Contents
 

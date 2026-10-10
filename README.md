@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前本地 ELF 与 AAR：**v0.6.9 · ARM64 Android · 早期测试版**。GitHub 已发布 Release 为 **v0.6.6**；本轮同步构建原始 ELF、`.so`、AAR 与两种接入方式的测试 APK。
+当前本地 ELF 与 AAR：**v0.6.9 · ARM64 Android · 早期测试版**。GitHub Release 为 **v0.6.9**，提供原始 ELF、`.so`、AAR 与两种接入方式的普通测试 APK。本轮修复 Android App 中 `openat2` 兼容处理导致的 tar 解压失败，MT、AAR APK 和直接 `.so` APK 均已验收通过。
 
 ## 目录
 
