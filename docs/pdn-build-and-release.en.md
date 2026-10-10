@@ -43,7 +43,7 @@ make package
 make clean
 ```
 
-Run `make test` in an ARM64 Android environment that permits PRoot execution, with Python 3 and the repository's BusyBox test fixture. Successful cross-compilation on Linux x86_64 is not an Android runtime test. See [test records (Chinese)](pdn-error-testing.md) and the [changelog](../CHANGELOG.md).
+Run `make test` in an ARM64 Android environment that permits PRoot execution, with Python 3 and the repository's BusyBox test fixture. Successful cross-compilation on Linux x86_64 is not an Android runtime test. See [test records](pdn-error-testing.en.md) and the [changelog](../CHANGELOG.en.md).
 
 `make package` builds and packages committed sources and artifacts. Commit project files before packaging so the source corresponds to the current commit. Output is in `build/packages/`. Run `make clean` when changing the compiler, NDK or dependency flags to avoid reusing old static libraries.
 
@@ -56,9 +56,9 @@ cd android
 sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
 ```
 
-This also needs Gradle, Java, the Android SDK and a PTY JNI build environment. The original App GUI and terminal library modules need not be configured. See [Android embedding (Chinese)](android-embedding.md), the [AAR probe project](../examples/aar-probe/README.md) and the [AAR API (Chinese)](pdn-aar-api.md).
+This also needs Gradle, Java, the Android SDK and a PTY JNI build environment. The original App GUI and terminal library modules need not be configured. See [Android embedding](android-embedding.en.md), the [AAR probe project](../examples/aar-probe/README.en.md) and the [AAR API](pdn-aar-api.en.md).
 
-Since 0.6.6, both AAR variants contain only PDN, loader and PTY JNI as native components, retaining terminal support without legacy pr native components. `libpdn.so` and `libproot-loader.so` are renamed ELF executables; PTY JNI is the actual JVM-loaded JNI library. The AAR requires the Kotlin standard library and is currently a non-instrumented Debug engine build. The existing AAR passed acceptance in a nondebuggable Release test App with R8, Android default optimization/JNI rules and local test signing; direct `.so` integration also passed. See the [R8 acceptance record (Chinese)](pdn-error-testing.md#066-releaser8-混淆验收). Maven publication is not implemented.
+Since 0.6.6, both AAR variants contain only PDN, loader and PTY JNI as native components, retaining terminal support without legacy pr native components. `libpdn.so` and `libproot-loader.so` are renamed ELF executables; PTY JNI is the actual JVM-loaded JNI library. The AAR requires the Kotlin standard library and is currently a non-instrumented engine build. The existing AAR passed acceptance in a nondebuggable Release test App with R8, Android default optimization/JNI rules and local test signing; direct `.so` integration also passed. See the [R8 acceptance record](pdn-error-testing.en.md#r8-release-acceptance). Maven publication is not implemented.
 
 ## GitHub builds
 

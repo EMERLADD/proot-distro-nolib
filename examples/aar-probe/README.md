@@ -1,5 +1,7 @@
 # 独立 PDN AAR 验证 App
 
+简体中文 | [English](README.en.md) · [返回 README](../../README.md)
+
 这是独立 Gradle 项目，包名 `org.example.pdnprobe`。`settings.gradle.kts` 只包含 `:app`，不引用原仓库源码模块、termlib 或原 App 的数据。界面和自动验收使用 Java 与 Android 平台控件。
 
 正常 APK 的依赖是本地 `pdn-engine.aar` 和 Kotlin 标准库。AAR 内的 Kotlin 类需要标准库；不要求 Kotlin 插件、协程或 Compose。安装按钮从官方 ARM64 源下载；完整自动验收使用打包到 assets 的官方 Alpine 3.24.2 ARM64 归档，在运行时解压安装，不预置已解压的 rootfs。
@@ -39,7 +41,7 @@ Termux 内使用：
 ./gradlew -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.7（versionCode 8）。
+输出：`app/build/outputs/apk/release/app-release.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化及 JNI 规则，不添加额外 SDK keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo，也不要传入覆盖率采集参数。当前 App 版本为 0.1.9（versionCode 10）。
 
 ## 界面与验收
 
@@ -66,7 +68,7 @@ rish -c 'am instrument -w org.example.pdnprobe/.ProbeInstrumentation'
 rish -c 'run-as org.example.pdnprobe cat files/acceptance.json'
 ```
 
-本次环境中，单独启动 instrumentation 后界面没有进入前台，显式打开 Activity 后才继续验收。遇到相同情况，在 Android shell 中执行：
+若单独启动 instrumentation 后界面没有进入前台，可尝试在 Android shell 中显式打开 Activity；这只是可能的绕过方式，不保证 Activity 启动等待返回：
 
 ```sh
 am instrument -w org.example.pdnprobe/.ProbeInstrumentation &
@@ -76,6 +78,8 @@ am start -W -n org.example.pdnprobe/.MainActivity
 wait "$probe_test_pid"
 run-as org.example.pdnprobe cat files/acceptance.json
 ```
+
+若 `startActivitySync` 仍阻塞，使用下文 `-e suiteOnly true` 的离线模式完成接口与 PTY 验收，另用 UIAutomator 等显式 GUI 按钮自动化完成界面验收；离线模式不代表 GUI 验收。0.6.13 本轮即采用此方式，见 [测试记录](../../docs/pdn-error-testing.md)。
 
 `run-as` 只用于读取报告，Linux 操作仍在普通 App 进程中执行。导出报告到共享存储时使用 `run-as ... cat ... | cat > 输出文件`，避免 App 进程直接写入宿主打开的共享文件描述符。
 

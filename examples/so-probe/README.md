@@ -1,21 +1,23 @@
 # 直接打包 .so 的 PDN 验证 App
 
+简体中文 | [English](README.en.md) · [返回 README](../../README.md)
+
 独立 Java 工程，包名 `org.example.pdnsoleprobe`，minSdk 28、targetSdk 35。Gradle 只包含 `:app`，没有 AAR、Kotlin、引擎源码模块或原 App 依赖。`NativeRuntime` 使用宿主提供的私有目录和环境，通过 ProcessBuilder 启动 nativeLibraryDir 中的配套 ELF；`NativeOperations` 读取 JSONL 并交付回调。
 
-独立 App 的安装、命令执行、事件、PTY 和启动错误处理已通过普通 Android App 身份下的实机验收。版本、逐项结果和覆盖率见 [测试记录](../../docs/pdn-error-testing.md#064-apk-接入实测)。
+独立 App 的安装、命令执行、事件、PTY 和启动错误处理已通过普通 Android App 身份下的实机验收。版本、逐项结果和覆盖率见 [测试记录](../../docs/pdn-error-testing.md)。
 
 新增路径验收覆盖 `/usr` 映射、嵌套 bind、跨 rootfs 链接和缺失目标；所有夹具位于独立测试目录。该工程生成 Debug 和启用 R8 的 Release 测试 APK，用于验证和演示接入，不是生产应用。逐项结果见 [测试记录](../../docs/pdn-error-testing.md)。
 
 ## 构建
 
-准备 [Release 0.6.6](https://github.com/EMERLADD/proot-distro-nolib/releases/tag/v0.6.6) 的 `libpdn.so`、`libproot-loader.so`，以及官方 Alpine 3.24.2 ARM64 归档，然后执行：
+准备与当前 `PDN_VERSION` 一致的 [Release](https://github.com/EMERLADD/proot-distro-nolib/releases) 的 `libpdn.so`、`libproot-loader.so`，以及官方 Alpine 3.24.2 ARM64 归档，然后执行：
 
 ```sh
 ./prepare.sh /你的/Release目录 /你的/alpine-minirootfs-3.24.2-aarch64.tar.gz
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleDebug
 ```
 
-脚本未指定参数时使用仓库的 `build/releases/v0.6.6` 和 `build/pdn-sources`。SDK 使用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT`，NDK 可通过 `PDN_NDK_DIR` 指定，默认 26.3.11579264。Termux 使用可运行的 Clang 搭配 NDK sysroot；Linux 主机默认使用 NDK Clang。首次获取 Gradle 依赖时去掉 `--offline`。
+脚本从 `src/proot/src/cli/proot.h` 读取 `PDN_VERSION`，未指定参数时使用仓库的 `build/releases/vVERSION`（`VERSION` 为当前版本）和 `build/pdn-sources`。SDK 使用 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT`，NDK 可通过 `PDN_NDK_DIR` 指定，默认 26.3.11579264。Termux 使用可运行的 Clang 搭配 NDK sysroot；Linux 主机默认使用 NDK Clang。首次获取 Gradle 依赖时去掉 `--offline`。
 
 原生文件放在 `app/src/main/jniLibs/arm64-v8a/`，归档放在 assets；这些输入不纳入 Git。归档以 `alpine-rootfs.archive` 命名，保留原始 gzip 字节，避免构建工具自动解压 `.gz` asset。PDN 按内置大小和 SHA256 校验再安装。
 
@@ -33,7 +35,7 @@ Termux 内使用：
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.5（versionCode 6）。
+输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.7（versionCode 8）。
 
 ## 运行验收
 
@@ -45,7 +47,7 @@ adb shell am instrument -w org.example.pdnsoleprobe/.ProbeInstrumentation
 adb shell run-as org.example.pdnsoleprobe cat files/acceptance.json
 ```
 
-rish 中执行相同的 Android shell 命令即可。若 instrumentation 启动后界面未进入前台，执行：
+rish 中执行相同的 Android shell 命令即可。若 instrumentation 启动后界面未进入前台，可尝试以下绕过方式；不保证 Activity 启动等待返回：
 
 ```sh
 am instrument -w org.example.pdnsoleprobe/.ProbeInstrumentation &
@@ -55,6 +57,8 @@ am start -W -n org.example.pdnsoleprobe/.MainActivity
 wait "$probe_test_pid"
 run-as org.example.pdnsoleprobe cat files/acceptance.json
 ```
+
+若 `startActivitySync` 仍阻塞，使用下文 `-e suiteOnly true` 的离线模式完成接口与 PTY 验收，另用 UIAutomator 等显式 GUI 按钮自动化完成界面验收；离线模式不代表 GUI 验收。0.6.13 本轮即采用此方式，见 [测试记录](../../docs/pdn-error-testing.md)。
 
 `run-as` 仅导出报告；验收要求实际操作进程是 `untrusted_app`。导出到共享存储使用 `run-as ... cat ... | cat > 输出文件`。报告保留逐项结果和 instrumentation 失败原因，`passed=true` 且最终 `INSTRUMENTATION_CODE: -1` 才通过。JSONL 与最近一次 stderr 保存在私有 cache/engine 下。
 
@@ -69,7 +73,7 @@ adb shell am instrument -w org.example.pdnsoleprobe/.ProbeInstrumentation > rele
 
 PTY 子进程状态使用 `waitpid` 获取，不依赖 `/proc/<pid>` 可见性。运行中与成功退出 0 分开表示；自动验收覆盖运行中、退出 0/37、信号终止及已回收状态。
 
-逐项验收内容、错误触发方式与 JNI 边界检查统一见 [测试记录](../../docs/pdn-error-testing.md#064-apk-接入实测)。
+逐项验收内容、错误触发方式与 JNI 边界检查统一见 [测试记录](../../docs/pdn-error-testing.md)。
 
 ## 覆盖率验收构建
 

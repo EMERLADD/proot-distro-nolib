@@ -58,7 +58,7 @@ sh gradlew -PpdnEngineOnly=true :proot-engine:bundleDebugAar
 
 此流程还需要 Gradle、Java、Android SDK 和 PTY JNI 构建环境；不需要配置原 App 的 GUI 和终端库模块。目录准备及本机打包步骤见 [App 接入教程](android-embedding.md)、[AAR 验证工程](../examples/aar-probe/README.md) 和 [AAR 接口](pdn-aar-api.md)。
 
-0.6.6 起两个 AAR 命名产物都只带 PDN、loader、PTY JNI，保留终端功能，不包含旧 pr 的原生组件。`libpdn.so` 和 `libproot-loader.so` 是改名后的 ELF 可执行程序；PTY JNI 才是由 JVM 加载的 JNI 库。AAR 需配合 Kotlin 标准库使用，当前发布的是非插桩 Debug 引擎构建。现有 AAR 已在开启 R8 的非 debuggable Release 测试 App 中验收通过，使用 Android 默认优化/JNI 规则及本地测试签名；直接 .so 接入同样通过。详见 [混淆验收](pdn-error-testing.md#066-releaser8-混淆验收)。Maven 发布尚未实现。
+0.6.6 起两个 AAR 命名产物都只带 PDN、loader、PTY JNI，保留终端功能，不包含旧 pr 的原生组件。`libpdn.so` 和 `libproot-loader.so` 是改名后的 ELF 可执行程序；PTY JNI 才是由 JVM 加载的 JNI 库。AAR 需配合 Kotlin 标准库使用，当前发布的是非插桩引擎构建。现有 AAR 已在开启 R8 的非 debuggable Release 测试 App 中验收通过，使用 Android 默认优化/JNI 规则及本地测试签名；直接 .so 接入同样通过。详见 [混淆验收](pdn-error-testing.md#066-releaser8-混淆验收)。Maven 发布尚未实现。
 
 ## GitHub 自动构建
 

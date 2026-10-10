@@ -47,7 +47,7 @@ export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
 mkdir -p "$PROOT_TMP_DIR"
 ```
 
-Use the reported path, reason and suggestion rather than blindly applying `chmod 777`. Other causes include insufficient space, a file occupying a directory name, or unsupported filesystem semantics. PDN does not silently switch storage locations after failure. See [error classification and tests (Chinese)](pdn-error-testing.md).
+Use the reported path, reason and suggestion rather than blindly applying `chmod 777`. Other causes include insufficient space, a file occupying a directory name, or unsupported filesystem semantics. PDN does not silently switch storage locations after failure. See [error classification and tests](pdn-error-testing.en.md).
 
 ## Packaging in an App
 
@@ -55,7 +55,7 @@ The AAR provides Java/Kotlin wrappers, PDN, loader and PTY JNI. The host needs t
 
 For direct `.so` integration, put `libpdn.so` and `libproot-loader.so` under `jniLibs/arm64-v8a/`, ensure extraction to `nativeLibraryDir`, and launch them as processes. They are ELF executables, not a PDN JNI API for `System.loadLibrary`. The actual PTY JNI library handles terminal input, output and resizing.
 
-See [Android embedding (Chinese)](android-embedding.md), [AAR API (Chinese)](pdn-aar-api.md), the [AAR example](../examples/aar-probe/README.md) and the [.so example](../examples/so-probe/README.md).
+See [Android embedding](android-embedding.en.md), [AAR API](pdn-aar-api.en.md), the [AAR example](../examples/aar-probe/README.en.md) and the [.so example](../examples/so-probe/README.en.md).
 
 ## Rish will not execute inside Ubuntu
 

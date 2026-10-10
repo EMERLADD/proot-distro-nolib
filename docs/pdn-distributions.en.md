@@ -90,7 +90,7 @@ pdn login ubuntu --user root --work-dir /tmp --env EXAMPLE='two words'
 
 Each save replaces the complete default configuration. Command-line account, working directory and environment values override defaults; binds are appended. `--user` selects an existing guest account or numeric UID, optionally with a numeric GID, and does not create accounts. The default root identity is simulated by PRoot and does not increase actual Android privileges.
 
-For App configuration and command execution, see [Android embedding (Chinese)](android-embedding.md) and the [AAR API (Chinese)](pdn-aar-api.md).
+For App configuration and command execution, see [Android embedding](android-embedding.en.md) and the [AAR API](pdn-aar-api.en.md).
 
 ## Backup and restore
 

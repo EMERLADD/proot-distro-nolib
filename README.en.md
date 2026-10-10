@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. Instance cloning, renaming and stable metadata are available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
+Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. Instance cloning, renaming and stable metadata are available. See [test records](docs/pdn-error-testing.en.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
 
 ## Contents
 
@@ -35,7 +35,7 @@ Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. I
 | The same Termux + PDN | **35 ms** |
 | Android shell + PDN | **41 ms** |
 
-Measured with each tool's default login configuration through the first command and exit, excluding rish connection, downloads and installation. Each clean Termux comparison uses 20 samples; Android shell uses 40. [Full benchmark and scope (Chinese)](docs/pdn-error-testing.md#066-alpine-启动耗时对比).
+Measured with each tool's default login configuration through the first command and exit, excluding rish connection, downloads and installation. Each clean Termux comparison uses 20 samples; Android shell uses 40. [Full benchmark and scope](docs/pdn-error-testing.en.md#alpine-startup-benchmark).
 
 - **Manage Linux directly**: install, log in, execute commands, bind project directories, save configuration, back up, restore and remove distributions.
 - **Callable from other APKs**: two integration options, AAR and directly packaged `.so` files, for workspaces, AI frontends and other Apps needing Linux execution.
@@ -43,7 +43,7 @@ Measured with each tool's default login configuration through the first command 
 - **Host-controlled paths**: executable, data, cache and project directories come from arguments or the host, without binding to MT Manager, Termux or a fixed App package name.
 - **Android debugging when permissions allow**: starting PDN from Shizuku/rish or ADB shell lets Linux call Android debugging commands such as `cmd`, `settings` and `getprop` with inherited privileges.
 
-The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for results and the [test records (Chinese)](docs/pdn-error-testing.md) for versions and environments. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
+The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for results and the [test records](docs/pdn-error-testing.en.md) for versions and environments. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
 
 | Integration method | Best suited for |
 | --- | --- |
@@ -60,7 +60,7 @@ The main paths above have been verified with **MT Manager, an independent APK bu
 - **Linux storage**: an accessible directory supporting Unix permissions and symbolic links, such as App-private storage or Android shell's `/data/local/tmp`. `/sdcard` is suitable for downloads, backups and shared files, not rootfs extraction.
 - **Networking and shared files**: online installation needs network permission; shared storage requires the corresponding access permissions.
 
-PRoot's root identity is simulated; the host's actual UID and SELinux restrictions still apply. Shizuku is an optional privilege entry point, not a requirement for installing or running Linux. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) and [App integration guide (Chinese)](docs/android-embedding.md).
+PRoot's root identity is simulated; the host's actual UID and SELinux restrictions still apply. Shizuku is an optional privilege entry point, not a requirement for installing or running Linux. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) and [App integration guide](docs/android-embedding.en.md).
 
 ## 2. Downloads and updates
 
@@ -182,7 +182,7 @@ PdnOperations operations = new PdnOperations(pdn);
 PdnTask task = operations.start(pdn.install("alpine"), listener);
 ```
 
-`host` implements `ProotHost`; `listener` implements `PdnListener`. `install()` itself returns an unstarted `ProcessBuilder`. See [App integration (Chinese)](docs/android-embedding.md) for packaging, the [AAR API (Chinese)](docs/pdn-aar-api.md) for tasks, queries, configuration and terminals, and the [AAR example](examples/aar-probe/README.md) for a runnable project.
+`host` implements `ProotHost`; `listener` implements `PdnListener`. `install()` itself returns an unstarted `ProcessBuilder`. See [App integration](docs/android-embedding.en.md) for packaging, the [AAR API](docs/pdn-aar-api.en.md) for tasks, queries, configuration and terminals, and the [AAR example](examples/aar-probe/README.en.md) for a runnable project.
 
 ### 3.5 Integrate an App by directly packaging `.so` files
 
@@ -191,7 +191,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 3. Set rootfs, cache and bind directories through process arguments, then launch with `ProcessBuilder` or your own PTY layer.
 4. Read structured results from the separate event channel; preserve stdout/stderr for Linux command output.
 
-These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, environment and event details are in [App integration (Chinese)](docs/android-embedding.md) and the [event protocol (Chinese)](docs/pdn-events.md). See the [.so example](examples/so-probe/README.md) for a complete project.
+These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, environment and event details are in [App integration](docs/android-embedding.en.md) and the [event protocol](docs/pdn-events.en.md). See the [.so example](examples/so-probe/README.en.md) for a complete project.
 
 ## 4. Verified use cases
 
@@ -203,7 +203,7 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 | Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
 | Error-handling fault injection | All 9 lock-error combinations passed in native Termux |
 
-Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records (Chinese)](docs/pdn-error-testing.md).
+Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records](docs/pdn-error-testing.en.md).
 
 ## 5. Documentation
 
@@ -211,9 +211,9 @@ Both APK paths were verified under ordinary Android App identities. Versions, en
 | --- | --- |
 | Run Linux and debug Android from Android shell / MT | [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) |
 | Install, log in, bind, configure, back up or remove Linux | [Distribution management](docs/pdn-distributions.en.md) |
-| Embed PDN in another APK | [App integration (Chinese)](docs/android-embedding.md) |
-| Look up Java/Kotlin configuration, tasks, queries and terminals | [AAR API (Chinese)](docs/pdn-aar-api.md) |
-| Handle events or investigate classified errors | [Event protocol (Chinese)](docs/pdn-events.md), [tests and error classification (Chinese)](docs/pdn-error-testing.md) |
+| Embed PDN in another APK | [App integration](docs/android-embedding.en.md) |
+| Look up Java/Kotlin configuration, tasks, queries and terminals | [AAR API](docs/pdn-aar-api.en.md) |
+| Handle events or investigate classified errors | [Event protocol](docs/pdn-events.en.md), [tests and error classification](docs/pdn-error-testing.en.md) |
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |
 | Build locally, use CI or release source | [Building and releasing](docs/pdn-build-and-release.en.md) |
 | Diagnose directory, version, permission or terminal issues | [Frequently asked questions](docs/pdn-faq.en.md) |
@@ -223,7 +223,7 @@ Both APK paths were verified under ordinary Android App identities. Versions, en
 
 Standalone PDN does not need Java, Gradle or Rust to build; the AAR needs the Android/Gradle toolchain. See [building and releasing](docs/pdn-build-and-release.en.md) for dependencies, NDK configuration, native and AAR artifacts, tests, CI and license delivery.
 
-[Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) are welcome for bugs, ideas and documentation improvements. Include the host App, Android version, `pdn version`, reproduction commands and error output. Do not include passwords, tokens, device serials or other private information. See [CHANGELOG](CHANGELOG.md) for changes.
+[Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) are welcome for bugs, ideas and documentation improvements. Include the host App, Android version, `pdn version`, reproduction commands and error output. Do not include passwords, tokens, device serials or other private information. See [CHANGELOG](CHANGELOG.en.md) for changes.
 
 ## 7. Origins and licenses
 
@@ -252,10 +252,10 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
-- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Shell compression took about 54% less time in this test; see [verification (Chinese)](docs/pdn-error-testing.md#067-原始-elf-seccomp-加速).
+- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Shell compression took about 54% less time in this test; see [verification](docs/pdn-error-testing.en.md#native-seccomp-acceleration).
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
 - **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.
 
-See the [test records (Chinese)](docs/pdn-error-testing.md) for each version's verified scope.
+See the [test records](docs/pdn-error-testing.en.md) for each version's verified scope.

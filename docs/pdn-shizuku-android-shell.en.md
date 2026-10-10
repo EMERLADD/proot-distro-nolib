@@ -4,7 +4,7 @@
 
 This applies to Android shells that can run PDN and access the chosen directories, without requiring a particular terminal app. The examples use MT Manager and Shizuku/rish; an existing ADB shell can start at PDN deployment. All permissions still depend on the real Android identity starting PDN and on system restrictions.
 
-Calling Android commands and reading/writing system settings from Ubuntu were verified and reproduced in MT Manager. See the [test records (Chinese)](pdn-error-testing.md#066-ubuntu-调用-android-命令验证) for versions, environments and detailed results.
+Calling Android commands and reading/writing system settings from Ubuntu were verified and reproduced in MT Manager. See the [test records](pdn-error-testing.en.md#ubuntu-android-commands) for versions, environments and detailed results.
 
 ## Contents
 

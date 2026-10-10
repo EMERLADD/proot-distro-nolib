@@ -1,6 +1,8 @@
 # PDN 事件接口与 AAR
 
-PDN 0.6.4 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
+简体中文 | [English](pdn-events.en.md) · [返回 README](../README.md)
+
+PDN 使用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进度、错误和最终结果，不需要解析终端文本。原有直接运行 `ProcessBuilder` 的接口仍可用。
 
 当前 SDK 的异步任务、不可变配置、结构化查询和独立终端见 [AAR API](pdn-aar-api.md)。下文保留同步 `run()` 和协议 v1 的接入说明，仍可使用；交互终端推荐 `PdnTerminal`。
 
@@ -18,7 +20,7 @@ PDN 0.6.4 沿用协议 v1。Java/Kotlin 的调用方可直接获取阶段、进�
                               └─ 最终校验 → PdnResult / onComplete
 ```
 
-`PdnRuntime.install()` 等方法返回尚未启动的 `ProcessBuilder`；`PdnOperations.run()` 启动它并等待结束。调用方必须放在工作线程。监听器回调按顺序在这个工作线程执行，更新 Android 控件时自行切到主线程。`run()` 关闭标准输入，适合安装和一次性命令；交互终端继续使用现有 PTY 接口。
+`PdnRuntime.install()` 等方法返回尚未启动的 `ProcessBuilder`；`PdnOperations.run()` 启动它并等待结束。调用方必须放在工作线程。监听器回调按顺序在这个工作线程执行，更新 Android 控件时自行切到主线程。`run()` 关闭标准输入，适合安装和一次性命令；交互终端使用 `PdnTerminal` 或底层 `PdnTerminalSession`。
 
 ```java
 PdnRuntime pdn = new PdnRuntime(host);
@@ -63,14 +65,14 @@ val result = runInterruptible(Dispatchers.IO) {
 | `success` | PDN 完成，实际进程退出码为 0 |
 | `manager_error` | 参数、目录、下载、校验、解压或启动阶段失败 |
 | `guest_exit` | Linux 程序已启动，观察到非零退出或信号终止 |
-| `cancelled` | 原生安装/归档操作捕获中断并完成清理 |
+| `cancelled` | 原生安装、归档或实例操作捕获中断并完成清理 |
 | `host_protocol_error` | Java 封装发现缺失、截断、不合法或退出码不一致的事件 |
 
-以 `isSuccess()` 判断成功；不要只看 `exitCode == 0`。`getExitCode()` 是宿主实际 PDN 进程退出码；`getGuestExitCode()` 是主 guest 进程退出码，`getGuestSignal()` 是主 guest 终止信号。底层 PRoot 现有退出状态可能受到后退出的子进程影响，所以这两个退出码允许不同；信号终止也不强制换算为 `128 + signal`。`getSignal()` 表示安装/归档中断信号。
+以 `isSuccess()` 判断成功；不要只看 `exitCode == 0`。`getExitCode()` 是宿主实际 PDN 进程退出码；`getGuestExitCode()` 是主 guest 进程退出码，`getGuestSignal()` 是主 guest 终止信号。底层 PRoot 现有退出状态可能受到后退出的子进程影响，所以这两个退出码允许不同；信号终止也不强制换算为 `128 + signal`。`getSignal()` 表示原生管理操作捕获的中断信号。
 
 `error` 是诊断事件，不是最终结果。例如第一个镜像下载失败产生错误，第二个镜像成功后，最终结果仍然是 `success`。成功结果不会携带此前失败镜像的错误。界面只在最终失败时显示 `code`、`message`、`suggestion`，详细日志仍从 stderr 读取。
 
-目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。启动错误从 PRoot、loader、guest shell 和 ELF interpreter 的实际失败点提供分类，详见下表。未能取得具体原因的内部错误仍保留兜底分类和 stderr。这版未提供完整后台任务管理或进程树取消接口。
+目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。启动错误从 PRoot、loader、guest shell 和 ELF interpreter 的实际失败点提供分类，详见下表。未能取得具体原因的内部错误仍保留兜底分类和 stderr。`PdnOperations.start()` 提供后台任务、运行超时和取消；通过 `PdnTask` 查询或等待完成，清理先尝试正常结束并在必要时强制终止。接口与回调线程约束见 [AAR API](pdn-aar-api.md)。
 
 ### PRoot 与 guest 启动错误
 
@@ -127,11 +129,11 @@ try {
 {"version":1,"sequence":4,"operation_id":"demo","operation":"install","type":"result","stage":"publishing","outcome":"success","exit_code":0}
 ```
 
-阶段包括 `preparing`、`downloading`、`verifying`、`extracting`、`configuring`、`initializing`、`publishing`、`backing_up`、`restoring`、`starting`、`running`。下载百分比使用固定归档大小；备份/恢复给出已处理字节和未知总量 `-1`，不伪造百分比。guest 内 `apk` 等程序的进度仍属于原始日志，PDN 不解析它们。
+阶段包括 `preparing`、`downloading`、`verifying`、`extracting`、`configuring`、`initializing`、`publishing`、`backing_up`、`restoring`、`cloning`、`renaming`、`starting`、`running`。下载百分比使用固定归档大小；备份/恢复/复制给出已处理字节和未知总量 `-1`，不伪造百分比。guest 内 `apk` 等程序的进度仍属于原始日志，PDN 不解析它们。
 
 原生对进度节流，每次操作最多 1024 条进度记录；错误字符串有长度上限并处理 JSON 转义和非法 UTF-8。Java 限制单行 16 KiB、最多 10000 条记录、总文件 8 MiB，标准流队列为 32 × 8192 字节。事件文件描述符 close-on-exec，协议变量进入 guest 前清除。事件不包含 guest 参数和环境值；原始日志由调用方决定如何保存。
 
-正常返回包含一个 `started` 和一个最终 `result`。强制杀死、通道写入失败等情况可能没有完整结果，Java 会报告 `host_protocol_error`，不会猜测成功。后台子进程在 PDN 结束后仍持有标准流时，Java 最多再排空 2 秒，超过限制抛宿主 IO 错误；完整进程树管理属于后续工作。
+正常返回包含一个 `started` 和一个最终 `result`。强制杀死、通道写入失败等情况可能没有完整结果，Java 会报告 `host_protocol_error`，不会猜测成功。后台子进程在 PDN 结束后仍持有标准流时，Java 最多再排空 2 秒，超过限制抛宿主 IO 错误；异步取消和运行超时会执行同一清理流程，详见 [任务接口](pdn-aar-api.md#异步任务)。这不保证回收已脱离追踪的守护进程，也不覆盖不可中断内核等待或 SIGKILL 后的持久恢复。
 
 ## 当前 AAR 的内容
 
@@ -143,24 +145,24 @@ proot-engine-*.aar
 ├─ classes.jar
 │   └─ id/or/oo/pr/engine/
 │      ├─ ProotHost / PdnRuntime / AlpinePackages
-│      ├─ PdnOperations / PdnListener / PdnEvent / PdnResult / PdnHostException
-│      └─ 现有 ProotLauncher / PtyNative 兼容接口
+│      ├─ PdnOperations / PdnTask / PdnListener / PdnEvent / PdnResult / PdnHostException
+│      ├─ PdnConfiguration / PdnBind
+│      ├─ PdnCatalog / PdnDistributionInfo / PdnInstanceInfo / PdnMirrorInfo / PdnQueryException
+│      ├─ PdnTerminal / PdnTerminalListener / PdnTerminalSession / PdnTerminalStatus / PdnTerminalException
+│      └─ ProotLauncher / PtyNative 兼容接口
 ├─ jni/arm64-v8a/
 │  ├─ libpdn.so
 │  ├─ libproot-loader.so
-│  ├─ libptyjni.so
-│  ├─ libproot.so
-│  ├─ libpr-cli.so
-│  └─ libbusybox.so
+│  └─ libptyjni.so
 └─ 构建工具生成的 R.txt、元数据等
 ```
 
-`libpdn.so` 是独立 ELF 可执行程序，内含 PDN 命令管理、下载/解压依赖和修改后的 PRoot；`libproot-loader.so` 也是 ELF 程序。`.so` 名称用于 Android 原生库打包与解压，不代表可通过 JNI 调用 `install()`。W2 仍然用 `ProcessBuilder` 启动 PDN，Java API 负责参数、事件和结果封装。
+`libpdn.so` 是独立 ELF 可执行程序，内含 PDN 命令管理、下载/解压依赖和修改后的 PRoot；`libproot-loader.so` 也是 ELF 程序。`.so` 名称用于 Android 原生库打包与解压，不代表可通过 JNI 调用 `install()`。API 使用 `ProcessBuilder` 启动 PDN，Java API 负责参数、事件和结果封装。
 
-`libptyjni.so` 才是给交互终端使用的 JNI 共享库。其他三个程序保留给旧引擎接口，当前 AAR 还包含兼容路径，并未拆成只含 PDN 的最小库。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
+`libptyjni.so` 是给交互终端使用的 JNI 共享库。标准 AAR 仅包含上述三项原生文件，`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名。旧 Java/Kotlin 类保留接口兼容，但依赖旧 pr-cli 的方法需要宿主另行提供原生程序；PDN 操作与终端应使用当前 API。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
 
 宿主导入 AAR 后，还需配置 Kotlin 标准库依赖、ARM64、minSdk 28、原生库解压和联网权限。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
 
 ## 独立 App 实测
 
-生成的 AAR 已在 [全新的 Java Android 验证 App](../examples/aar-probe/README.md) 中实测可用。该工程不引用原项目模块，仅导入 AAR 与 Kotlin 标准库；进入 Alpine 后，在交互终端成功执行 `apk add nano`。自动验收与实机覆盖率报告尚未采集。
+生成的 AAR 已在 [全新的 Java Android 验证 App](../examples/aar-probe/README.md) 中实测可用。该工程不引用原项目模块，仅导入 AAR 与 Kotlin 标准库；进入 Alpine 后，在交互终端成功执行 `apk add nano`。AAR 和直接 `.so` 接入均已通过 Debug 与 R8 Release 的独立 App 验收，包含初始化、发行版安装、命令执行、事件和 PTY；各版本的实际原件、检查项数和覆盖范围见 [测试记录](pdn-error-testing.md)，不将旧版结果当作新版验收。

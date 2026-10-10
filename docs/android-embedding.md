@@ -1,7 +1,9 @@
 # Android App 接入 PDN
 
+简体中文 | [English](android-embedding.en.md) · [返回 README](../README.md)
+
 适用于当前 ARM64 Android 产物。PDN 在运行时使用 Android 的 libc/libdl，
-下载、TLS 和解压依赖已静态链接；宿主无需安装 Termux。
+下载、TLS 和解压依赖已静态链接；宿主无需安装 Termux。独立使用与 rootfs 下载源见 [CLI 教程](proot-distro-nolib.zh-CN.md)和 [rootfs 来源](pdn-rootfs-sources.zh-CN.md)。
 
 ## Release 文件怎么选
 
@@ -25,7 +27,7 @@ PDN 和 loader 应来自同一次构建。GitHub Release 已提供独立 AAR；�
 
 ```kotlin
 dependencies {
-    implementation(files("libs/pdn-engine-0.6.6.aar"))
+    implementation(files("libs/pdn-engine-0.6.13.aar"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
 }
 ```
@@ -83,8 +85,7 @@ App/JNI 示例时使用 API 28 及以上。宿主的其他代码可以要求更�
 - [PdnRuntime](../android/proot-engine/src/main/java/id/or/oo/pr/engine/PdnRuntime.kt)：准备目录、生成 argv/environment 和 ProcessBuilder。
 - [AlpinePackages](../android/proot-engine/src/main/java/id/or/oo/pr/engine/AlpinePackages.kt)：通过 exec 接口安装软件、更新索引和查询软件。
 
-仓库内可使用 `:proot-engine` 模块。其他项目可引入这些 Kotlin 源码和 W2 的四份 Java 接口源码，
-并保留许可材料；仅使用 `PdnRuntime` 的进程接口不需要 PTY JNI 或终端 UI。
+仓库内可使用 `:proot-engine` 模块。其他项目推荐导入发布的 AAR；若自行引入源码，需包含使用到的 Java/Kotlin API 及其依赖，并保留许可材料。仅使用 `PdnRuntime` 的进程接口不需要 PTY JNI 或终端 UI。
 
 也可以构建 `:proot-engine:assembleDebug`，把
 `android/proot-engine/build/outputs/aar/proot-engine-debug.aar` 放到宿主的 `app/libs/`：
@@ -144,14 +145,14 @@ PDN 核心使用 `PDN_ROOTFS_DIR` 和显式参数决定数据位置；`APP_*` �
 
 ## 事件监听与 Java 接口
 
-W2 新增 `PdnOperations.run(builder, listener)`、`PdnEvent`、`PdnResult` 与 `PdnListener`，
-支持阶段、进度、分类错误和最终结果，stdout/stderr 独立回调。
-API 保持进程调用方式，不要求 JNI 或协程；回调与等待在工作线程执行。
+`PdnOperations.start(builder, listener, timeoutMillis, executor)` 返回 `PdnTask`，支持阶段、进度、分类错误和最终结果，stdout/stderr 独立回调。指定 Executor 可把回调送到 UI 线程；省略时在工作线程回调。`PdnTask.cancel()` 请求取消，运行超时会取消任务，`await()` 包含清理和最终回调完成，只应在后台线程等待。
+
+原有 `PdnOperations.run(builder, listener)` 保持同步，回调在调用线程执行。非交互 API 使用进程调用，不要求 PTY JNI 或协程；终端 API 使用 AAR 内的 PTY JNI。
 使用 GUI 接入时优先选择这个接口，详见 [事件协议、Java/Kotlin 示例和 AAR 结构](pdn-events.md)。
 
 ## 安装与执行 API
 
-`PdnRuntime` 提供 `install(name)`、`remove(name)`、`login(name, user)` 和
+`PdnRuntime` 提供 `install(name)`、`installAs(distro, instanceName)`、`clone(source, target)`、`rename(source, target)`、`remove(name)`、`login(name, user)` 和
 `exec(name, command, user)`，均返回尚未启动的 `ProcessBuilder`。调用 `.start()`
 才会启动进程，可先配置合并输出或重定向。`remove()` 使用 `--yes`，调用前由
 App 确认删除。`login` 和 `exec` 也接受完整 rootfs `File`，默认把项目目录挂载到
@@ -206,6 +207,9 @@ pdn.list()
 pdn.list(available = true)
 pdn.mirrors("alpine")
 pdn.install("alpine", mirror = "official")
+pdn.installAs("alpine", "ai-python")
+pdn.clone("ai-python", "ai-python-test")
+pdn.rename("ai-python-test", "workspace-python")
 pdn.install("alpine", archive = File(context.filesDir, "alpine.tar.gz"))
 pdn.backup("alpine", File(context.filesDir, "backup.tar.gz"))
 pdn.restore("alpine-copy", File(context.filesDir, "backup.tar.gz"))
@@ -219,9 +223,7 @@ pdn.clearConfig("alpine")
 登录与执行封装显式指定默认 root 身份和 `/workspace`，优先于保存配置；要使用
 配置中的身份、工作目录或其他启动参数，可调用 `processBuilder()`。
 
-`status` 保留 guest 命令的退出码。安装、执行等命令的输出仍是文本，没有
-统一的事件 JSON 协议；`config --show` 才是配置 JSON。示例合并 stdout/stderr，
-需要分别读取时由宿主并行消费两个流，避免阻塞。
+`status` 保留 guest 命令的退出码。上面的基础调用读取原始文本输出；使用 `PdnOperations` 时，封装会启用并解析统一 JSONL 事件协议，同时分别交付 stdout/stderr、分类错误和最终结果。`config --show` 与 `list --json` 是查询 JSON，区别于事件流。基础示例合并 stdout/stderr；直接管理进程且需要分开读取时，宿主必须并行消费两个流，避免阻塞。
 
 交互登录可用 `pdn.login("alpine")` 构建进程；需要终端交互时使用下面的 PTY
 接口，将 `pdn.login(File(pdn.rootfsDir, "alpine")).command()` 交给同一宿主的
@@ -230,8 +232,7 @@ rootfs 父目录与自定义目录不同。
 `processBuilder(arguments)` 保留为通用入口，用于更多挂载、环境变量等高级参数。
 
 删除前先由 App 在界面确认，然后调用 `pdn.remove("alpine")`。
-后台 Service、任务取消、超时及完整进程树回收由宿主负责；这份基础示例没有
-实现完整任务管理，也不保证 coroutine 取消能立即中断阻塞的流读取。
+后台 Service、界面及生命周期由宿主负责。上面的原始 `ProcessBuilder` 基础示例没有完整任务管理，也不保证 coroutine 取消能立即中断阻塞的流读取；需要取消、运行超时和进程清理时，使用 `PdnOperations.start()` / `PdnTask`。交互终端使用 `PdnTerminal` / `PdnTerminalSession`，在生命周期结束时显式终止并关闭会话。
 
 ## Alpine 图形安装示例
 
@@ -298,8 +299,7 @@ make package NDK_PATH=/你的/NDK/目录
 编译输出在 `build/proot-distro-nolib/arm64/`，包含 `jniLibs/arm64-v8a/`。
 发布输出在 `build/packages/`，包含独立程序、两个 `.so`、完整包和校验值。
 发布脚本要求提交项目变更，以便完整包内的源码对应构建版本。GitHub 工作流
-将这些文件上传为 Actions artifact；上传 artifact 本身不会创建 GitHub Release。
-正式 Release 上传独立文件时，同时附上完整包和 `SHA256SUMS`。
+将这些文件上传为 Actions artifact；符合版本条件时还会创建草稿预发布 Release。公开发布前必须完成 AAR / 直接 `.so` 的 Debug 与 R8 Release 四种 Android 验收，核对附件字节、签名、Manifest、事件和 PTY。正式 Release 同时附上完整包和 `SHA256SUMS`，详见[构建与发布](pdn-build-and-release.md)。
 
 构建仓库的示例 APK，在 Android/Termux 上执行：
 

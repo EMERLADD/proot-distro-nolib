@@ -4,7 +4,7 @@
 
 Current native ELF version: **0.6.13**, based on **PRoot 5.4.0-pr**.
 
-For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
+For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.en.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
@@ -529,7 +529,7 @@ The existing published AAR still sets the disable variable. Ordinary App
 processes generally inherit Android filters and retain the compatibility path.
 This native ELF stage does not promise acceleration for MT's ordinary terminal,
 build an AAR/APK, or change Android SIGSYS handling. Verification and performance
-results are recorded in [the test record](pdn-error-testing.md#067-原始-elf-seccomp-加速).
+results are recorded in [the test record](pdn-error-testing.en.md#native-seccomp-acceleration).
 
 ### Blocked openat2 in Android App environments
 

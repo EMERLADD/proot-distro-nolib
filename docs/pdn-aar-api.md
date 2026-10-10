@@ -1,5 +1,7 @@
 # PDN AAR 接口
 
+简体中文 | [English](pdn-aar-api.en.md) · [返回 README](../README.md)
+
 AAR 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独立终端和结构化发行版查询。最低 Android 9（API 28），目前提供 ARM64；宿主提供 Kotlin 标准库，不需要 Compose、协程或 Termux。
 
 ## 产物与目录
@@ -134,7 +136,7 @@ List<PdnDistributionInfo> installed = catalog.installed();
 List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 ```
 
-查询是同步操作，GUI 应在后台调用。返回列表和条目不可修改。可安装条目提供名称、固定版本、架构和下载字节数；已安装条目提供名称与 rootfs 路径；`getInstance()` 返回可选的不可变 `PdnInstanceInfo`。其中包含稳定 ID、实例名、发行版及版本、架构、来源、来源 URL、归档 SHA256 和 Unix 秒创建时间。旧 rootfs 的实例信息为 null，查询不会改写它；来源未知的恢复实例可以保留 null 字段，不根据当前下载目录推断历史版本。
+查询是同步操作，GUI 应在后台调用。返回列表和条目不可修改。可安装条目提供名称、固定版本、架构和下载字节数；已安装条目提供名称与 rootfs 路径；`getInstance()` 返回可选的不可变 `PdnInstanceInfo`。其中包含稳定 ID、实例名、发行版及版本、架构、来源、来源 URL、归档 SHA256 和 Unix 秒创建时间。旧 rootfs 的实例信息为 null，查询不会改写它；来源未知的恢复或复制实例可以保留 null 字段，不根据当前下载目录推断历史版本。
 
 镜像条目提供发行版、镜像名称、base URL、完整归档 URL、顺序与官方源标记。顺序是内置回退优先级，不是实时测速排名。
 

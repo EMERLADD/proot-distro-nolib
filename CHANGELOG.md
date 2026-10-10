@@ -1,5 +1,7 @@
 # proot-distro-nolib 更新记录
 
+简体中文 | [English](CHANGELOG.en.md) · [返回 README](README.md)
+
 ## v0.6.13 — 2026-10-10
 
 - 增加 `clone SOURCE TARGET` 与 `rename SOURCE TARGET`，以及 Java/Kotlin 同名方法；来源兼容旧名称，目标沿用 128 字符名称限制。
@@ -163,7 +165,7 @@ rish 的 Android shell 中已实测版本输出和 Alpine 安装，rish 登录�
 验证：59 项自动测试通过；前端行覆盖率 98.65%，安装模块 98.72%，发行版目录 100%。
 三个新增发行版均已验证真实下载安装、登录、软件源更新以及安装运行 `tree`；
 Arch 归档已验证官方 PGP 签名。运行时依赖仍仅为 Android libc/libdl。
-详细来源与摘要见 [rootfs 目录](docs/pdn-rootfs-sources.md)。Ubuntu 安装与登录已实测通过；附加组名称警告在 v0.4.1 修复。
+详细来源与摘要见 [rootfs 目录](docs/pdn-rootfs-sources.zh-CN.md)。Ubuntu 安装与登录已实测通过；附加组名称警告在 v0.4.1 修复。
 
 ## v0.3.2 — 2026-10-06
 
