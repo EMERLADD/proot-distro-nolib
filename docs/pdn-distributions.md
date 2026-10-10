@@ -65,7 +65,7 @@ pdn install ubuntu --mirror tuna
 pdn install alpine --archive /路径/对应固定版本的rootfs.tar.gz
 ```
 
-指定镜像后只使用该源。下载检查内置的固定文件大小和 SHA256，通过后才解压，不会自动改用未经校验的 `latest` 包。`install --archive` 也必须匹配内置版本的校验值，不是任意归档导入。具体来源和校验值见 [rootfs 来源目录](pdn-rootfs-sources.md)。
+指定镜像后只使用该源。下载检查内置的固定文件大小和 SHA256，通过后才解压，不会自动改用未经校验的 `latest` 包。`install --archive` 也必须匹配内置版本的校验值，不是任意归档导入。具体来源和校验值见 [rootfs 来源目录](pdn-rootfs-sources.zh-CN.md)。
 
 目前没有镜像延迟测速排名或断点续传。Arch 压缩包约 791 MiB，安装时请预留数 GiB 空间。Kotlin 可以通过 `pdn.install("alpine", mirror = "official")` 生成操作；它返回 `ProcessBuilder`，还需启动或交给异步任务接口。
 
@@ -104,7 +104,7 @@ pdn login ubuntu-copy
 
 备份文件必须位于源 rootfs 之外，恢复必须使用新名字；两者都不会覆盖已有目标。备份保留 Linux 文件数据及 PRoot 内部链接的迁移关系，排除宿主启动配置、临时 loader、运行时目录内容和特殊节点。换 App 后需重新设置挂载目录。
 
-目录会补齐 owner rwx 权限，不恢复宿主所有者及 setuid/setgid。这是适合无 root 环境迁移的 rootfs 备份。归档限制、中断处理及更多参数见 [完整手册](proot-distro-nolib.md)。
+目录会补齐 owner rwx 权限，不恢复宿主所有者及 setuid/setgid。这是适合无 root 环境迁移的 rootfs 备份。归档限制、中断处理及更多参数见 [完整手册](proot-distro-nolib.zh-CN.md)。
 
 ## 指令索引
 

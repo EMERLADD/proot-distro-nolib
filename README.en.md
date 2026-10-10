@@ -217,7 +217,6 @@ Both APK paths were verified under ordinary Android App identities. Versions, en
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |
 | Build locally, use CI or release source | [Building and releasing](docs/pdn-build-and-release.en.md) |
 | Diagnose directory, version, permission or terminal issues | [Frequently asked questions](docs/pdn-faq.en.md) |
-| Check current development tasks and local update plans | [Current tasks (Chinese)](docs/pdn-workspace-and-local-update.md#当前待办2026-10-10) |
 | Find complete CLI details | [Native CLI manual](docs/proot-distro-nolib.md) |
 
 ## 6. Building and contributing

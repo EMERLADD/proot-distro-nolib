@@ -10,7 +10,7 @@
 
 ## Task 1: 当前待办
 
-Files: docs/pdn-workspace-and-local-update.md, README.md, README.en.md.
+Files: README.md, README.en.md. The former task catalogue was later removed.
 
 - [x] 核对当前 API、原生能力和验收记录，建立当前状态表；保留原规划为历史背景。
 - [x] 已完成项包括 W1、W2、W3/W4 的异步任务、取消/超时及独立多终端；剩余项独立列出，不把宿主生命周期服务算作已实现。

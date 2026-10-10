@@ -1,5 +1,7 @@
 # proot-distro-nolib engine
 
+[简体中文](proot-distro-nolib.zh-CN.md) | English · [README](../README.en.md)
+
 Current native ELF version: **0.6.13**, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.md).
@@ -9,7 +11,7 @@ and license information.
 
 Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
-`install`, `mirrors`, `login`, `exec`, `config`, `backup`, `restore`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
+`install`, `mirrors`, `login`, `exec`, `config`, `backup`, `restore`, `clone`, `rename`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
 
 ## Installing a distribution
@@ -133,6 +135,25 @@ Android's `/system/etc/security/cacerts`; `PDN_CA_BUNDLE` optionally supplies a
 PEM trust file. Host proxy settings follow libcurl behavior. No Android package
 name or service request is needed, and existing installed systems are unchanged.
 
+## Named instances, clone and rename
+
+```sh
+pdn install alpine --name ai-python
+pdn clone ai-python ai-python-test
+pdn rename ai-python-test workspace-python
+pdn list --json
+```
+
+New destination names allow up to 128 ASCII characters, starting with a letter,
+digit or underscore and continuing with letters, digits, underscores, dots or
+hyphens. Conflicts are case insensitive. Clone generates a new ID/time and
+`source=clone`; rename preserves identity and provenance. Both migrate owned
+links and saved internal binds, recognize directory aliases, retain external
+binds, and refuse active sessions or existing destinations. Ordinary failures
+and handled cancellation roll back before publication; SIGKILL/power-loss
+recovery is not implemented. See [distribution management](pdn-distributions.en.md)
+for copying limits and configuration behavior.
+
 ## Uninstalling a local rootfs
 
 ```sh
@@ -242,7 +263,8 @@ For loader temporary files, login uses nonempty `PROOT_TMP_DIR`, then `TMPDIR`;
 otherwise it creates `.pdn-tmp` within the selected rootfs with mode 0700.
 Explicit temporary directories must already exist and be writable.
 `PROOT_LOADER` remains available for hosts needing the external loader;
-`PROOT_NO_SECCOMP` defaults to 1 for login and can be explicitly overridden.
+The native CLI allows automatic seccomp selection when `PROOT_NO_SECCOMP`
+is absent; AAR hosts set it to `1` by default. See the acceleration section.
 Paths come from the caller or filesystem, never from a hardcoded app package.
 An Android service integration would need the host app's actual interface;
 a package name alone does not provide such an interface.

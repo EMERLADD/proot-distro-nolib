@@ -1,4 +1,6 @@
-# Pinned ARM64 rootfs catalogue (v0.4.0)
+# Pinned ARM64 rootfs catalogue
+
+[简体中文](pdn-rootfs-sources.zh-CN.md) | English · [README](../README.en.md)
 
 Verified on 2026-10-06. The executable contains these sizes and SHA256 values;
 mirrors never choose the accepted digest at runtime. This project downloads

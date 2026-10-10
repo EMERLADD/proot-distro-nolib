@@ -214,11 +214,10 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | 给其他 APK 嵌入 PDN | [App 接入教程](docs/android-embedding.md) |
 | 查 Java/Kotlin 配置、任务、查询和终端接口 | [AAR API](docs/pdn-aar-api.md) |
 | 自己接事件或排查分类错误 | [事件协议](docs/pdn-events.md)、[测试与错误分类](docs/pdn-error-testing.md) |
-| 查上游归档与 SHA256 | [rootfs 来源（英文）](docs/pdn-rootfs-sources.md) |
+| 查上游归档与 SHA256 | [rootfs 来源](docs/pdn-rootfs-sources.zh-CN.md) |
 | 本地构建、CI 或发布源码 | [构建与发布](docs/pdn-build-and-release.md) |
 | 排查目录、版本、运行权限和终端问题 | [常见问题](docs/pdn-faq.md) |
-| 看当前开发待办和设备本地更新规划 | [当前待办](docs/pdn-workspace-and-local-update.md#当前待办2026-10-10) |
-| 查完整 CLI 细节 | [原生 CLI 手册（英文）](docs/proot-distro-nolib.md) |
+| 查完整 CLI 细节 | [原生 CLI 手册](docs/proot-distro-nolib.zh-CN.md) |
 
 ## 6. 构建与贡献
 

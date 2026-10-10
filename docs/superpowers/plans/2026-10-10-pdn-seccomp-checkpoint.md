@@ -84,7 +84,7 @@ NDK_PATH=/你的/NDK目录 CC=clang sh scripts/build-proot-nolib.sh
 
 本机已存在 NDK 26.3.11579264 与 Termux Clang、llvm-profdata/llvm-cov、Gradle、aapt2、apksigner。依赖构建缓存和 `build/releases/v0.6.6` 已保留。Alpine 官方归档在 `build/pdn-sources/alpine-minirootfs-3.24.2-aarch64.tar.gz`。
 
-当前待办见 `docs/pdn-workspace-and-local-update.md`，已交付测试方法见 `docs/pdn-error-testing.md`。恢复时不重复 R8 或代理诊断，直接继续原始 ELF seccomp 阶段。
+原任务清单已移除；当前接口见 `docs/pdn-aar-api.md`，已交付测试方法见 `docs/pdn-error-testing.md`。恢复时不重复 R8 或代理诊断，直接继续原始 ELF seccomp 阶段。
 
 ## 暂停期间追加反馈
 
