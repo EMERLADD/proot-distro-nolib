@@ -13,5 +13,5 @@
 - [x] Add Java/Kotlin and SO helpers, nullable clone provenance parsing and ABI/argv/validation tests.
 - [x] Extend App probes with clone/rename checks; sync patch version 0.6.13 and test App versions.
 - [x] Run native and SDK regressions, collect >=80% touched coverage and review implementation against design.
-- [ ] Build matching AAR and four APKs; verify signatures, mapping, manifest and native bytes; run real device and MT tests.
+- [x] Build matching AAR and four APKs; verify signatures, mapping, manifest and native bytes; run real device and MT tests.
 - [ ] Update bilingual docs and TODO, commit/push, publish only accepted artifacts, refresh delivery aliases and clean owned test files.
