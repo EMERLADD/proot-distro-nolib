@@ -22,6 +22,7 @@ void pdn_instance_json(FILE *stream, const struct pdn_instance *instance);
 int pdn_instance_create(int rootfd, const char *name, const char *distro,
                         const char *version, const char *sha256,
                         const char *source, const char *url);
+int pdn_instance_relocate(int rootfd, const char *name, int cloning);
 int pdn_instance_restore(int rootfd, const char *name);
 
 #endif

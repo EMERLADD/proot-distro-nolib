@@ -102,7 +102,14 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(len(pids), 2, "guest command did not publish both process IDs")
             process.send_signal(signal.SIGTERM)
             process.communicate(timeout=5)
+            deadline = time.monotonic() + 5
             for pid in pids:
+                while time.monotonic() < deadline:
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        break
+                    time.sleep(0.02)
                 with self.assertRaises(ProcessLookupError):
                     os.kill(pid, 0)
         finally:

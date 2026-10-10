@@ -134,4 +134,16 @@ pdn backup ai-python /path/ai-python.tar.gz
 pdn restore ai-restored /path/ai-python.tar.gz
 ```
 
-New installations store a stable ID and provenance in `.pdn-instance`. Legacy rootfs entries have JSON `instance: null`; queries are read only. Restore creates a fresh identity and retains known provenance, refusing existing names. Aliases do not add direct clone or rename operations.
+New installations store a stable ID and provenance in `.pdn-instance`. Legacy rootfs entries have JSON `instance: null`; queries are read only. Restore creates a fresh identity and retains known provenance, refusing existing names. Cloning and renaming are described below.
+
+## Clone and rename
+
+```sh
+pdn clone ai-python ai-python-test
+pdn rename ai-python-test workspace-python
+pdn login workspace-python
+```
+
+Exit active source sessions first. Clone creates an independent rootfs, fresh ID and timestamp, following backup portability limits. It needs space for a temporary archive plus the target rootfs; devices, FIFOs, sockets, runtime directory contents and temporary config are excluded. Native hardlinks become independent files under the existing archive rules; PRoot .l2s backing relationships are migrated. Saved config is retained, rootfs-owned bind paths move, and external project binds remain shared.
+
+Rename moves the directory, preserving ID, time and provenance while migrating rootfs-owned host-absolute symlinks/.l2s links and bind paths. Arbitrary file contents, external links and environment strings are not rewritten. Case-only changes are allowed, conflicts refuse overwrites, and active sessions report operation_busy. Ordinary failures and handled cancellation roll back; rollback_failed retains recovery snapshots. SIGKILL/power-loss transaction recovery is still a limitation.

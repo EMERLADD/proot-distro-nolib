@@ -17,6 +17,7 @@
 
 #include "pdn_events.h"
 #include "pdn_instance.h"
+#include "pdn_config.h"
 
 char *pdn_rootfs_base(void);
 static volatile sig_atomic_t stopped;
@@ -145,6 +146,27 @@ static int l2s_target(const char *path)
     return !strncmp(leaf, ".l2s.", 5) || !strncmp(leaf, ".proot.l2s.", 11);
 }
 
+static const char *owned_suffix(const char *path, const char *root)
+{
+    size_t length = strlen(root), size = strlen(path);
+    if (path[0] != '/') return NULL;
+    if (!strncmp(path, root, length) && (!path[length] || path[length] == '/')) return path + length;
+    if (size > 4096) return NULL;
+    char prefix[4097];
+    int saved = errno;
+    for (size_t end = 1; end <= size; end++) {
+        if (path[end] && path[end] != '/') continue;
+        memcpy(prefix, path, end);
+        prefix[end] = 0;
+        char *resolved = realpath(prefix, NULL);
+        int match = resolved && !strcmp(resolved, root);
+        free(resolved);
+        if (match) { errno = saved; return path + end; }
+    }
+    errno = saved;
+    return NULL;
+}
+
 struct limits { int64_t total; unsigned entries; int64_t processed; };
 
 static int pack(struct archive *out, int dirfd, const char *prefix, dev_t device,
@@ -191,9 +213,9 @@ static int pack(struct archive *out, int dirfd, const char *prefix, dev_t device
             if (size >= (ssize_t)sizeof(link) - 1) { problem("archive_limit_exceeded", "backup symlink exceeds limit"); goto entry_done; }
             link[size] = 0;
             const char *target = link;
-            size_t root_length = strlen(rootpath);
-            if (!strncmp(link, rootpath, root_length) && link[root_length] == '/')
-                target = link + root_length;
+            const char *suffix = owned_suffix(link, rootpath);
+            if (suffix)
+                target = *suffix ? suffix : "/";
             else if (link[0] == '/' && l2s_target(link)) {
                 problem("archive_unsafe", "hardlink backing data is outside rootfs; cannot make a portable backup");
                 goto entry_done;
@@ -470,3 +492,292 @@ done:
     if (result) fprintf(stderr, "pdn: %s failed; existing files were not replaced\n", restoring ? "restore" : "backup");
     return result;
 }
+
+struct moved_link {
+    char *path;
+    char *original;
+    char *replacement;
+    struct moved_link *next;
+    int changed;
+};
+
+
+static int collect_links(int fd, const char *prefix, const char *oldroot,
+                         const char *newroot, struct moved_link **links,
+                         size_t *bytes, unsigned *entries, dev_t device, unsigned depth)
+{
+    DIR *dir = fdopendir(openat(fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    int result = -1;
+    if (!dir) return system_error("file_io_failed", "cannot inspect instance links", errno);
+    if (depth > 256) { closedir(dir); return problem("archive_limit_exceeded", "instance nesting exceeds limit"); }
+    for (;;) {
+        struct dirent *entry;
+        struct stat st;
+        errno = 0;
+        entry = readdir(dir);
+        if (!entry) { result = errno ? system_error("file_io_failed", "cannot read instance directory", errno) : 0; break; }
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        if (stopped) break;
+        if (++*entries > 1000000) { problem("archive_limit_exceeded", "instance entry count exceeds limit"); break; }
+        char *path = NULL;
+        if (asprintf(&path, "%s%s%s", prefix, *prefix ? "/" : "", entry->d_name) < 0) { problem("out_of_memory", "cannot allocate link path"); break; }
+        if (fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) < 0) { free(path); system_error("file_io_failed", "cannot inspect instance entry", errno); break; }
+        if (st.st_dev != device && !runtime_dir(path)) { free(path); problem("archive_unsafe", "instance contains a mounted directory"); break; }
+        if (S_ISDIR(st.st_mode) && !runtime_dir(path) && strcmp(path, ".pdn-tmp")) {
+            int child = openat(fd, entry->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+            int status = child < 0 ? system_error("file_io_failed", "cannot open instance directory", errno) : collect_links(child, path, oldroot, newroot, links, bytes, entries, device, depth + 1);
+            if (child >= 0) close(child);
+            free(path);
+            if (status < 0) break;
+            continue;
+        }
+        if (S_ISLNK(st.st_mode)) {
+            char target[4097];
+            ssize_t count = readlinkat(fd, entry->d_name, target, sizeof(target) - 1);
+            if (count < 0 || count >= (ssize_t)sizeof(target) - 1) { free(path); system_error("file_io_failed", "cannot read instance symlink", count < 0 ? errno : ENAMETOOLONG); break; }
+            target[count] = 0;
+            const char *suffix = owned_suffix(target, oldroot);
+            if (suffix) {
+                struct moved_link *link = calloc(1, sizeof(*link));
+                if (!link) { free(path); problem("out_of_memory", "cannot allocate link journal"); break; }
+                link->path = path;
+                link->original = strdup(target);
+                if (!link->original || asprintf(&link->replacement, "%s%s", newroot, suffix) < 0) {
+                    free(link->original); free(path); free(link); problem("out_of_memory", "cannot allocate link journal"); break;
+                }
+                *bytes += sizeof(*link) + strlen(path) + strlen(target) + strlen(link->replacement) + 3;
+                link->next = *links;
+                *links = link;
+                if (*bytes > 64 * 1024 * 1024 || strlen(link->replacement) >= 4096) { problem("archive_limit_exceeded", "instance link journal exceeds limit"); break; }
+                continue;
+            }
+        }
+        free(path);
+    }
+    closedir(dir);
+    return result;
+}
+
+static int replace_link(int rootfd, struct moved_link *link, int restoring)
+{
+    char *path = strdup(link->path), *save = NULL, *part;
+    int parent = dup(rootfd), result = -1;
+    char temporary[80];
+    if (!path || parent < 0) { free(path); if (parent >= 0) close(parent); return -1; }
+    part = strtok_r(path, "/", &save);
+    while (part) {
+        char *next = strtok_r(NULL, "/", &save);
+        if (!next) break;
+        int child = openat(parent, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        close(parent); parent = child;
+        if (parent < 0) goto done;
+        part = next;
+    }
+    char current[4097];
+    ssize_t length = readlinkat(parent, part, current, sizeof(current) - 1);
+    if (length < 0 || length >= (ssize_t)sizeof(current) - 1) goto done;
+    current[length] = 0;
+    if (strcmp(current, restoring ? link->replacement : link->original)) { errno = EBUSY; goto done; }
+    for (unsigned attempt = 0; attempt < 100; attempt++) {
+        snprintf(temporary, sizeof(temporary), ".pdn-link.%ld.%u", (long)getpid(), attempt);
+        if (symlinkat(restoring ? link->original : link->replacement, parent, temporary) == 0) {
+            result = renameat(parent, temporary, parent, part);
+            int saved = errno;
+            unlinkat(parent, temporary, 0);
+            errno = saved;
+            break;
+        }
+        if (errno != EEXIST) break;
+    }
+done:
+    { int saved = errno; if (parent >= 0) close(parent); free(path); errno = saved; }
+    return result;
+}
+
+static int migrate_options(PdnOptions *destination, const PdnOptions *source,
+                           const char *oldroot, const char *newroot)
+{
+    for (int i = 0; i < source->bind_count; i++) {
+        const char *binding = source->binds[i], *colon = strchr(binding, ':');
+        char *host = colon ? strndup(binding, (size_t)(colon - binding)) : strdup(binding);
+        char *replacement = NULL;
+        if (!host) return problem("out_of_memory", "cannot allocate instance configuration");
+        const char *suffix = owned_suffix(host, oldroot);
+        if (suffix) {
+            if (asprintf(&replacement, "%s%s%s", newroot, suffix, colon ? colon : "") < 0) replacement = NULL;
+        } else replacement = strdup(binding);
+        free(host);
+        if (!replacement) return problem("out_of_memory", "cannot allocate instance configuration");
+        int status = pdn_option_add(destination, 'b', replacement);
+        free(replacement);
+        if (status) return -1;
+    }
+    for (int i = 0; i < source->env_count; i++) if (pdn_option_add(destination, 'e', source->env[i])) return -1;
+    if (source->user && pdn_option_add(destination, 'u', source->user)) return -1;
+    if (source->workdir && pdn_option_add(destination, 'w', source->workdir)) return -1;
+    return 0;
+}
+
+static int snapshot_file(int rootfd, const char *leaf, char temporary[80], size_t limit)
+{
+    int source = openat(rootfd, leaf, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    int target = -1, result = -1;
+    struct stat st;
+    if (source < 0) return -1;
+    if (fstat(source, &st) < 0) goto done;
+    if (!S_ISREG(st.st_mode) || st.st_size < 0 || (uint64_t)st.st_size > limit) { errno = EINVAL; goto done; }
+    for (unsigned attempt = 0; attempt < 100; attempt++) {
+        snprintf(temporary, 80, ".pdn-rollback.%ld.%u", (long)getpid(), attempt);
+        target = openat(rootfd, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (target >= 0 || errno != EEXIST) break;
+    }
+    if (target < 0) goto done;
+    char buffer[4096];
+    off_t remaining = st.st_size;
+    while (remaining) {
+        ssize_t count = read(source, buffer, remaining < (off_t)sizeof(buffer) ? (size_t)remaining : sizeof(buffer));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { if (!count) errno = EIO; goto done; }
+        size_t written = 0;
+        while (written < (size_t)count) {
+            ssize_t bytes = write(target, buffer + written, (size_t)count - written);
+            if (bytes < 0 && errno == EINTR) continue;
+            if (bytes <= 0) { if (!bytes) errno = EIO; goto done; }
+            written += (size_t)bytes;
+        }
+        remaining -= count;
+    }
+    if (fchmod(target, st.st_mode & 0777) < 0 || fsync(target) < 0) goto done;
+    result = 0;
+done:
+    { int saved = errno;
+      close(source);
+      if (target >= 0) { if (close(target) < 0 && !result) { result = -1; saved = errno; } if (result) unlinkat(rootfd, temporary, 0); }
+      if (result) temporary[0] = 0;
+      errno = saved;
+    }
+    return result;
+}
+
+static int move_instance(const char *source, const char *target, int cloning)
+{
+    char *base = NULL, *resolved = NULL, *found = NULL, *destination = NULL, *rootpath = NULL;
+    int basefd = -1, lock = -1, rootfd = -1, cwd = -1, archivefd = -1, stagefd = -1;
+    int result = 2, count, staged = 0, config_changed = 0, metadata_changed = 0, keep_snapshots = 0;
+    char stage[] = ".pdn-clone-XXXXXX";
+    char config_snapshot[80] = {0}, metadata_snapshot[80] = {0};
+    struct stat st;
+    struct moved_link *links = NULL;
+    size_t journal_bytes = 0;
+    unsigned entries = 0;
+    PdnOptions options = {0}, migrated = {0};
+    struct sigaction action = {0}, old_int, old_term;
+    struct archive *out = NULL;
+    struct limits limits = {0};
+    if (!valid_backup_name(source) || !pdn_instance_valid_name(target)) { problem("invalid_argument", "invalid source or destination instance name"); return 2; }
+    stopped = 0; action.sa_handler = interrupt_archive; sigemptyset(&action.sa_mask);
+    sigaction(SIGINT, &action, &old_int); sigaction(SIGTERM, &action, &old_term);
+    pdn_events_stage("preparing");
+    base = pdn_rootfs_base();
+    if (!base || !(resolved = realpath(base, NULL)) || !strcmp(resolved, "/")) { rootfs_problem(base ? errno : ENOENT); goto done; }
+    basefd = open(resolved, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (basefd < 0) { rootfs_problem(errno); goto done; }
+    lock = openat(basefd, ".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (lock < 0) { system_error("lock_failed", "cannot open instance lock", errno); goto done; }
+    if (acquire_lock(lock, "another instance operation is running") < 0) goto done;
+    found = lookup(basefd, source, &count);
+    if (count != 1) { if (count < 0) system_error("file_io_failed", "cannot find source instance", errno); else problem(count ? "name_ambiguous" : "rootfs_missing", "source instance missing or ambiguous"); goto done; }
+    char *existing = lookup(basefd, target, &count);
+    int self = count == 1 && existing && !strcmp(existing, found);
+    free(existing);
+    if (count < 0) { system_error("file_io_failed", "cannot inspect destination instance", errno); goto done; }
+    if (count && !(self && !cloning && strcmp(found, target))) { problem(self && !cloning ? "invalid_argument" : "rootfs_exists", "destination instance already exists"); goto done; }
+    rootfd = openat(basefd, found, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (rootfd < 0) { system_error("file_io_failed", "cannot open source instance", errno); goto done; }
+    if (acquire_lock(rootfd, "exit source instance sessions before copying or renaming") < 0) goto done;
+    struct pdn_instance instance;
+    int has_metadata = pdn_instance_read(rootfd, &instance);
+    if (has_metadata < 0 || (has_metadata && strcmp(instance.name, found))) { system_error("instance_metadata_failed", "invalid source instance metadata", has_metadata < 0 ? errno : EINVAL); goto done; }
+    if (pdn_options_load(rootfd, &options)) goto done;
+    int has_config = fstatat(rootfd, ".pdn-config", &st, AT_SYMLINK_NOFOLLOW) == 0;
+    if (asprintf(&rootpath, "%s/%s", resolved, found) < 0 || asprintf(&destination, "%s/%s", resolved, target) < 0) { problem("out_of_memory", "cannot allocate instance paths"); goto done; }
+    if (migrate_options(&migrated, &options, rootpath, destination) < 0) goto done;
+    if (cloning) {
+        cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (cwd < 0 || fchdir(basefd) < 0 || !mkdtemp(stage)) { system_error("file_io_failed", "cannot create clone staging directory", errno); goto done; }
+        staged = 1;
+        stagefd = openat(basefd, stage, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (stagefd < 0) { system_error("file_io_failed", "cannot open clone staging directory", errno); goto done; }
+        archivefd = openat(stagefd, ".pdn-copy.tar", O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        out = archive_write_new();
+        if (archivefd < 0 || !out) { system_error("file_io_failed", "cannot create clone archive", errno); goto done; }
+        if (unlinkat(stagefd, ".pdn-copy.tar", 0) < 0) { system_error("file_io_failed", "cannot remove clone archive name", errno); goto done; }
+        if (archive_write_set_format_pax_restricted(out) != ARCHIVE_OK || archive_write_open_fd(out, archivefd) != ARCHIVE_OK) { archive_problem(out, 1); goto done; }
+        pdn_events_stage("cloning"); pdn_events_progress(0, -1);
+        if (fstat(rootfd, &st) < 0 || pack(out, rootfd, "", st.st_dev, &limits, 0, rootpath) < 0) goto done;
+        if (archive_write_close(out) != ARCHIVE_OK) { archive_problem(out, 1); goto done; }
+        archive_write_free(out); out = NULL;
+        if (lseek(archivefd, 0, SEEK_SET) < 0 || fchdir(stagefd) < 0) { system_error("file_io_failed", "cannot read clone archive", errno); goto done; }
+        if (unpack(archivefd, destination) < 0) goto done;
+        if (pdn_instance_relocate(stagefd, target, 1) < 0 || (has_config && pdn_options_save(stagefd, &migrated))) goto done;
+        if (stopped) goto done;
+        pdn_events_stage("publishing");
+        existing = lookup(basefd, target, &count); free(existing);
+        if (count || syscall(SYS_renameat2, basefd, stage, basefd, target, 1) < 0) { if (count > 0 || errno == EEXIST) problem("rootfs_exists", "destination instance already exists"); else system_error("publish_failed", "cannot publish cloned instance", errno); goto done; }
+        staged = 0;
+    } else {
+        if (fstat(rootfd, &st) < 0) { system_error("file_io_failed", "cannot inspect source instance", errno); goto done; }
+        if (collect_links(rootfd, "", rootpath, destination, &links, &journal_bytes, &entries, st.st_dev, 0) < 0 || stopped) goto done;
+        if ((has_config && snapshot_file(rootfd, ".pdn-config", config_snapshot, 65536) < 0) ||
+            (has_metadata && snapshot_file(rootfd, ".pdn-instance", metadata_snapshot, 4096) < 0)) {
+            system_error("file_io_failed", "cannot prepare instance rollback", errno); goto done;
+        }
+        pdn_events_stage("renaming");
+        for (struct moved_link *link = links; link; link = link->next) {
+            if (stopped) goto done;
+            if (replace_link(rootfd, link, 0) < 0) { system_error("file_io_failed", "cannot migrate instance symlink", errno); goto done; }
+            link->changed = 1;
+        }
+        if (has_config) { config_changed = 1; if (pdn_options_save(rootfd, &migrated)) goto done; }
+        if (has_metadata) { metadata_changed = 1; if (pdn_instance_relocate(rootfd, target, 0) < 0) goto done; }
+        if (stopped) goto done;
+        pdn_events_stage("publishing");
+        existing = lookup(basefd, target, &count);
+        self = count == 1 && existing && !strcmp(existing, found); free(existing);
+        if ((count && !self) || count < 0 || syscall(SYS_renameat2, basefd, found, basefd, target, 1) < 0) { if (count > 0 && !self) problem("rootfs_exists", "destination instance already exists"); else system_error("publish_failed", "cannot publish renamed instance", errno); goto done; }
+    }
+    result = 0;
+    printf("%s %s to %s. Run: pdn login %s\n", cloning ? "Cloned" : "Renamed", found, target, target);
+done:
+    if (result && !cloning && rootfd >= 0) {
+        int rollback_failed = 0;
+        if (metadata_changed && renameat(rootfd, metadata_snapshot, rootfd, ".pdn-instance") < 0) rollback_failed = 1;
+        if (config_changed && renameat(rootfd, config_snapshot, rootfd, ".pdn-config") < 0) rollback_failed = 1;
+        for (struct moved_link *link = links; link; link = link->next) if (link->changed && replace_link(rootfd, link, 1) < 0) rollback_failed = 1;
+        if (rollback_failed) {
+            keep_snapshots = 1;
+            pdn_events_problem("rollback_failed", "Instance rename rollback incomplete", "Inspect source instance links, metadata and configuration before retrying; restore a backup if needed");
+            fprintf(stderr, "pdn: rollback incomplete; inspect source instance before retrying\n");
+        }
+    }
+    if (!keep_snapshots && rootfd >= 0 && *metadata_snapshot) unlinkat(rootfd, metadata_snapshot, 0);
+    if (!keep_snapshots && rootfd >= 0 && *config_snapshot) unlinkat(rootfd, config_snapshot, 0);
+    if (out) archive_write_free(out);
+    if (archivefd >= 0) close(archivefd);
+    if (stagefd >= 0) close(stagefd);
+    if (staged && fchdir(basefd) == 0 && nftw(stage, remove_stage, 16, FTW_DEPTH | FTW_PHYS) < 0) fprintf(stderr, "pdn: cannot clean clone staging directory: %s\n", stage);
+    if (cwd >= 0) { if (fchdir(cwd) < 0) result = 2; close(cwd); }
+    pdn_options_free(&options); pdn_options_free(&migrated);
+    while (links) { struct moved_link *next = links->next; free(links->path); free(links->original); free(links->replacement); free(links); links = next; }
+    if (rootfd >= 0) close(rootfd);
+    if (lock >= 0) close(lock);
+    if (basefd >= 0) close(basefd);
+    free(base); free(resolved); free(found); free(destination); free(rootpath);
+    sigaction(SIGINT, &old_int, NULL); sigaction(SIGTERM, &old_term, NULL);
+    if (stopped && result) { pdn_events_cancelled(stopped); return 128 + stopped; }
+    if (result && !pdn_events_has_error()) problem("file_io_failed", "instance operation failed; inspect source and storage");
+    return result;
+}
+
+int pdn_clone(const char *source, const char *target) { return move_instance(source, target, 1); }
+int pdn_rename(const char *source, const char *target) { return move_instance(source, target, 0); }

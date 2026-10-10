@@ -64,6 +64,11 @@ class PdnRuntime @JvmOverloads constructor(
         return name
     }
 
+    private fun instanceName(name: String): String {
+        require(name.length <= 128 && Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*").matches(name)) { "Invalid instance name: $name" }
+        return name
+    }
+
     fun version(): ProcessBuilder = processBuilder(listOf("version"))
 
     @JvmOverloads
@@ -88,8 +93,7 @@ class PdnRuntime @JvmOverloads constructor(
 
     @JvmOverloads
     fun installAs(distro: String, instanceName: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
-        require(instanceName.length <= 128 && Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*").matches(instanceName)) { "Invalid instance name: $instanceName" }
-        val args = mutableListOf("install", distroName(distro), "--name", instanceName)
+        val args = mutableListOf("install", distroName(distro), "--name", instanceName(instanceName))
         require(mirror == null || archive == null) { "Choose either a mirror or a local archive" }
         if (mirror != null) {
             require(mirror.isNotBlank() && !mirror.startsWith("-")) { "A mirror name is required" }
@@ -98,6 +102,12 @@ class PdnRuntime @JvmOverloads constructor(
         if (archive != null) args += listOf("--archive", archive.absolutePath)
         return processBuilder(args)
     }
+
+    fun clone(sourceName: String, targetName: String): ProcessBuilder =
+        processBuilder(listOf("clone", distroName(sourceName), instanceName(targetName)))
+
+    fun rename(sourceName: String, targetName: String): ProcessBuilder =
+        processBuilder(listOf("rename", distroName(sourceName), instanceName(targetName)))
 
     fun remove(name: String): ProcessBuilder = processBuilder(listOf("remove", distroName(name), "--yes"))
 

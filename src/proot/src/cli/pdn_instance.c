@@ -35,9 +35,9 @@ static int valid(const struct pdn_instance *instance)
         (!*instance->distro || pdn_instance_valid_name(instance->distro)) &&
         !strcmp(instance->architecture, "aarch64") &&
         (!strcmp(instance->source, "archive") || !strcmp(instance->source, "mirror") ||
-         !strcmp(instance->source, "restore")) &&
+         !strcmp(instance->source, "restore") || !strcmp(instance->source, "clone")) &&
         (!*instance->sha256 || hex(instance->sha256, 64)) && instance->created_at >= 0 &&
-        (!strcmp(instance->source, "restore") ||
+        (!strcmp(instance->source, "restore") || !strcmp(instance->source, "clone") ||
          (*instance->distro && *instance->distro_version && *instance->sha256)) &&
         (strcmp(instance->source, "mirror") || *instance->source_url);
 }
@@ -123,6 +123,32 @@ static int failure(const char *message, int cause)
     return -1;
 }
 
+static int serialize_instance(int rootfd, struct pdn_instance *instance)
+{
+    char temporary[80];
+    int fd = -1;
+    for (unsigned attempt = 0; attempt < 100; attempt++) {
+        snprintf(temporary, sizeof(temporary), ".pdn-instance.%ld.%u", (long)getpid(), attempt);
+        fd = openat(rootfd, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (fd >= 0 || errno != EEXIST) break;
+    }
+    if (fd < 0) return failure("cannot create instance metadata", errno);
+    FILE *stream = fdopen(fd, "w");
+    if (!stream) { int saved = errno; close(fd); unlinkat(rootfd, temporary, 0); return failure("cannot open instance metadata", saved); }
+    int result = fprintf(stream,
+        "version=1\nid=%s\nname=%s\ndistro=%s\ndistro_version=%s\narchitecture=%s\nsource=%s\nsource_url=%s\nsha256=%s\ncreated_at=%lld\n",
+        instance->id, instance->name, instance->distro, instance->distro_version, instance->architecture,
+        instance->source, instance->source_url, instance->sha256, (long long)instance->created_at);
+    int saved = result < 0 ? (errno ? errno : EIO) : 0;
+    if (fflush(stream) < 0 && !saved) saved = errno;
+    if (!saved && fsync(fd) < 0) saved = errno;
+    if (fclose(stream) < 0 && !saved) saved = errno;
+    if (!saved && renameat(rootfd, temporary, rootfd, ".pdn-instance") < 0) saved = errno;
+    if (!saved && fsync(rootfd) < 0) saved = errno;
+    unlinkat(rootfd, temporary, 0);
+    return saved ? failure("cannot write instance metadata", saved) : 0;
+}
+
 static int write_instance(int rootfd, struct pdn_instance *instance, const char *name)
 {
     unsigned char random[16];
@@ -143,21 +169,7 @@ static int write_instance(int rootfd, struct pdn_instance *instance, const char 
     if (timestamp < 0) return failure("cannot obtain instance creation time", errno ? errno : EIO);
     instance->created_at = (int64_t)timestamp;
     if (!valid(instance)) return failure("invalid instance metadata", EINVAL);
-    if (unlinkat(rootfd, ".pdn-instance", 0) < 0 && errno != ENOENT)
-        return failure("cannot replace staged instance metadata", errno);
-    fd = openat(rootfd, ".pdn-instance", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd < 0) return failure("cannot create instance metadata", errno);
-    FILE *stream = fdopen(fd, "w");
-    if (!stream) { int saved = errno; close(fd); return failure("cannot open instance metadata", saved); }
-    int result = fprintf(stream,
-        "version=1\nid=%s\nname=%s\ndistro=%s\ndistro_version=%s\narchitecture=%s\nsource=%s\nsource_url=%s\nsha256=%s\ncreated_at=%lld\n",
-        instance->id, instance->name, instance->distro, instance->distro_version, instance->architecture,
-        instance->source, instance->source_url, instance->sha256, (long long)instance->created_at);
-    int saved = result < 0 ? (errno ? errno : EIO) : 0;
-    if (fflush(stream) < 0 && !saved) saved = errno;
-    if (!saved && fsync(fd) < 0) saved = errno;
-    if (fclose(stream) < 0 && !saved) saved = errno;
-    return saved ? failure("cannot write instance metadata", saved) : 0;
+    return serialize_instance(rootfd, instance);
 }
 
 int pdn_instance_create(int rootfd, const char *name, const char *distro,
@@ -201,4 +213,20 @@ void pdn_instance_json(FILE *stream, const struct pdn_instance *instance)
     fputs(",\"source_url\":", stream); nullable(stream, instance->source_url);
     fputs(",\"sha256\":", stream); nullable(stream, instance->sha256);
     fprintf(stream, ",\"created_at\":%lld}", (long long)instance->created_at);
+}
+
+int pdn_instance_relocate(int rootfd, const char *name, int cloning)
+{
+    struct pdn_instance instance = {0};
+    int found = pdn_instance_read(rootfd, &instance);
+    if (found < 0) return failure("cannot read instance metadata", errno);
+    if (!cloning && !found) return 0;
+    if (!pdn_instance_valid_name(name) || copy(instance.name, sizeof(instance.name), name) < 0)
+        return failure("invalid instance name", EINVAL);
+    if (cloning) {
+        strcpy(instance.architecture, "aarch64");
+        strcpy(instance.source, "clone");
+        return write_instance(rootfd, &instance, name);
+    }
+    return serialize_instance(rootfd, &instance);
 }

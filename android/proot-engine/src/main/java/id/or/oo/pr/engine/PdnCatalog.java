@@ -89,11 +89,11 @@ public final class PdnCatalog {
         if (version != 1 || !id.matches("[0-9a-f]{32}") || !name.equals(rowName)
                 || name.length() > 128 || !name.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")
                 || !architecture.equals("aarch64")
-                || !(source.equals("archive") || source.equals("mirror") || source.equals("restore"))
+                || !(source.equals("archive") || source.equals("mirror") || source.equals("restore") || source.equals("clone"))
                 || (sha256 != null && !sha256.matches("[0-9a-f]{64}"))
                 || (distro != null && (distro.length() > 128 || !distro.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")))
                 || !optionalAscii(distroVersion, 128) || !optionalAscii(sourceUrl, 2048)
-                || (!source.equals("restore") && (distro == null || distroVersion == null || sha256 == null))
+                || ((source.equals("archive") || source.equals("mirror")) && (distro == null || distroVersion == null || sha256 == null))
                 || (source.equals("mirror") && sourceUrl == null)) {
             throw new IllegalArgumentException("Invalid instance metadata");
         }

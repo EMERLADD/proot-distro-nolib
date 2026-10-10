@@ -20,6 +20,8 @@ int pdn_available(void);
 int pdn_available_json(void);
 int pdn_mirrors_json(const char *name);
 int pdn_archive(const char *name, const char *file, int restoring);
+int pdn_clone(const char *source, const char *target);
+int pdn_rename(const char *source, const char *target);
 #endif
 
 int proot_main(int argc, char *const argv[]);
@@ -122,6 +124,7 @@ static int help(void)
          "  pdn install DISTRO [--name INSTANCE] [--mirror NAME | --archive PATH]\n"
          "  pdn mirrors [NAME] [--json]\n  pdn list --available [--json]\n"
          "  pdn backup NAME FILE.tar.gz\n  pdn restore NAME FILE.tar.gz\n"
+         "  pdn clone SOURCE TARGET\n  pdn rename SOURCE TARGET\n"
 #endif
          "  pdn login NAME|--rootfs PATH [OPTIONS] [-- COMMAND ARG...]\n"
          "  pdn exec NAME|--rootfs PATH [OPTIONS] -- COMMAND ARG...\n"
@@ -522,6 +525,11 @@ static int dispatch(int argc, char *const argv[])
             }
             return json ? pdn_mirrors_json(distro) : pdn_mirrors(distro);
         }
+        if (equal(argv[1], "clone") || equal(argv[1], "rename")) {
+            if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+            if (argc != 4) return fail("usage", "clone SOURCE TARGET | rename SOURCE TARGET");
+            return equal(argv[1], "clone") ? pdn_clone(argv[2], argv[3]) : pdn_rename(argv[2], argv[3]);
+        }
         if (equal(argv[1], "install")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3) return fail("missing distro", "run list --available");
@@ -575,7 +583,7 @@ static int dispatch(int argc, char *const argv[])
 int main(int argc, char *const argv[])
 {
     const char *operation = "proot";
-    const char *names[] = {"install", "login", "exec", "config", "backup", "restore", "mirrors", "list", "remove", "help", "version"};
+    const char *names[] = {"install", "login", "exec", "config", "backup", "restore", "clone", "rename", "mirrors", "list", "remove", "help", "version"};
     if (argc > 1) {
         operation = argv[1][0] == '-' ? "proot" : "unknown";
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) if (equal(argv[1], names[i])) operation = names[i];

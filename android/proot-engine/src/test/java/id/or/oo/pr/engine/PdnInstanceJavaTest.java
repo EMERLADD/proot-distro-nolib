@@ -51,6 +51,8 @@ public class PdnInstanceJavaTest {
         assertNull(unknown.getDistro()); assertNull(unknown.getDistroVersion());
         assertNull(unknown.getSourceUrl()); assertNull(unknown.getSha256());
         assertEquals("mirror", parse(metadata().put("source", "mirror")).getInstance().getSource());
+        assertEquals("clone", parse(restored.put("source", "clone")).getInstance().getSource());
+        assertEquals("clone", parse(metadata().put("source", "clone")).getInstance().getSource());
     }
     @Test public void rejectsMalformedTypesMissingFieldsAndUnsupportedValues() throws Exception {
         for (Object value : new Object[]{1, "metadata", true, new org.json.JSONArray()}) invalid(value);
@@ -91,6 +93,34 @@ public class PdnInstanceJavaTest {
         assertEquals(ProcessBuilder.class, PdnRuntime.class.getMethod("installAs", String.class, String.class).getReturnType());
         assertEquals(ProcessBuilder.class, PdnRuntime.class.getMethod("installAs", String.class, String.class, String.class).getReturnType());
         assertEquals(ProcessBuilder.class, PdnRuntime.class.getMethod("installAs", String.class, String.class, String.class, java.io.File.class).getReturnType());
+    }
+    @org.junit.Rule public org.junit.rules.TemporaryFolder temporary = new org.junit.rules.TemporaryFolder();
+    @Test public void cloneAndRenameAreCallableFromJavaAndRejectInvalidTargets() throws Exception {
+        java.io.File base = temporary.newFolder("java host");
+        ProotHost host = new ProotHost() {
+            public java.io.File getNativeLibDir() { return new java.io.File(base, "native"); }
+            public java.io.File getPrefixDir() { return new java.io.File(base, "prefix"); }
+            public java.io.File getHomeDir() { return new java.io.File(base, "home"); }
+            public java.io.File getCacheDir() { return new java.io.File(base, "cache"); }
+            public String getPackageName() { return "test.pdn.host"; }
+        };
+        assertTrue(host.getNativeLibDir().mkdirs());
+        for (String name : new String[]{"libpdn.so", "libproot-loader.so"}) {
+            java.io.File binary = new java.io.File(host.getNativeLibDir(), name);
+            assertTrue(binary.createNewFile());
+            assertTrue(binary.setExecutable(true));
+        }
+        PdnRuntime runtime = new PdnRuntime(host);
+        assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "clone", "ai-python", "ai-test"),
+            runtime.clone("ai-python", "ai-test").command());
+        assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "rename", "ai-python", "workspace-python"),
+            runtime.rename("ai-python", "workspace-python").command());
+        assertThrows(IllegalArgumentException.class, () -> runtime.clone("source", "a".repeat(129)));
+        assertThrows(IllegalArgumentException.class, () -> runtime.rename("source", "../target"));
+        assertThrows(IllegalArgumentException.class, () -> runtime.clone("../source", "target"));
+        assertThrows(IllegalArgumentException.class, () -> runtime.rename("--source", "target"));
+        assertEquals(ProcessBuilder.class, PdnRuntime.class.getMethod("clone", String.class, String.class).getReturnType());
+        assertEquals(ProcessBuilder.class, PdnRuntime.class.getMethod("rename", String.class, String.class).getReturnType());
     }
     @Test public void availableCatalogDoesNotInterpretInstanceMetadata() throws Exception {
         String text = "{\"version\":1,\"distributions\":[{\"name\":\"alpine\",\"version\":\"3\",\"architecture\":\"aarch64\",\"download_size\":1,\"instance\":false}]}";

@@ -220,6 +220,41 @@ class PdnRuntimeTest {
         }
     }
 
+    @Test fun cloneAndRenameBuildIndependentLiteralCommands() {
+        val host = host()
+        binaries(host)
+        val runtime = PdnRuntime(host)
+        val legacy = "a".repeat(129)
+        val boundary = "_" + "a".repeat(127)
+        for ((builder, arguments) in listOf(
+            runtime.clone("ai-python", "ai-python-test") to listOf("clone", "ai-python", "ai-python-test"),
+            runtime.rename("ai-python", "workspace.1") to listOf("rename", "ai-python", "workspace.1"),
+            runtime.clone(legacy, boundary) to listOf("clone", legacy, boundary),
+            runtime.rename(legacy, boundary) to listOf("rename", legacy, boundary),
+        )) {
+            assertEquals(runtime.command(arguments), builder.command())
+            assertEquals(host.homeDir, builder.directory())
+            assertEquals(runtime.rootfsDir.absolutePath, builder.environment()["PDN_ROOTFS_DIR"])
+            assertFalse(builder.redirectErrorStream())
+        }
+    }
+
+    @Test fun cloneAndRenameValidateBothNamesBeforePreparingDirectories() {
+        val host = host()
+        val runtime = PdnRuntime(host)
+        val invalidNames = listOf("", "../root", ".hidden", "--option", "a b", "a\u0000b", "a\nb", "中文", "é")
+        for (name in invalidNames) {
+            assertThrows(IllegalArgumentException::class.java) { runtime.clone(name, "target") }
+            assertThrows(IllegalArgumentException::class.java) { runtime.rename(name, "target") }
+        }
+        for (name in invalidNames + "a".repeat(129)) {
+            assertThrows(IllegalArgumentException::class.java) { runtime.clone("source", name) }
+            assertThrows(IllegalArgumentException::class.java) { runtime.rename("source", name) }
+        }
+        assertFalse(host.prefixDir.exists())
+        assertFalse(host.homeDir.exists())
+    }
+
     @Test fun configurationUsesLiteralArgvAndWholeOperationOverrides() {
         val host = host()
         binaries(host)

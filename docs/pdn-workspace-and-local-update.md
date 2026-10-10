@@ -16,7 +16,7 @@
 | W2 事件与错误 | v1 协议、关联 ID、进度/结果、分类与建议、guest 状态及 Java/Kotlin 回调 | 后续新增功能沿用协议；不重复开发基础错误接口 |
 | W3 任务执行 | 异步任务句柄、完成查询、等待、取消、运行超时、输出回调和回收 | 普通非 PTY 任务的交互 stdin 接口、输出/日志限额、持久任务记录与重连 |
 | W4 终端与生命周期 | 每会话 PID/fd、输入输出、resize、退出/信号状态、终止回收及双终端验收 | 宿主可选后台服务、日志与重连；终端渲染由宿主提供 |
-| W5 工作区 | 安装别名、稳定实例元数据、查询、删除、恢复新身份、锁和暂存发布 | 直接 clone/rename、项目布局契约 |
+| W5 工作区 | 安装别名、稳定元数据、clone/rename 与链接/配置迁移、恢复新身份、锁与发布 | 项目布局契约 |
 | W6 配置 | Java/Kotlin 不可变配置对象、账号/工作目录/挂载/环境变量、结构化错误；PTY 按 ProcessBuilder 环境启动 | 管理/exec 的统一环境继承白名单或清空策略 |
 | W7 兼容与性能 | loader/假 root/内核与链接适配，路径边界、常用软件、文件/压缩/编译验证 | 评估 seccomp 加速策略；补 AI 工作流与 /dev/shm、SysV IPC 等兼容用例 |
 | W8 安装 | 官方与镜像来源、校验、来源元数据、阶段/进度事件、取消和常规失败清理 | 空间预检、SIGKILL/掉电后遗留检查与清理；续传按需 |
@@ -36,7 +36,8 @@
 - [x] 可选 guest `/dev/full`：ARM64 常用同步读写、设备信息、fd 生命周期与传递；默认关闭，宿主设备测试仍单独保留。
 - [ ] 普通 App 加速：解决继承过滤器的 SIGSYS 原始参数兼容，再独立评估；现有 AAR 仍保持禁用策略。
 - [x] 安装别名和稳定实例元数据：CLI/AAR、只读查询、备份恢复身份。
-- [ ] 多工作区后续：直接 clone/rename、链接迁移与项目布局契约。
+- [x] 直接 clone/rename：身份规则、链接与配置迁移、锁和普通失败/取消回滚。
+- [ ] 多工作区后续：项目布局契约；SIGKILL/掉电事务恢复。
 - [ ] 异常中断恢复：针对 SIGKILL 模拟，检查与清理未发布安装内容。
 - [ ] Android 文件接入：备份/恢复支持 FD/流和系统文件选择器。
 - [ ] AI 工作流：普通 App 内 Python、Node.js、Git、依赖安装和长任务验收。
@@ -70,7 +71,7 @@
 | W1 Kotlin 封装、示例 App | 仓库已有 Android library、App 和终端 UI | 迁移现有接入并完善示例，不从零创建整套 App |
 | W3 stdin/stdout/stderr、退出码 | pdn exec 已继承标准流并传递退出状态 | 宿主任务句柄、异步流、取消与统一状态 |
 | W4 PTY 窗口调整 | Session.resize/JNI ioctl 已实现 | 保留并验证，不重新开发 resize |
-| W5 创建、查询、删除、多实例 | install/list/remove 已实现；restore 可用新名字创建另一实例 | 直接 clone/rename |
+| W5 创建、查询、删除、多实例 | installAs、稳定元数据、clone/rename 已实现 | 项目布局约定、强制中断后恢复 |
 | W5 活动会话锁、暂存隐藏 | 已有共享/独占锁；隐藏暂存目录不会被 list 列出 | 新增操作接入现有规则 |
 | W6 默认配置和覆盖规则 | config 已保存、展示、清除；调用参数已有覆盖/追加语义 | 统一协议和可选环境继承策略 |
 | W6 挂载检查、环境显式添加 | parse_bind 与 --env 已实现 | 扩展协议错误分类，无需重复实现基本校验 |
@@ -174,8 +175,9 @@
 **待做：**
 
 - [x] install 支持实例别名，区分发行版来源与实例名称；保存稳定 ID、名称、来源、版本、摘要和创建时间。JSON 与 AAR 查询只读；restore 新建身份。
-- 用现有归档迁移逻辑组合直接 clone；为 rename 实现并验证路径/链接一致性。
-- 新操作使用已有锁，不重新设计基本互斥机制。
+- [x] clone 复用归档迁移创建独立实例；rename 移动目录并迁移链接、bind 和元数据。
+- [x] 新操作复用全局安装锁和来源排他锁；验证失败及 SIGINT/SIGTERM 回滚。
+- [ ] SIGKILL、断电后的持久恢复；当前仅保证普通失败与可处理取消的回滚。
 - 可选地规定项目文件独立于 rootfs 保存并绑定；现有 --bind 已能做到，缺的是宿主约定和管理接口。
 
 依据：pdn.c 的 list/pdn_login；pdn_remove.c；pdn_backup.c；src/pr-cli/src/commands_extra.rs 的 command_rename；install_model.rs。
@@ -340,7 +342,7 @@ Linux x86_64 NDK 工具不能直接在 ARM64 Android 运行。guest 编译和嵌
 | 阶段 | 真正新增/修改的工作 | 应复用的基础 |
 | --- | --- | --- |
 | A | 独立 pdn 接入现有 Android 封装；结果协议；任务身份与取消 | 路径参数、argv、exec、PTY、ProcessBuilder、JNI |
-| B | 直接 clone/rename；兼容配置迁移 | install/list/remove、restore、锁、链接迁移、Rust 启动配置 |
+| B | clone/rename 及配置迁移已完成；持久中断恢复待做 | install/list/remove、restore、锁、链接迁移、Rust 启动配置 |
 | C | 操作事件、FD/流、快照清单；按需后台会话 | 下载回调、取消清理、归档事务、终端 UI |
 | D | 可重放补丁、非 Termux 设备工具链、候选构建与 ELF 步骤 | 当前 fork、静态依赖构建、loader、已有 ELF 检查/TLS patch |
 | E | 玩家验证入口、停止后切换、版本回退 | 已有测试、版本材料、手动更新路径 |

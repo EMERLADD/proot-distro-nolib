@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-当前本地 ELF 与 AAR：**v0.6.12 · ARM64 Android · 早期测试版**。支持安装别名和稳定实例元数据；此前 syscall 修复与接入验收结果见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
+当前本地 ELF 与 AAR：**v0.6.13 · ARM64 Android · 早期测试版**。支持实例复制、重命名和稳定元数据；此前 syscall 修复与接入验收结果见[测试记录](docs/pdn-error-testing.md)。发布附件见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)。
 
 ## 目录
 
@@ -139,6 +139,14 @@ mkdir -p "$PROOT_TMP_DIR"
 
 名称最多 128 个 ASCII 字符，首字符为字母、数字或下划线，后续还允许点和短横线；名称冲突不区分大小写。新实例记录稳定 ID、来源、版本、摘要和创建时间。旧 rootfs 查询为 `instance: null`，不会自动改写；备份恢复为新实例时生成新 ID。
 
+复制实例会生成新 ID；重命名保留原 ID，并迁移属于原 rootfs 的链接与保存的挂载配置。操作前退出实例会话：
+
+```sh
+./pdn clone ai-python ai-python-test
+./pdn rename ai-python-test workspace-python
+./pdn login workspace-python
+```
+
 ### 3.3 在 Linux 内调用 Android 调试命令
 
 先在已授权宿主中启动原始 `rish`，用 `id` 确认真实 Android shell 身份，再按上面部署程序。在 Android shell 中带挂载启动 Ubuntu：
@@ -240,6 +248,8 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 具体命令和排查路径见[常见问题](docs/pdn-faq.md)。
 
 ## 9. 现有局限
+
+- **实例迁移的范围**：clone 沿用备份复制规则；rename 迁移 rootfs 内的宿主绝对链接和保存的 bind，普通文件内容与环境变量中的路径不自动重写。SIGINT/SIGTERM 可回滚，SIGKILL/掉电恢复尚未实现。
 
 - **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
 - **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不属于本次调试链路验收范围。

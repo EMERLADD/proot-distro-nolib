@@ -134,4 +134,16 @@ pdn backup ai-python /path/ai-python.tar.gz
 pdn restore ai-restored /path/ai-python.tar.gz
 ```
 
-新安装实例在 `.pdn-instance` 中保存稳定 ID 与来源信息。旧 rootfs 的 JSON `instance` 为 null，查询只读。restore 生成新的实例身份并保留可知的来源；名称已存在时拒绝覆盖。安装别名不提供直接 clone 或 rename。
+新安装实例在 `.pdn-instance` 中保存稳定 ID 与来源信息。旧 rootfs 的 JSON `instance` 为 null，查询只读。restore 生成新的实例身份并保留可知的来源；名称已存在时拒绝覆盖。复制和重命名见下方。
+
+## 复制与重命名
+
+```sh
+pdn clone ai-python ai-python-test
+pdn rename ai-python-test workspace-python
+pdn login workspace-python
+```
+
+操作前退出源实例的会话。clone 创建完整独立 rootfs、新 ID 和时间，继承备份的复制限制：需要暂存归档加目标 rootfs 空间，不复制设备、FIFO、socket、运行时目录内容和临时配置；原生硬链接按现有归档规则复制为独立文件，PRoot 的 .l2s backing 关系会迁移。保存的配置会保留，自身 rootfs 的 bind 路径会迁移，外部项目挂载仍共享。
+
+rename 直接移动目录，保留 ID、时间与来源，迁移自身宿主绝对 symlink/.l2s 和内部 bind；不会重写普通文件内容、外部链接或环境变量中的任意路径。只改大小写允许，同名或冲突拒绝覆盖。运行中返回 operation_busy。普通失败/可处理取消回滚；rollback_failed 会保留恢复快照。SIGKILL/掉电事务恢复仍属现有局限。

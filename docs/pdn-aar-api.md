@@ -109,6 +109,22 @@ ProcessBuilder offline = pdn.installAs("alpine", "ai-node", null, archiveFile);
 
 元数据保存在 rootfs 的 `.pdn-instance`。安装在暂存目录写完后才发布；恢复保留可知的来源版本和摘要，生成新 ID、名称与时间。结构损坏时 `list --json` 返回 `instance_metadata_invalid`，不输出半截 JSON；元数据写入失败返回 `instance_metadata_failed` 并回滚暂存目录。元数据可被 guest 修改，不能作为安全身份或授权依据。
 
+## 复制和重命名
+
+```kotlin
+val copy = pdn.clone("ai-python", "ai-python-test")
+val rename = pdn.rename("ai-python-test", "workspace-python")
+```
+
+```java
+ProcessBuilder copy = pdn.clone("ai-python", "ai-python-test");
+ProcessBuilder rename = pdn.rename("ai-python-test", "workspace-python");
+```
+
+仍交给已有操作接口执行，接收同一事件/结果协议。clone 生成新 ID/时间，来源为 `clone`，保留可知的版本与摘要；旧实例可产生来源字段为 null 的克隆。rename 保留 ID、时间和来源，旧 rootfs 可以继续没有元数据。名称冲突不区分大小写，允许仅改变大小写的 rename。
+
+运行中的实例或已有管理锁返回 `operation_busy`。clone 复用备份的可移植复制规则，需要暂存归档和完整目标 rootfs 空间；rename 直接移动目录并迁移自身宿主绝对链接、`.l2s` backing 路径与 rootfs 内部 bind。外部项目 bind 保持共享，环境字符串和普通文件内容不自动重写。普通失败与 SIGINT/SIGTERM 在发布前回滚；回滚失败返回 `rollback_failed` 并保留恢复快照，需按建议检查。SIGKILL/掉电恢复仍待实现。
+
 ## 发行版与镜像
 
 ```java

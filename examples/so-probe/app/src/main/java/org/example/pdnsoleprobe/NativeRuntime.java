@@ -63,6 +63,20 @@ public final class NativeRuntime {
         if (archive != null) { args.add("--archive"); args.add(archive.getAbsolutePath()); }
         return processBuilder(args);
     }
+    private String sourceName(String name) {
+        if (name == null || !name.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")) throw new IllegalArgumentException("Invalid distro name");
+        return name;
+    }
+    private String targetName(String name) {
+        if (name == null || name.length() > 128 || !name.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*")) throw new IllegalArgumentException("Invalid instance name");
+        return name;
+    }
+    public ProcessBuilder clone(String sourceName, String targetName) throws IOException {
+        return processBuilder(Arrays.asList("clone", sourceName(sourceName), targetName(targetName)));
+    }
+    public ProcessBuilder rename(String sourceName, String targetName) throws IOException {
+        return processBuilder(Arrays.asList("rename", sourceName(sourceName), targetName(targetName)));
+    }
     public ProcessBuilder exec(String name, List<String> cmd) throws IOException { return exec(new File(rootfs, name), cmd); }
     public ProcessBuilder exec(File root, List<String> cmd) throws IOException {
         List<String> a = new ArrayList<>(loginArguments(root)); a.set(0, "exec"); a.add("--"); a.addAll(cmd); return processBuilder(a);

@@ -56,6 +56,16 @@ public final class ProbeSuite {
         checks.put(entry);
     }
 
+    private JSONObject instanceMetadata(Capture capture, String name) throws Exception {
+        require(capture.result.isSuccess(), "instance listing: " + capture.stderr());
+        JSONArray rows = new JSONObject(capture.stdout()).getJSONArray("distributions");
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            if (name.equals(row.getString("name"))) return row.getJSONObject("instance");
+        }
+        throw new AssertionError("Missing instance: " + name);
+    }
+
     public JSONObject verify() throws Exception {
         runtime = new NativeRuntime(host, new File(context.getFilesDir(), "acceptance/" + java.util.UUID.randomUUID() + "/distributions"), runtime.getProjectDir());
         operations = new NativeOperations(runtime);
@@ -71,8 +81,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.12"), "version: " + c.stderr());
-            return "native PDN 0.6.12, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.13"), "version: " + c.stderr());
+            return "native PDN 0.6.13, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -141,6 +151,45 @@ public final class ProbeSuite {
             } finally {
                 for (String name : Arrays.asList("ai-restored", "ai-node", "ai-python")) run(runtime.processBuilder(Arrays.asList("remove", name, "--yes")));
                 Files.deleteIfExists(backup.toPath());
+            }
+        });
+        check(checks, "clone_rename_instances", () -> {
+            File source = new File(runtime.getRootfsDir(), "op-source");
+            File copied = new File(runtime.getRootfsDir(), "op-copy");
+            File renamed = new File(runtime.getRootfsDir(), "op-renamed");
+            try {
+                Capture installed = run(runtime.installAs("alpine", "op-source", null, new File(host.getCacheDir(), "alpine.tar.gz")));
+                require(installed.result.isSuccess(), "operation source install: " + installed.stderr());
+                File payload = new File(source, "root/value");
+                Files.write(payload.toPath(), "ORIGINAL".getBytes(StandardCharsets.UTF_8));
+                Files.write(new File(source, "root/.l2s.value").toPath(), "BACKING".getBytes(StandardCharsets.UTF_8));
+                Files.createSymbolicLink(new File(source, "root/owned").toPath(), payload.toPath());
+                Files.createSymbolicLink(new File(source, "root/backed").toPath(), new File(source, "root/.l2s.value").toPath());
+                Capture configured = run(runtime.processBuilder(Arrays.asList("config", "op-source", "--bind", new File(source, "root") + ":/owned", "--env", "OP_PROBE=preserved")));
+                require(configured.result.isSuccess(), "operation configuration: " + configured.stderr());
+                JSONObject original = instanceMetadata(run(runtime.processBuilder(Arrays.asList("list", "--json"))), "op-source");
+                Capture clone = run(runtime.clone("op-source", "op-copy"));
+                require(clone.result.isSuccess(), "clone: " + clone.stderr());
+                JSONObject copy = instanceMetadata(run(runtime.processBuilder(Arrays.asList("list", "--json"))), "op-copy");
+                require(!original.getString("id").equals(copy.getString("id")) && "clone".equals(copy.getString("source")), "fresh clone identity");
+                require(original.getString("sha256").equals(copy.getString("sha256")), "clone provenance");
+                Capture cloneRead = run(runtime.exec("op-copy", Arrays.asList("/bin/sh", "-c", "cat /owned/value /root/owned /root/backed; printf '%s' \"$OP_PROBE\"")));
+                require(cloneRead.result.isSuccess() && "ORIGINALORIGINALBACKINGpreserved".equals(cloneRead.stdout()), "clone bind, links and environment: " + cloneRead.stdout() + cloneRead.stderr());
+                Files.write(new File(copied, "root/value").toPath(), "COPIED".getBytes(StandardCharsets.UTF_8));
+                require("ORIGINAL".equals(new String(Files.readAllBytes(payload.toPath()), StandardCharsets.UTF_8)), "clone must be independent");
+                Files.createSymbolicLink(new File(copied, "root/rename-host").toPath(), new File(copied, "root/value").toPath());
+                Capture moved = run(runtime.rename("op-copy", "op-renamed"));
+                require(moved.result.isSuccess() && !copied.exists() && renamed.isDirectory(), "rename: " + moved.stderr());
+                JSONObject after = instanceMetadata(run(runtime.processBuilder(Arrays.asList("list", "--json"))), "op-renamed");
+                require(copy.getString("id").equals(after.getString("id")) && copy.getLong("created_at") == after.getLong("created_at") && "clone".equals(after.getString("source")), "rename preserves identity and provenance");
+                require(Files.readSymbolicLink(new File(renamed, "root/rename-host").toPath()).equals(new File(renamed, "root/value").getCanonicalFile().toPath()), "rename host-prefix symlink");
+                Capture movedRead = run(runtime.exec("op-renamed", Arrays.asList("/bin/sh", "-c", "cat /owned/value /root/backed /root/rename-host; printf '%s' \"$OP_PROBE\"")));
+                require(movedRead.result.isSuccess() && "COPIEDBACKINGCOPIEDpreserved".equals(movedRead.stdout()), "renamed guest configuration: " + movedRead.stdout() + movedRead.stderr());
+                Capture conflict = run(runtime.clone("op-source", "OP-RENAMED"));
+                require(!conflict.result.isSuccess() && "rootfs_exists".equals(conflict.result.getCode()), "clone collision refusal");
+                return "clone independence and fresh identity; directory rename preserves ID/time, config, guest links and host backing paths";
+            } finally {
+                for (String name : Arrays.asList("op-renamed", "op-copy", "op-source")) run(runtime.processBuilder(Arrays.asList("remove", name, "--yes")));
             }
         });
         ProbePathChecks.verify(checks, this, runtime, log);

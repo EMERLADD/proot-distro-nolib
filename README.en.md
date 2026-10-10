@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.12 · ARM64 Android · Early test release**. Named installations and stable instance metadata are available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
+Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. Instance cloning, renaming and stable metadata are available. See [test records](docs/pdn-error-testing.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
 
 ## Contents
 
@@ -139,6 +139,14 @@ Install the same distribution under separate names, each with its own rootfs:
 
 Names contain up to 128 ASCII letters, digits, underscores, dots or hyphens, starting with a letter, digit or underscore. Collisions are case insensitive. New instances record a stable ID, provenance, version, digest and creation time. Legacy rootfs queries return `instance: null` without modifying them; restoring a backup creates a fresh ID.
 
+Cloning creates a new ID. Renaming keeps the original ID and migrates rootfs-owned links and saved bind paths. Exit active instance sessions first:
+
+```sh
+./pdn clone ai-python ai-python-test
+./pdn rename ai-python-test workspace-python
+./pdn login workspace-python
+```
+
 ### 3.3 Call Android debugging commands from Linux
 
 Start the original `rish` from the authorized host first, confirm the actual Android shell identity with `id`, then deploy PDN as above. Start Ubuntu with these binds from Android shell:
@@ -240,6 +248,8 @@ Retain corresponding source, third-party licenses and build information when red
 See [frequently asked questions](docs/pdn-faq.en.md) for commands and troubleshooting paths.
 
 ## 9. Current limitations
+
+- **Instance migration**: clone follows backup copying rules. Rename migrates rootfs-owned host-absolute links and saved binds; arbitrary file contents and environment strings are not rewritten. Handled SIGINT/SIGTERM can roll back; SIGKILL/power-loss recovery is not implemented.
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
