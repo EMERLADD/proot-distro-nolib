@@ -71,7 +71,7 @@ pdn install alpine --archive /路径/对应固定版本的rootfs.tar.gz
 
 续传使用 HTTP Range，并在追加前校验响应范围与固定总大小。服务器忽略 Range、返回错误范围或 HTTP 416 时，本次来源最多从零重新下载一次。包括完整缓存在内，所有归档均须通过完整大小和 SHA256 校验才可解压；损坏缓存会删除，成功下载的缓存在校验并复制到安装暂存目录后消费。
 
-没有自动后台重试，暂不使用 ETag / If-Range，也没有缓存管理 CLI。如需释放空间，先确认没有安装操作运行，再清理所选 rootfs 管理目录中 `.pdn-downloads` 的内容。
+没有自动后台重试，暂不使用 ETag / If-Range。可用 `pdn cache list` 查询占用，使用 `pdn cache clear --yes` 清理残片。
 
 目前没有镜像延迟测速排名。Arch 压缩包约 791 MiB，安装时请预留数 GiB 空间。Kotlin 可以通过 `pdn.install("alpine", mirror = "official")` 生成操作；它返回 `ProcessBuilder`，还需启动或交给异步任务接口。
 
@@ -153,3 +153,22 @@ pdn login workspace-python
 操作前退出源实例的会话。clone 创建完整独立 rootfs、新 ID 和时间，继承备份的复制限制：需要暂存归档加目标 rootfs 空间，不复制设备、FIFO、socket、运行时目录内容和临时配置；原生硬链接按现有归档规则复制为独立文件，PRoot 的 .l2s backing 关系会迁移。保存的配置会保留，自身 rootfs 的 bind 路径会迁移，外部项目挂载仍共享。
 
 rename 直接移动目录，保留 ID、时间与来源，迁移自身宿主绝对 symlink/.l2s 和内部 bind；不会重写普通文件内容、外部链接或环境变量中的任意路径。只改大小写允许，同名或冲突拒绝覆盖。运行中返回 operation_busy。普通失败/可处理取消回滚；rollback_failed 会保留恢复快照。SIGKILL/掉电事务恢复仍属现有局限。
+
+## 下载缓存管理
+
+中断的下载保存在选定 rootfs 管理目录的 `.pdn-downloads`，不包含已安装系统。查看全部或某个发行版的缓存：
+
+```sh
+pdn cache list
+pdn cache list alpine
+pdn cache list --json
+```
+
+清单显示残片占用字节、对应发行版与镜像、预计归档大小及更新时间。旧来源无法识别时相关字段为 `null`；占用字节不代表内容已通过校验。按发行版筛选只包含能够识别为该发行版的残片。
+
+```sh
+pdn cache clear alpine --yes
+pdn cache clear --yes
+```
+
+清理需要显式确认，只删除 PDN 格式的普通下载缓存文件，不删除已安装 rootfs、项目文件或其他缓存目录。清理后再次安装会重新下载。安装正在运行或操作锁被占用时返回 `operation_busy`；等待结束后重试。可疑软链接、非普通文件和多硬链接缓存会被拒绝，不会递归清理未知内容。

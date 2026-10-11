@@ -303,7 +303,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
         curl = curl_easy_init();
         if (!curl) { fclose(file); return problem("download_failed", "cannot initialize HTTPS"); }
         curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.14");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.15");
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -528,6 +528,222 @@ int pdn_mirrors_json(const char *name)
     }
     puts("]}");
     return 0;
+}
+
+struct cache_entry {
+    char id[135];
+    const char *distro;
+    const char *mirror;
+    size_t total;
+    struct stat st;
+};
+
+static int cache_name(const char *name)
+{
+    return strlen(name) == 134 && name[64] == '-' && !strcmp(name + 129, ".part") &&
+           strspn(name, "0123456789abcdef") == 64 &&
+           strspn(name + 65, "0123456789abcdef") == 64;
+}
+
+static int cache_directory_error(const char *message, int saved_errno)
+{
+    const char *code = saved_errno == ENOTDIR ? "directory_not_directory" :
+                       saved_errno == EACCES || saved_errno == EPERM ? "directory_permission" :
+                       saved_errno == EROFS ? "directory_read_only" : "directory_unavailable";
+    char detail[512];
+    snprintf(detail, sizeof(detail), "%s: %s (errno=%d)", message, strerror(saved_errno), saved_errno);
+    pdn_events_problem(code, detail, "Check the selected rootfs and cache directory permissions and type, then retry");
+    return error(detail);
+}
+
+static int cache_order(const void *left, const void *right)
+{
+    return strcmp(((const struct cache_entry *)left)->id, ((const struct cache_entry *)right)->id);
+}
+
+static int cache_metadata(struct cache_entry *entry)
+{
+    for (size_t i = 0; i < sizeof(distro_names) / sizeof(distro_names[0]); i++) {
+        struct distro distro;
+        find_distro(distro_names[i], &distro);
+        if (strncmp(entry->id, distro.sha256, 64)) continue;
+        entry->distro = distro_names[i];
+        entry->total = distro.size;
+        for (size_t j = 0; j < 5 && distro.mirrors[j].name; j++) {
+            unsigned char digest[32];
+            char hex[65];
+            const char *url = distro.mirrors[j].url;
+            if (mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                           (const unsigned char *)url, strlen(url), digest))
+                return problem("archive_hash_failed", "cannot identify cached download URL");
+            for (size_t k = 0; k < sizeof(digest); k++) snprintf(hex + k * 2, 3, "%02x", digest[k]);
+            if (!strncmp(entry->id + 65, hex, 64)) {
+                entry->mirror = distro.mirrors[j].name;
+                break;
+            }
+        }
+        break;
+    }
+    return 0;
+}
+
+int pdn_cache(const char *name, int clearing, int json, int yes)
+{
+    struct distro selected;
+    struct cache_entry *entries = NULL;
+    size_t count = 0, capacity = 0, scanned = 0;
+    uint64_t total = 0;
+    char *base = NULL, *absolute = NULL, *path = NULL;
+    int basefd = -1, cachefd = -1, lock = -1, result = 2;
+    DIR *directory = NULL;
+    struct stat st;
+    if (name && find_distro(name, &selected)) {
+        problem("distro_unknown", "unknown distro; run pdn list --available");
+        goto done;
+    }
+    if (clearing && !yes) {
+        problem("confirmation_required", "cache clear requires --yes");
+        goto done;
+    }
+    errno = 0;
+    base = pdn_rootfs_base();
+    if (!base || !*base) {
+        problem(!base && errno == ENOMEM ? "out_of_memory" : "directory_missing", "set PDN_ROOTFS_DIR or HOME");
+        goto done;
+    }
+    if (*base == '/') absolute = strdup(base);
+    else {
+        char *cwd = getcwd(NULL, 0);
+        if (!cwd) { system_error("directory_unavailable", "cannot determine cache location", errno); goto done; }
+        if (asprintf(&absolute, "%s/%s", cwd, base) < 0) absolute = NULL;
+        free(cwd);
+    }
+    if (!absolute || asprintf(&path, "%s/.pdn-downloads", absolute) < 0) {
+        path = NULL;
+        system_error("out_of_memory", "cannot allocate cache location", ENOMEM);
+        goto done;
+    }
+    basefd = open(base, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (basefd < 0) {
+        if (errno == ENOENT) goto output;
+        rootfs_error("open", base, errno);
+        goto done;
+    }
+    if (fstatat(basefd, ".pdn-downloads", &st, AT_SYMLINK_NOFOLLOW) < 0) {
+        if (errno == ENOENT) goto output;
+        cache_directory_error("cannot inspect download cache directory", errno);
+        goto done;
+    }
+    if (S_ISLNK(st.st_mode)) { problem("cache_unsafe", "download cache directory must not be a symbolic link"); goto done; }
+    cachefd = openat(basefd, ".pdn-downloads", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (cachefd < 0) { cache_directory_error("cannot open download cache directory", errno); goto done; }
+    lock = openat(basefd, ".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600);
+    if (lock < 0) {
+        if (errno == ELOOP) problem("cache_unsafe", "download cache lock must not be a symbolic link");
+        else system_error("lock_failed", "cannot open download cache lock", errno);
+        goto done;
+    }
+    if (fstat(lock, &st) < 0) { system_error("lock_failed", "cannot inspect download cache lock", errno); goto done; }
+    if (!S_ISREG(st.st_mode) || st.st_nlink != 1) { problem("cache_unsafe", "download cache lock must be a private regular file"); goto done; }
+    if (flock(lock, (clearing ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
+        int saved = errno;
+        if (saved == EWOULDBLOCK || saved == EAGAIN) problem("operation_busy", "download cache is busy; wait for installation or cache cleanup to finish");
+        else system_error("lock_failed", "cannot lock download cache", saved);
+        goto done;
+    }
+    int scanfd = dup(cachefd);
+    if (scanfd < 0) { system_error("file_io_failed", "cannot duplicate download cache directory", errno); goto done; }
+    directory = fdopendir(scanfd);
+    if (!directory) { int saved = errno; close(scanfd); system_error("file_io_failed", "cannot read download cache directory", saved); goto done; }
+    for (;;) {
+        errno = 0;
+        struct dirent *entry = readdir(directory);
+        if (!entry) {
+            if (errno) { system_error("file_io_failed", "cannot read download cache directory", errno); goto done; }
+            break;
+        }
+        if (++scanned > 100000) { problem("cache_limit_exceeded", "download cache directory has too many entries; reduce unrelated files and retry"); goto done; }
+        if (!cache_name(entry->d_name) || (name && strncmp(entry->d_name, selected.sha256, 64))) continue;
+        if (count == capacity) {
+            size_t next = capacity ? capacity * 2 : 16;
+            struct cache_entry *grown = realloc(entries, next * sizeof(*entries));
+            if (!grown) { system_error("out_of_memory", "cannot allocate download cache entries", ENOMEM); goto done; }
+            entries = grown;
+            capacity = next;
+        }
+        struct cache_entry *current = &entries[count];
+        memset(current, 0, sizeof(*current));
+        memcpy(current->id, entry->d_name, sizeof(current->id));
+        if (fstatat(cachefd, current->id, &current->st, AT_SYMLINK_NOFOLLOW) < 0) {
+            system_error("file_io_failed", "cannot inspect download cache entry", errno);
+            goto done;
+        }
+        if (!S_ISREG(current->st.st_mode) || current->st.st_nlink != 1 || current->st.st_size < 0) {
+            problem("cache_unsafe", "managed download cache entries must be private regular files; no files were deleted");
+            goto done;
+        }
+        if ((uint64_t)current->st.st_size > (uint64_t)INT64_MAX - total) {
+            problem("cache_limit_exceeded", "download cache size exceeds supported range"); goto done;
+        }
+        total += (uint64_t)current->st.st_size;
+        if (cache_metadata(current)) goto done;
+        count++;
+    }
+    if (closedir(directory) < 0) { directory = NULL; system_error("file_io_failed", "cannot close download cache directory", errno); goto done; }
+    directory = NULL;
+    if (count > 1) qsort(entries, count, sizeof(*entries), cache_order);
+    if (clearing) {
+        for (size_t i = 0; i < count; i++) {
+            if (fstatat(cachefd, entries[i].id, &st, AT_SYMLINK_NOFOLLOW) < 0) {
+                system_error("file_io_failed", "cannot recheck download cache entry; cleanup may be incomplete", errno); goto done;
+            }
+            if (!S_ISREG(st.st_mode) || st.st_nlink != 1 || st.st_ino != entries[i].st.st_ino || st.st_dev != entries[i].st.st_dev) {
+                problem("cache_unsafe", "download cache entry changed; cleanup may be incomplete"); goto done;
+            }
+            if (unlinkat(cachefd, entries[i].id, 0) < 0) {
+                system_error("file_io_failed", "cannot remove download cache entry; cleanup may be incomplete", errno); goto done;
+            }
+        }
+    }
+output:
+    if (clearing) printf("Cleared %zu download cache entries (%llu bytes) from %s\n", count, (unsigned long long)total, path);
+    else if (json) {
+        fputs("{\"version\":1,\"path\":", stdout);
+        pdn_json_string(stdout, path);
+        printf(",\"total_bytes\":%llu,\"entries\":[", (unsigned long long)total);
+        for (size_t i = 0; i < count; i++) {
+            struct cache_entry *entry = &entries[i];
+            if (i) fputc(',', stdout);
+            fputs("{\"id\":", stdout); pdn_json_string(stdout, entry->id);
+            fputs(",\"distro\":", stdout);
+            if (entry->distro) pdn_json_string(stdout, entry->distro); else fputs("null", stdout);
+            fputs(",\"mirror\":", stdout);
+            if (entry->mirror) pdn_json_string(stdout, entry->mirror); else fputs("null", stdout);
+            printf(",\"bytes\":%llu,\"total\":", (unsigned long long)entry->st.st_size);
+            if (entry->distro) printf("%zu", entry->total); else fputs("null", stdout);
+            printf(",\"updated_at\":%lld}", entry->st.st_mtime > 0 ? (long long)entry->st.st_mtime : 0);
+        }
+        fputs("]}\n", stdout);
+    } else {
+        printf("Download cache: %s\n", path);
+        for (size_t i = 0; i < count; i++) {
+            printf("%s  %s  %s  %llu bytes / ", entries[i].id, entries[i].distro ? entries[i].distro : "unknown",
+                   entries[i].mirror ? entries[i].mirror : "unknown", (unsigned long long)entries[i].st.st_size);
+            if (entries[i].distro) printf("%zu expected bytes", entries[i].total);
+            else fputs("unknown expected bytes", stdout);
+            printf("  updated_at=%lld\n", entries[i].st.st_mtime > 0 ? (long long)entries[i].st.st_mtime : 0);
+        }
+        printf("Total: %zu entries, %llu bytes\n", count, (unsigned long long)total);
+    }
+    if (fflush(stdout) || ferror(stdout)) { system_error("file_io_failed", "cannot write download cache result", errno ? errno : EIO); goto done; }
+    result = 0;
+done:
+    if (directory) closedir(directory);
+    if (lock >= 0) close(lock);
+    if (cachefd >= 0) close(cachefd);
+    if (basefd >= 0) close(basefd);
+    free(entries); free(path); free(absolute); free(base);
+    return result;
 }
 
 static int download_mirrors(const struct distro *distro, const struct mirror *mirrors, size_t count,

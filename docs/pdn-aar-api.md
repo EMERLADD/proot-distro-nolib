@@ -72,7 +72,7 @@ Executor 必须执行已接受的回调，监听器必须返回；正在执行�
 
 `install()` 与 `installAs()` 的参数和返回类型不变，不需要新增续传开关。在线下载中断或可处理取消后，以相同 rootfs 管理目录和完全相同的镜像 URL 再次提交同一安装操作，会自动尝试复用下载缓存。下载进度事件包含已有缓存字节，界面应使用事件报告的累计值。宿主决定何时再次提交；PDN 不会在后台自动重试。
 
-缓存位于 rootfs 管理目录下的 `.pdn-downloads`，按固定 SHA256 与镜像 URL 摘要分开保存；切换镜像不会拼接字节。Range 响应不符合要求、服务器忽略 Range 或返回 416 时，最多从零重启一次。完整大小和 SHA256 校验通过后才解压，损坏缓存删除，成功缓存消费；普通解压暂存目录仍会清理。暂不支持 ETag / If-Range 或缓存管理 CLI。清理缓存前先确认没有安装操作运行，再清理所选管理目录下 `.pdn-downloads` 的内容。详见[发行版管理](pdn-distributions.md)。
+缓存位于 rootfs 管理目录下的 `.pdn-downloads`，按固定 SHA256 与镜像 URL 摘要分开保存；切换镜像不会拼接字节。Range 响应不符合要求、服务器忽略 Range 或返回 416 时，最多从零重启一次。完整大小和 SHA256 校验通过后才解压，损坏缓存删除，成功缓存消费；普通解压暂存目录仍会清理。暂不支持 ETag / If-Range。通过 `pdn.catalog().cache()` 查询并用 `pdn.clearCache()` 清理；安装锁被占用时清理返回错误。详见[发行版管理](pdn-distributions.md)。
 
 ## 独立终端
 
@@ -151,3 +151,17 @@ List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 ## 接入注意事项
 
 标准 AAR 与 lite 文件内容相同，均保留完整终端接口。宿主需提供 Kotlin 标准库。支持 R8 混淆，使用 Android 默认优化及 JNI 规则，无需保留整个 SDK。当前没有 Maven 发布、终端渲染控件或自动后台服务。可参考 [AAR 示例](../examples/aar-probe/README.md)。
+
+## 下载缓存
+
+通过结构化查询显示占用，清理操作沿用异步任务和事件接口。查询是同步方法，在 GUI 的工作线程调用；清理前在界面取得确认。
+
+```java
+PdnDownloadCacheInfo cache = pdn.catalog().cache();
+long bytes = cache.getTotalBytes();
+List<PdnDownloadCacheEntry> entries = cache.getEntries();
+PdnDownloadCacheInfo alpine = pdn.catalog().cache("alpine");
+PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
+```
+
+`pdn.cache()` / `cache("alpine")` 返回 JSON 查询的 `ProcessBuilder`；`pdn.clearCache()` 清理全部可识别格式的下载残片。快照和条目不可修改，条目提供 `getId()`、`getDistro()`、`getMirror()`、`getBytes()`、`getTotal()` 和 `getUpdatedAt()`；最后一项为 Unix 秒，未知来源字段可为 null。大小不是校验通过的证明。

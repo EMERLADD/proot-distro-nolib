@@ -54,7 +54,7 @@ Use the reported path, reason and suggestion rather than blindly applying `chmod
 
 Keep the same rootfs management directory and repeat the original installation to automatically attempt resuming; for example, repeat `pdn install alpine --mirror official`. PDN does not retry automatically in the background. Only the exact same mirror URL reuses cached bytes; another mirror uses a separate cache. Progress includes cached bytes. Ignored Range requests, invalid ranges or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are still required before extraction.
 
-Transport errors and handled cancellation retain cache entries in the selected `PDN_ROOTFS_DIR/.pdn-downloads`; ordinary extraction staging is still cleaned. Corrupt cache entries are removed and successful caches consumed. ETag / If-Range and a cache management CLI are not supported yet. To reclaim space, first confirm that no installation is running, then clear `.pdn-downloads` contents in the selected rootfs management directory. See [distribution management](pdn-distributions.en.md) for cache keys and verification rules.
+Transport errors and handled cancellation retain cache entries in the selected `PDN_ROOTFS_DIR/.pdn-downloads`; ordinary extraction staging is still cleaned. Corrupt cache entries are removed and successful caches consumed. ETag / If-Range is not supported. Inspect usage with `pdn cache list` and reclaim space with `pdn cache clear --yes`; cleanup is refused during installation. See [distribution management](pdn-distributions.en.md) for cache keys and verification rules.
 
 ## Packaging in an App
 

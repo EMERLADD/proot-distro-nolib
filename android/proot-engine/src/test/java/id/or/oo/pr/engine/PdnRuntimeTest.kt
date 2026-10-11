@@ -176,6 +176,10 @@ class PdnRuntimeTest {
         val archive = File(temporary.root, "backup with spaces.tar.gz")
         val cases = listOf(
             pdn.version() to listOf("version"),
+            pdn.cache() to listOf("cache", "list", "--json"),
+            pdn.cache("alpine") to listOf("cache", "list", "alpine", "--json"),
+            pdn.clearCache() to listOf("cache", "clear", "--yes"),
+            pdn.clearCache("ubuntu") to listOf("cache", "clear", "ubuntu", "--yes"),
             pdn.list() to listOf("list"),
             pdn.list(available = true) to listOf("list", "--available"),
             pdn.mirrors() to listOf("mirrors"),
@@ -193,6 +197,10 @@ class PdnRuntimeTest {
         assertThrows(IllegalArgumentException::class.java) { pdn.install("alpine", "") }
         assertThrows(IllegalArgumentException::class.java) { pdn.saveConfig("alpine", emptyList()) }
         assertThrows(IllegalArgumentException::class.java) { pdn.mirrors("--help") }
+        for (name in listOf("", "../alpine", "--json", "a b", "a\u0000b")) {
+            assertThrows(IllegalArgumentException::class.java) { pdn.cache(name) }
+            assertThrows(IllegalArgumentException::class.java) { pdn.clearCache(name) }
+        }
         assertThrows(IllegalArgumentException::class.java) { pdn.backup("../x", archive) }
         assertThrows(IllegalArgumentException::class.java) { pdn.restore("../x", archive) }
         assertThrows(IllegalArgumentException::class.java) { pdn.config("../x") }

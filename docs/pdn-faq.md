@@ -54,7 +54,7 @@ mkdir -p "$PROOT_TMP_DIR"
 
 保持相同 rootfs 管理目录，重复原安装操作即可自动尝试续传；例如再次执行原来的 `pdn install alpine --mirror official`。PDN 不会在后台自动重试。续传只复用完全相同镜像 URL 的缓存，切换镜像会使用独立缓存。进度包含已缓存字节。服务器忽略 Range、范围错误或返回 416 时，会最多从零重启一次；完整大小和 SHA256 仍须通过校验才可解压。
 
-传输错误或可处理取消会保留所选 `PDN_ROOTFS_DIR/.pdn-downloads` 中的缓存，普通解压暂存目录仍会清理。损坏缓存会删除，成功缓存会消费。暂不使用 ETag / If-Range，也没有缓存管理 CLI。如需释放空间，先确认没有安装操作运行，再清理所选 rootfs 管理目录下 `.pdn-downloads` 的内容。缓存键与校验规则见[发行版管理](pdn-distributions.md)。
+传输错误或可处理取消会保留所选 `PDN_ROOTFS_DIR/.pdn-downloads` 中的缓存，普通解压暂存目录仍会清理。损坏缓存会删除，成功缓存会消费。暂不使用 ETag / If-Range。用 `pdn cache list` 查询占用，`pdn cache clear --yes` 清理下载缓存；安装期间会拒绝清理。缓存键与校验规则见[发行版管理](pdn-distributions.md)。
 
 ## App 怎样打包程序
 

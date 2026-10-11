@@ -148,6 +148,7 @@ proot-engine-*.aar
 │      ├─ PdnOperations / PdnTask / PdnListener / PdnEvent / PdnResult / PdnHostException
 │      ├─ PdnConfiguration / PdnBind
 │      ├─ PdnCatalog / PdnDistributionInfo / PdnInstanceInfo / PdnMirrorInfo / PdnQueryException
+│      ├─ PdnDownloadCacheInfo / PdnDownloadCacheEntry
 │      ├─ PdnTerminal / PdnTerminalListener / PdnTerminalSession / PdnTerminalStatus / PdnTerminalException
 │      └─ ProotLauncher / PtyNative compatibility interfaces
 ├─ jni/arm64-v8a/

@@ -80,6 +80,14 @@ class PdnRuntime @JvmOverloads constructor(
         processBuilder(if (name == null) listOf("mirrors") else listOf("mirrors", distroName(name)))
 
     @JvmOverloads
+    fun cache(name: String? = null): ProcessBuilder =
+        processBuilder(listOf("cache", "list") + (if (name == null) emptyList() else listOf(distroName(name))) + "--json")
+
+    @JvmOverloads
+    fun clearCache(name: String? = null): ProcessBuilder =
+        processBuilder(listOf("cache", "clear") + (if (name == null) emptyList() else listOf(distroName(name))) + "--yes")
+
+    @JvmOverloads
     fun install(name: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
         val args = mutableListOf("install", distroName(name))
         require(mirror == null || archive == null) { "Choose either a mirror or a local archive" }

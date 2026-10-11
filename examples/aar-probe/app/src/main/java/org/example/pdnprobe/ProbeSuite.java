@@ -25,12 +25,18 @@ public final class ProbeSuite {
     private PdnOperations operations;
     private final Log log;
     private final String resumeProxy;
+    private final boolean offlineOnly;
 
     public ProbeSuite(Context context, Log log) {
         this(context, log, null);
     }
 
     public ProbeSuite(Context context, Log log, String resumeProxy) {
+        this(context, log, resumeProxy, false);
+    }
+
+    public ProbeSuite(Context context, Log log, String resumeProxy, boolean offlineOnly) {
+        this.offlineOnly = offlineOnly;
         this.resumeProxy = resumeProxy;
         this.context = context.getApplicationContext();
         this.log = log;
@@ -90,8 +96,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.14"), "version: " + c.stderr());
-            return "native PDN 0.6.14, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.15"), "version: " + c.stderr());
+            return "native PDN 0.6.15, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -112,7 +118,8 @@ public final class ProbeSuite {
             return "pinned official offline ARM64 archive; verified, extracted and configured";
         });
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
-        check(checks, "download_https_resume", () -> verifyDownloadCache(false));
+        if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
+        check(checks, "cache_management", () -> verifyCacheManagement());
         check(checks, "named_instances", () -> {
             File archive = new File(host.getCacheDir(), "alpine.tar.gz");
             File backup = new File(host.getCacheDir(), "instance-" + java.util.UUID.randomUUID() + ".tar.gz");
@@ -359,10 +366,118 @@ public final class ProbeSuite {
         boolean success = true;
         for (int i = 0; i < checks.length(); i++) success &= checks.getJSONObject(i).getBoolean("passed");
         JSONObject report = new JSONObject().put("package", context.getPackageName()).put("target_sdk", context.getApplicationInfo().targetSdkVersion)
-                .put("passed", success).put("checks", checks);
+                .put("passed", success).put("checks", checks).put("network_checks_skipped", offlineOnly);
         Files.write(new File(context.getFilesDir(), "acceptance.json").toPath(), report.toString(2).getBytes(StandardCharsets.UTF_8));
         log.accept(success ? "ALL CHECKS PASSED" : "CHECKS FAILED — see acceptance.json");
         return report;
+    }
+
+    private String verifyCacheManagement() throws Exception {
+        File cache = new File(runtime.getRootfsDir(), ".pdn-downloads");
+        Files.createDirectories(cache.toPath());
+        Capture mirrors = run(runtime.processBuilder(Arrays.asList("mirrors", "alpine", "--json")));
+        require(mirrors.result.isSuccess(), "cache mirror metadata: " + mirrors.stderr());
+        JSONArray rows = new JSONObject(mirrors.stdout()).getJSONArray("mirrors");
+        String url = null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            if ("official".equals(row.getString("name"))) url = row.getString("url");
+        }
+        require(url != null, "official mirror missing");
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        File archive = new File(host.getCacheDir(), "alpine.tar.gz");
+        String archiveHash = hex(digest.digest(Files.readAllBytes(archive.toPath())));
+        String urlHash = hex(digest.digest(url.getBytes(StandardCharsets.UTF_8)));
+        File known = new File(cache, archiveHash + "-" + urlHash + ".part");
+        String unknownHash = hex(digest.digest("unknown-cache-fixture".getBytes(StandardCharsets.UTF_8)));
+        File orphan = new File(cache, unknownHash + "-" + unknownHash + ".part");
+        File foreign = new File(cache, "unrelated.txt");
+        File target = new File(runtime.getRootfsDir().getParentFile(), "cache-symlink-target");
+        java.lang.Process holder = null;
+        try {
+            Files.write(known.toPath(), "known".getBytes(StandardCharsets.UTF_8));
+            Files.write(orphan.toPath(), "orphan".getBytes(StandardCharsets.UTF_8));
+            Files.write(foreign.toPath(), "foreign".getBytes(StandardCharsets.UTF_8));
+            Capture listed = run(runtime.cache());
+            require(listed.result.isSuccess(), "cache list: " + listed.stderr());
+            JSONObject all = new JSONObject(listed.stdout());
+            require(all.getInt("version") == 1 && cache.getAbsolutePath().equals(all.getString("path"))
+                    && all.getLong("total_bytes") == 11 && all.getJSONArray("entries").length() == 2, "cache totals/schema");
+            boolean unknown = false;
+            JSONArray allEntries = all.getJSONArray("entries");
+            for (int i = 0; i < allEntries.length(); i++) {
+                JSONObject row = allEntries.getJSONObject(i);
+                if (orphan.getName().equals(row.getString("id"))) {
+                    unknown = row.isNull("distro") && row.isNull("mirror") && row.isNull("total") && row.getLong("bytes") == 6;
+                }
+            }
+            require(unknown, "unknown cached archive metadata");
+            Capture selected = run(runtime.cache("alpine"));
+            require(selected.result.isSuccess(), "filtered cache list: " + selected.stderr());
+            JSONObject filtered = new JSONObject(selected.stdout());
+            require(filtered.getLong("total_bytes") == 5 && filtered.getJSONArray("entries").length() == 1, "filtered cache size");
+            JSONObject entry = filtered.getJSONArray("entries").getJSONObject(0);
+            require(known.getName().equals(entry.getString("id")) && "alpine".equals(entry.getString("distro"))
+                    && "official".equals(entry.getString("mirror")) && entry.getLong("bytes") == 5
+                    && entry.getLong("total") == archive.length() && entry.getLong("updated_at") > 0, "cache provenance");
+            id.or.oo.pr.engine.PdnDownloadCacheInfo typed = runtime.catalog().cache("alpine");
+            require(typed.getPath().equals(filtered.getString("path")) && typed.getTotalBytes() == 5 && typed.getEntries().size() == 1, "typed cache totals");
+            id.or.oo.pr.engine.PdnDownloadCacheEntry item = typed.getEntries().get(0);
+            require(item.getId().equals(entry.getString("id")) && "alpine".equals(item.getDistro()) && "official".equals(item.getMirror())
+                    && item.getBytes() == 5 && Long.valueOf(archive.length()).equals(item.getTotal()) && item.getUpdatedAt() == entry.getLong("updated_at"), "typed cache metadata");
+            boolean immutable = false;
+            try { typed.getEntries().clear(); } catch (UnsupportedOperationException expected) { immutable = true; }
+            require(immutable, "typed cache entries must be immutable");
+            Capture unconfirmed = run(runtime.processBuilder(Arrays.asList("cache", "clear", "alpine")));
+            require(!unconfirmed.result.isSuccess() && known.isFile() && orphan.isFile() && foreign.isFile(), "clear requires confirmation");
+            ProcessBuilder lockBuilder = runtime.processBuilder(Arrays.asList("exec", "alpine", "--bind",
+                    runtime.getRootfsDir().getAbsolutePath() + ":/cache-test", "--", "/bin/sh", "-c",
+                    "exec 9>/cache-test/.pdn-install.lock; /bin/busybox flock -x 9 || exit; printf 'READY\n'; read gate"));
+            holder = lockBuilder.start();
+            ByteArrayOutputStream readiness = new ByteArrayOutputStream();
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (System.nanoTime() < deadline && !readiness.toString("UTF-8").contains("\n")) {
+                if (holder.getInputStream().available() > 0) readiness.write(holder.getInputStream().read());
+                else if (!holder.isAlive()) break;
+                else Thread.sleep(10);
+            }
+            require("READY\n".equals(readiness.toString("UTF-8")), "native flock readiness: " + readiness);
+            Capture busy = run(runtime.clearCache("alpine"));
+            require(!busy.result.isSuccess() && "operation_busy".equals(busy.result.getCode())
+                    && known.isFile() && orphan.isFile() && foreign.isFile(), "locked cache clear refusal: " + busy.stderr());
+            holder.getOutputStream().close();
+            require(holder.waitFor(10, java.util.concurrent.TimeUnit.SECONDS), "flock release timeout");
+            holder.getInputStream().close();
+            holder.getErrorStream().close();
+            holder = null;
+            Capture cleared = run(runtime.clearCache("alpine"));
+            require(cleared.result.isSuccess() && !known.exists() && orphan.isFile() && foreign.isFile(), "filtered clear isolation");
+            Capture global = run(runtime.clearCache());
+            require(global.result.isSuccess() && !orphan.exists() && foreign.isFile() && getRootfs().isDirectory(), "global clear preserves unrelated files and installed rootfs");
+            Files.write(target.toPath(), "SAFE".getBytes(StandardCharsets.UTF_8));
+            Files.createSymbolicLink(known.toPath(), target.toPath());
+            Capture unsafe = run(runtime.clearCache());
+            require(!unsafe.result.isSuccess() && "cache_unsafe".equals(unsafe.result.getCode())
+                    && Files.isSymbolicLink(known.toPath()) && "SAFE".equals(new String(Files.readAllBytes(target.toPath()), StandardCharsets.UTF_8)), "symlink cache refusal: " + unsafe.stderr());
+            return "local cache metadata, filtering, confirmation, native flock contention, isolated clear, symlink refusal and correlated events";
+        } finally {
+            try {
+                if (holder != null) {
+                    try {
+                        holder.getOutputStream().close();
+                        if (!holder.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                            holder.destroyForcibly();
+                            require(holder.waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "flock process cleanup timeout");
+                        }
+                    } finally {
+                        holder.getInputStream().close();
+                        holder.getErrorStream().close();
+                    }
+                }
+            } finally {
+                for (File file : Arrays.asList(known, orphan, foreign, target)) Files.deleteIfExists(file.toPath());
+            }
+        }
     }
 
     private String verifyDownloadCache(boolean complete) throws Exception {

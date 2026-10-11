@@ -34,6 +34,8 @@
 | `config_read_failed` / `config_write_failed` | 配置读写失败；检查权限及具体系统原因。 |
 | `user_invalid` | 账号或 UID/GID 无效；检查 guest 的 passwd 与账号参数。 |
 | `uninstall_failed` / `uninstall_incomplete` | 删除失败或仅部分删除；解决具体原因后再次卸载，没有撤销功能。 |
+| `cache_limit_exceeded` | 缓存条目数量或大小超出查询限制；检查目录，分批清理或移出无关文件后重试。 |
+| `cache_unsafe` | 缓存目录或文件类型不安全；检查所报路径，不要绕过拒绝或递归删除。 |
 | `rollback_failed` | 恢复旧状态失败；保留恢复文件，按 suggestion 检查，不要直接删除。 |
 | `manager_failed` | 管理操作失败的兜底分类；结合 stderr 和 message 排查。 |
 | `host_cache_failed` / `host_event_channel_failed` | 宿主缓存或事件通道不可用；检查 App 私有目录。 |

@@ -49,8 +49,14 @@ public class PdnCatalogJavaTest {
             assertTrue(catalog.mirrors("alpine").isEmpty());
             assertEquals("alpine", command.get().get(2));
             try { catalog.mirrors("--json"); fail(); } catch (IllegalArgumentException expected) {}
+            response[0] = "{\"version\":1,\"path\":\"/roots/.pdn-downloads\",\"total_bytes\":0,\"entries\":[]}";
+            assertTrue(catalog.cache().getEntries().isEmpty());
+            assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "cache", "list", "--json"), command.get());
+            assertTrue(catalog.cache("alpine").getEntries().isEmpty());
+            assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "cache", "list", "alpine", "--json"), command.get());
+            try { catalog.cache("../alpine"); fail(); } catch (IllegalArgumentException expected) {}
             failure[0] = "error";
-            try { catalog.mirrors("missing"); fail(); }
+            try { catalog.cache("missing"); fail(); }
             catch (PdnQueryException expected) {
                 assertEquals("distro_unknown", expected.getResult().getCode());
                 assertEquals("unknown distro", expected.getMessage());

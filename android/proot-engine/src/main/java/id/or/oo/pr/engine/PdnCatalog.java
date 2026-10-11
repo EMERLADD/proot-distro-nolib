@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Objects;
 
 public final class PdnCatalog {
@@ -42,6 +44,11 @@ public final class PdnCatalog {
         }
         args.add("--json");
         return mirrorRows(query(runtime.processBuilder(args)));
+    }
+
+    public PdnDownloadCacheInfo cache() throws IOException, InterruptedException { return cache(null); }
+    public PdnDownloadCacheInfo cache(String distro) throws IOException, InterruptedException {
+        return cacheInfo(query(runtime.cache(distro)));
     }
 
     private byte[] query(ProcessBuilder builder) throws IOException, InterruptedException {
@@ -130,7 +137,39 @@ public final class PdnCatalog {
         } catch (Exception failure) { throw invalid(failure); }
     }
 
+    static PdnDownloadCacheInfo cacheInfo(byte[] bytes) throws PdnHostException {
+        try {
+            JSONObject object = envelopeObject(bytes);
+            String path = string(object, "path");
+            if (!path.startsWith("/")) throw new IllegalArgumentException("Invalid cache path");
+            long totalBytes = number(object, "total_bytes");
+            JSONArray rows = object.getJSONArray("entries");
+            List<PdnDownloadCacheEntry> values = new ArrayList<>();
+            Set<String> ids = new HashSet<>();
+            long sum = 0;
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.getJSONObject(i);
+                String id = string(row, "id");
+                if (!id.matches("[0-9a-f]{64}-[0-9a-f]{64}\\.part") || !ids.add(id)) throw new IllegalArgumentException("Invalid cache id");
+                String distro = nullableString(row, "distro");
+                String mirror = nullableString(row, "mirror");
+                if ((distro != null && distro.isEmpty()) || (mirror != null && mirror.isEmpty())) throw new IllegalArgumentException("Invalid cache metadata");
+                long size = number(row, "bytes");
+                Long total = row.get("total") == JSONObject.NULL ? null : Long.valueOf(number(row, "total"));
+                long updatedAt = number(row, "updated_at");
+                sum = Math.addExact(sum, size);
+                values.add(new PdnDownloadCacheEntry(id, distro, mirror, size, total, updatedAt));
+            }
+            if (sum != totalBytes) throw new IllegalArgumentException("Invalid cache byte total");
+            return new PdnDownloadCacheInfo(path, totalBytes, values);
+        } catch (Exception failure) { throw invalid(failure); }
+    }
+
     private static JSONArray envelope(byte[] bytes, String key) throws CharacterCodingException, JSONException {
+        return envelopeObject(bytes).getJSONArray(key);
+    }
+
+    private static JSONObject envelopeObject(byte[] bytes) throws CharacterCodingException, JSONException {
         if (bytes.length > LIMIT) throw new IllegalArgumentException("Metadata exceeds size limit");
         String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
         PdnJson.validate(text);
@@ -139,7 +178,7 @@ public final class PdnCatalog {
         if (!(value instanceof JSONObject) || tokener.nextClean() != 0) throw new IllegalArgumentException("Invalid metadata envelope");
         JSONObject object = (JSONObject)value;
         if (number(object, "version") != 1) throw new IllegalArgumentException("Unsupported metadata version");
-        return object.getJSONArray(key);
+        return object;
     }
 
     private static String string(JSONObject row, String key) throws JSONException {

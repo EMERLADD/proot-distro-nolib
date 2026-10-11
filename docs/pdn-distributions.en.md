@@ -71,7 +71,7 @@ After an online download is interrupted or cancelled with Ctrl+C / SIGTERM, repe
 
 Resuming uses HTTP Range and validates the response range against the pinned total size before appending. If the server ignores Range, returns an invalid range or responds with HTTP 416, that source restarts from zero at most once. Every archive, including a full-size cache entry, must pass full-size and SHA256 verification before extraction. Corrupt cache entries are removed; a successful download cache is consumed after verification and copying into installation staging.
 
-There is no automatic background retry, ETag / If-Range support or cache management CLI. To reclaim space, first confirm that no installation is running, then clear the contents of `.pdn-downloads` in the selected rootfs management directory.
+There is no automatic background retry or ETag / If-Range support. Use `pdn cache clear --yes` to reclaim download-cache space.
 
 Mirror latency ranking is not implemented. The Arch archive is about 791 MiB; reserve several GiB for installation. Kotlin can prepare an operation with `pdn.install("alpine", mirror = "official")`; it returns a `ProcessBuilder` that must be started or passed to the asynchronous task API.
 
@@ -153,3 +153,22 @@ pdn login workspace-python
 Exit active source sessions first. Clone creates an independent rootfs, fresh ID and timestamp, following backup portability limits. It needs space for a temporary archive plus the target rootfs; devices, FIFOs, sockets, runtime directory contents and temporary config are excluded. Native hardlinks become independent files under the existing archive rules; PRoot .l2s backing relationships are migrated. Saved config is retained, rootfs-owned bind paths move, and external project binds remain shared.
 
 Rename moves the directory, preserving ID, time and provenance while migrating rootfs-owned host-absolute symlinks/.l2s links and bind paths. Arbitrary file contents, external links and environment strings are not rewritten. Case-only changes are allowed, conflicts refuse overwrites, and active sessions report operation_busy. Ordinary failures and handled cancellation roll back; rollback_failed retains recovery snapshots. SIGKILL/power-loss transaction recovery is still a limitation.
+
+## Download cache management
+
+Interrupted downloads are stored in `.pdn-downloads` under the selected rootfs management directory, separately from installed systems. Inspect all cached downloads or one distribution:
+
+```sh
+pdn cache list
+pdn cache list alpine
+pdn cache list --json
+```
+
+The listing provides cached bytes, distribution and mirror, expected archive size and update time. Unrecognized old sources have null metadata. Cached byte counts do not mean the content has passed verification. A distribution filter includes only entries identified as belonging to that distribution.
+
+```sh
+pdn cache clear alpine --yes
+pdn cache clear --yes
+```
+
+Clearing requires explicit confirmation and removes only ordinary PDN download-cache files. It does not remove installed rootfs, project files or other cache directories. The next installation downloads cleared data again. An active installation or conflicting lock returns `operation_busy`; wait and retry. Suspicious symlinks, nonregular files and multiply linked cache files are rejected; unknown content is never removed recursively.

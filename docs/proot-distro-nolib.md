@@ -88,7 +88,7 @@ After an online download is interrupted or cancelled with Ctrl+C / SIGTERM, repe
 
 Resuming uses HTTP Range and validates the response range against the pinned total size before appending. If the server ignores Range, returns an invalid range or responds with HTTP 416, that source restarts from zero at most once. Every archive, including a full-size cache entry, must pass full-size and SHA256 verification before extraction. Corrupt cache entries are removed; a successful download cache is consumed after verification and copying into installation staging.
 
-There is no automatic background retry, ETag / If-Range support or cache management CLI. To reclaim space, first confirm that no installation is running, then clear the contents of `.pdn-downloads` in the selected rootfs management directory.
+There is no automatic background retry or ETag / If-Range support. Use `pdn cache clear --yes` to reclaim download-cache space.
 
 Connections time out after 8 seconds; a transfer below 1 KiB/s for 30 seconds
 is stopped. Total transfer limits are 90 seconds for Alpine, 10 minutes for
@@ -445,3 +445,22 @@ For AAR hosts, set the variable on the returned `ProcessBuilder` environment bef
 When the native host `/dev/full` is absent or inaccessible, this supplies a guest compatibility device. It does not create an Android kernel device. Reads return zeros and writable writes fail with `ENOSPC`; descriptors retain identity across duplication and process inheritance. An explicit bind of another file over `/dev/full` retains its behavior. Ordinary files and `/dev/zero` are unaffected.
 
 Enabling compatibility adds read/write syscall tracing and has overhead. Default sessions retain their existing acceleration policy. This implements common synchronous device operations, not a complete virtual kernel; advanced asynchronous I/O interfaces are outside its supported scope. Emulated reads may return a short result of at most 64 KiB; callers must handle short reads normally. The emulation supports native 64-bit guest calls; `preadv2` and `pwritev2` return `EOPNOTSUPP`. The device cannot be memory-mapped. Host-side manager operations still need a real host `/dev/full` for that test.
+
+## Download cache management
+
+Interrupted downloads are stored in `.pdn-downloads` under the selected rootfs management directory, separately from installed systems. Inspect all cached downloads or one distribution:
+
+```sh
+pdn cache list
+pdn cache list alpine
+pdn cache list --json
+```
+
+The listing provides cached bytes, distribution and mirror, expected archive size and update time. Unrecognized old sources have null metadata. Cached byte counts do not mean the content has passed verification. A distribution filter includes only entries identified as belonging to that distribution.
+
+```sh
+pdn cache clear alpine --yes
+pdn cache clear --yes
+```
+
+Clearing requires explicit confirmation and removes only ordinary PDN download-cache files. It does not remove installed rootfs, project files or other cache directories. The next installation downloads cleared data again. An active installation or conflicting lock returns `operation_busy`; wait and retry. Suspicious symlinks, nonregular files and multiply linked cache files are rejected; unknown content is never removed recursively.

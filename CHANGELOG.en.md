@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
+## v0.6.15 — 2026-10-11
+
+Add download-cache listing and clearing with distribution filters and byte usage. Provide typed Java/Kotlin queries and clearing methods; cleanup respects installation locks and preserves installed systems.
+
 ## v0.6.14 — 2026-10-11
 
 Resume interrupted online installations by repeating the install; cached archives still require full SHA256 verification. Fix HTTPS proxy resume and partial-download error handling.

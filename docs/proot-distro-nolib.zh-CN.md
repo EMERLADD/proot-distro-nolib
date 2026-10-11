@@ -93,7 +93,7 @@ pdn install alpine --archive /sdcard/alpine-minirootfs-3.24.2-aarch64.tar.gz
 
 续传使用 HTTP Range，并在追加前校验响应范围与固定总大小。服务器忽略 Range、返回错误范围或 HTTP 416 时，本次来源最多从零重新下载一次。包括完整缓存在内，所有归档均须通过完整大小和 SHA256 校验才可解压；损坏缓存会删除，成功下载的缓存在校验并复制到安装暂存目录后消费。
 
-没有自动后台重试，暂不使用 ETag / If-Range，也没有缓存管理 CLI。如需释放空间，先确认没有安装操作运行，再清理所选 rootfs 管理目录中 `.pdn-downloads` 的内容。
+没有自动后台重试，暂不使用 ETag / If-Range。可用 `pdn cache list` 查询占用，使用 `pdn cache clear --yes` 清理残片。
 
 连接超时为 8 秒，连续 30 秒低于 1 KiB/s 会停止传输；总传输上限为 Alpine 90 秒、Ubuntu/Debian 10 分钟、Arch 30 分钟。`--archive` 先复制到暂存目录再核验，必须匹配固定归档，不能与 `--mirror` 同时使用。
 
@@ -259,3 +259,22 @@ PROOT_EMULATE_DEV_FULL=1 pdn exec alpine -- /bin/sh -c 'printf x > /dev/full'
 ## 构建与产物
 
 编译、发布文件和许可证说明见[从源码构建与发布文件](pdn-build-and-release.md)。App 打包步骤见[接入教程](android-embedding.md)。
+
+## 下载缓存管理
+
+中断的下载保存在选定 rootfs 管理目录的 `.pdn-downloads`，不包含已安装系统。查看全部或某个发行版的缓存：
+
+```sh
+pdn cache list
+pdn cache list alpine
+pdn cache list --json
+```
+
+清单显示残片占用字节、对应发行版与镜像、预计归档大小及更新时间。旧来源无法识别时相关字段为 `null`；占用字节不代表内容已通过校验。按发行版筛选只包含能够识别为该发行版的残片。
+
+```sh
+pdn cache clear alpine --yes
+pdn cache clear --yes
+```
+
+清理需要显式确认，只删除 PDN 格式的普通下载缓存文件，不删除已安装 rootfs、项目文件或其他缓存目录。清理后再次安装会重新下载。安装正在运行或操作锁被占用时返回 `operation_busy`；等待结束后重试。可疑软链接、非普通文件和多硬链接缓存会被拒绝，不会递归清理未知内容。

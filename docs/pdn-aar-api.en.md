@@ -72,7 +72,7 @@ The original `operations.run(builder, listener)` remains synchronous, with callb
 
 The parameters and return types of `install()` and `installAs()` are unchanged; no resume flag is needed. After an online download is interrupted or handled cancellation stops it, submit the same installation again with the same rootfs management directory and exact mirror URL to automatically attempt reusing cached bytes. Download progress events include existing cached bytes, so the UI should use the reported cumulative value. The host decides when to submit again; PDN does not retry automatically in the background.
 
-The cache lives in `.pdn-downloads` under the rootfs management directory, keyed separately by the pinned SHA256 and mirror URL digest. Switching mirrors never splices bytes. Invalid Range responses, ignored Range requests or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are required before extraction; corrupt caches are removed and successful caches consumed. Ordinary extraction staging is still cleaned. ETag / If-Range and a cache management CLI are not supported yet. Before clearing `.pdn-downloads` contents in the selected management directory, confirm that no installation is running. See [distribution management](pdn-distributions.en.md).
+The cache lives in `.pdn-downloads` under the rootfs management directory, keyed separately by the pinned SHA256 and mirror URL digest. Switching mirrors never splices bytes. Invalid Range responses, ignored Range requests or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are required before extraction; corrupt caches are removed and successful caches consumed. Ordinary extraction staging is still cleaned. ETag / If-Range is not supported. Query with `pdn.catalog().cache()` and clear with `pdn.clearCache()`; conflicting installation locks return an error. See [distribution management](pdn-distributions.en.md).
 
 ## Independent terminals
 
@@ -151,3 +151,17 @@ Queries use version 1 JSON envelopes from native `list --json`, `list --availabl
 ## Integration notes
 
 The standard and lite AAR files are identical and retain all terminal APIs. The host must provide the Kotlin standard library. R8 is supported with Android's default optimization and JNI rules; retaining the entire SDK is unnecessary. Maven publication, terminal rendering widgets and an automatic background service are not provided. See the [AAR example](../examples/aar-probe/README.en.md).
+
+## Download caches
+
+Use typed queries to display cache usage and the existing task/event APIs to clear it. Queries are synchronous; call them on a worker thread and confirm deletion in the UI.
+
+```java
+PdnDownloadCacheInfo cache = pdn.catalog().cache();
+long bytes = cache.getTotalBytes();
+List<PdnDownloadCacheEntry> entries = cache.getEntries();
+PdnDownloadCacheInfo alpine = pdn.catalog().cache("alpine");
+PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
+```
+
+`pdn.cache()` / `cache("alpine")` returns a JSON-query `ProcessBuilder`; `pdn.clearCache()` clears all download partials with recognized filenames. Snapshots and entries are immutable. Entries expose `getId()`, `getDistro()`, `getMirror()`, `getBytes()`, `getTotal()` and `getUpdatedAt()` (Unix seconds); unknown source fields may be null. Size does not establish checksum validity.

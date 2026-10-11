@@ -34,6 +34,8 @@ On failure, inspect `message`, `suggestion` and stderr. `code` classifies the ca
 | `config_read_failed` / `config_write_failed` | Configuration I/O failed; inspect permissions and the system cause. |
 | `user_invalid` | Invalid account or UID/GID; check guest passwd and account arguments. |
 | `uninstall_failed` / `uninstall_incomplete` | Removal failed or was partial; resolve the cause and repeat removal. There is no undo. |
+| `cache_limit_exceeded` | Cache entry count or size exceeds limits; inspect the directory, clear selected distributions or move unrelated files and retry. |
+| `cache_unsafe` | Unsafe cache directory or file; inspect the reported path without bypassing the refusal or recursively deleting it. |
 | `rollback_failed` | Rollback failed; retain recovery files and follow the suggestion rather than deleting them. |
 | `manager_failed` | Fallback management failure; inspect stderr and message. |
 | `host_cache_failed` / `host_event_channel_failed` | Host cache or event channel unavailable; check the App private directory. |
