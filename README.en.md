@@ -126,6 +126,8 @@ After exiting Linux, execute a command or manage the system from the host shell:
 ./pdn list
 ```
 
+After an online download is interrupted or cancelled, repeat the same installation with the same rootfs management directory to automatically attempt resuming from the same mirror URL. There is no automatic background retry. Extraction requires the full pinned size and SHA256 to match; see [distribution management](docs/pdn-distributions.en.md).
+
 Alpine, Ubuntu Base, Debian slim and Arch Linux ARM are supported. See [distribution management](docs/pdn-distributions.en.md) for official sources, offline archives, binds, accounts, default configuration, backups and the full command index.
 
 Install the same distribution under separate names, each with its own rootfs:
@@ -253,7 +255,7 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
 - **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Shell compression took about 54% less time in this test; see [verification](docs/pdn-error-testing.en.md#native-seccomp-acceleration).
-- **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import, automatic mirror latency ranking and resumed downloads are not supported.
+- **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import and automatic mirror latency ranking are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
 - **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.

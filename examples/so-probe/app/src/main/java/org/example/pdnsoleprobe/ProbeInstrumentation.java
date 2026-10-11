@@ -14,8 +14,10 @@ import org.json.JSONObject;
 public final class ProbeInstrumentation extends Instrumentation {
     private boolean nativeCoverage;
     private boolean suiteOnly;
+    private String resumeProxy;
     @Override public void onCreate(Bundle arguments) {
         nativeCoverage = arguments != null && "true".equals(arguments.getString("nativeCoverage"));
+        resumeProxy = arguments == null ? null : arguments.getString("resumeProxy");
         suiteOnly = arguments != null && "true".equals(arguments.getString("suiteOnly"));
         super.onCreate(arguments); start();
     }
@@ -52,7 +54,7 @@ public final class ProbeInstrumentation extends Instrumentation {
                     Bundle progress = new Bundle();
                     progress.putString("stream", line + "\n");
                     sendStatus(0, progress);
-                }).verify();
+                }, resumeProxy).verify();
                 report.put("suite_only", true);
             } else {
                 activity = (MainActivity) startActivitySync(new Intent(getTargetContext(), MainActivity.class)

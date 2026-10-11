@@ -79,10 +79,16 @@ pdn install arch --archive /path/to/ArchLinuxARM-2026.08-aarch64-rootfs.tar.gz
 ```
 
 Network, HTTP, size and SHA256 errors reject a download and try the next
-source with a fresh file. Manual `--mirror` selection tries only that source.
+source using its own cache. Manual `--mirror` selection tries only that source.
 All sources for one distribution must supply identical pinned content.
 Ctrl+C/SIGTERM stop the operation, without switching to another source.
-This is fixed-order fallback, not automatic speed ranking or resumable transfer.
+This is fixed-order fallback, not automatic speed ranking.
+
+After an online download is interrupted or cancelled with Ctrl+C / SIGTERM, repeat the same installation with the same rootfs management directory to automatically attempt resuming. The cache is stored in the selected `PDN_ROOTFS_DIR/.pdn-downloads`, keyed by the pinned SHA256 and a digest of the mirror URL. Only the exact same mirror URL reuses those bytes; switching sources never appends bytes from different mirrors. Transport errors and handled cancellation retain downloaded bytes, while ordinary extraction staging is still cleaned. Download progress includes cached bytes.
+
+Resuming uses HTTP Range and validates the response range against the pinned total size before appending. If the server ignores Range, returns an invalid range or responds with HTTP 416, that source restarts from zero at most once. Every archive, including a full-size cache entry, must pass full-size and SHA256 verification before extraction. Corrupt cache entries are removed; a successful download cache is consumed after verification and copying into installation staging.
+
+There is no automatic background retry, ETag / If-Range support or cache management CLI. To reclaim space, first confirm that no installation is running, then clear the contents of `.pdn-downloads` in the selected rootfs management directory.
 
 Connections time out after 8 seconds; a transfer below 1 KiB/s for 30 seconds
 is stopped. Total transfer limits are 90 seconds for Alpine, 10 minutes for

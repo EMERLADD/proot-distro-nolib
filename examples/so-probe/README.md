@@ -35,7 +35,7 @@ Termux 内使用：
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.7（versionCode 8）。
+输出：`app/build/outputs/apk/release/app-release.apk`；Debug 输出仍为 `app/build/outputs/apk/debug/app-debug.apk`。Release 启用代码混淆、优化和资源压缩，使用 Android 默认优化规则，不添加宽泛 keep 规则。APK 保持不可调试，使用本机 Debug 测试密钥签名，不是生产签名；不启用 JaCoCo。构建前使用正常的 `./prepare.sh` 输入，不设置 `PDN_PROBE_NATIVE_COVERAGE`，运行时不传覆盖率参数。当前 App 版本为 0.1.8（versionCode 9）。
 
 ## 运行验收
 
@@ -93,3 +93,7 @@ PDN_PROBE_NATIVE_COVERAGE=1 ./prepare.sh
 ```sh
 adb shell am instrument -e suiteOnly true -w -r org.example.pdnsoleprobe/.ProbeInstrumentation
 ```
+
+新增验收检查完整下载缓存的离线复用和官方 HTTPS 断点续传；联网项必须只有一次 downloading 阶段，且进度不能退回已缓存字节以下。若测试 App 的直连不可用，可以给 instrumentation 传入 `-e resumeProxy http://127.0.0.1:PORT`（替换为实际 HTTP 代理地址）；仅用于该联网验收，不修改 SDK 默认网络配置。
+
+若联网项仅在后台出现连接超时，应把测试 App 保持前台后复测；使用 rish 时可与被授权终端分屏。`suiteOnly` 不自动打开界面，可在 instrumentation 启动后用 `am start -n org.example.pdnsoleprobe/.MainActivity` 保持前台。

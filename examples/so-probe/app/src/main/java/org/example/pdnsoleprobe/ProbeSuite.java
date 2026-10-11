@@ -21,8 +21,14 @@ public final class ProbeSuite {
     private NativeRuntime runtime;
     private NativeOperations operations;
     private final Log log;
+    private final String resumeProxy;
 
     public ProbeSuite(Context context, Log log) {
+        this(context, log, null);
+    }
+
+    public ProbeSuite(Context context, Log log, String resumeProxy) {
+        this.resumeProxy = resumeProxy;
         this.context = context.getApplicationContext();
         this.log = log;
         host = new ProbeHost(context);
@@ -81,8 +87,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.13"), "version: " + c.stderr());
-            return "native PDN 0.6.13, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.14"), "version: " + c.stderr());
+            return "native PDN 0.6.14, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -102,6 +108,8 @@ public final class ProbeSuite {
             }
             return "pinned official offline ARM64 archive; verified, extracted and configured";
         });
+        check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
+        check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "named_instances", () -> {
             File archive = new File(host.getCacheDir(), "alpine.tar.gz");
             File backup = new File(host.getCacheDir(), "instance-" + java.util.UUID.randomUUID() + ".tar.gz");
@@ -422,6 +430,102 @@ public final class ProbeSuite {
                 }
             } finally { child.close(); }
         }
+    }
+
+    private String verifyDownloadCache(boolean complete) throws Exception {
+        File archive = new File(host.getCacheDir(), "alpine.tar.gz");
+        require(archive.isFile() && archive.length() > 1, "packaged Alpine archive missing");
+        Capture mirrors = run(runtime.processBuilder(Arrays.asList("mirrors", "alpine", "--json")));
+        require(mirrors.result.isSuccess(), "mirror query: " + mirrors.stderr());
+        JSONArray rows = new JSONObject(mirrors.stdout()).getJSONArray("mirrors");
+        String url = null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            if ("alpine".equals(row.getString("distro")) && "official".equals(row.getString("name"))) {
+                require(row.getBoolean("official"), "official mirror provenance");
+                url = row.getString("url");
+            }
+        }
+        require(url != null && url.startsWith("https://"), "official HTTPS archive URL missing");
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[32768];
+        try (java.io.InputStream input = Files.newInputStream(archive.toPath())) {
+            int count;
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
+        }
+        String archiveHash = hex(digest.digest());
+        String urlHash = hex(digest.digest(url.getBytes(StandardCharsets.UTF_8)));
+        File cache = new File(runtime.getRootfsDir(), ".pdn-downloads");
+        Files.createDirectories(cache.toPath());
+        File partial = new File(cache, archiveHash + "-" + urlHash + ".part");
+        long seeded = complete ? archive.length() : archive.length() / 2;
+        String name = complete ? "complete-cache-probe" : "resume-probe";
+        try {
+            try (java.io.InputStream input = Files.newInputStream(archive.toPath());
+                    java.io.OutputStream output = Files.newOutputStream(partial.toPath())) {
+                long remaining = seeded;
+                while (remaining > 0) {
+                    int count = input.read(buffer, 0, (int)Math.min(buffer.length, remaining));
+                    require(count > 0, "archive ended while seeding cache");
+                    output.write(buffer, 0, count);
+                    remaining -= count;
+                }
+            }
+            require(partial.length() == seeded, "seeded cache size");
+            ProcessBuilder builder = runtime.installAs("alpine", name, "official", null);
+            if (!complete && resumeProxy != null && !resumeProxy.isEmpty()) {
+                builder.environment().put("https_proxy", resumeProxy);
+                builder.environment().put("no_proxy", "");
+            }
+            if (complete) builder.environment().put("PDN_CA_BUNDLE", new File(cache, "missing-ca.pem").getAbsolutePath());
+            Capture installed = run(builder);
+            require(installed.result.isSuccess(), "cached install: " + installed.stderr() + " " + installed.result.getCode() + " " + installed.result.getMessage());
+            boolean downloading = false;
+            int downloadingStages = 0;
+            Long firstCurrent = null, firstTotal = null;
+            for (NativeEvent event : installed.events) {
+                if ("stage".equals(event.getType()) && "downloading".equals(event.getStage())) {
+                    downloading = true;
+                    downloadingStages++;
+                }
+                if (!complete && downloading && "progress".equals(event.getType()))
+                    require(event.data.has("current") && event.data.getLong("current") >= seeded, "resume must not restart from zero");
+                if (downloading && "progress".equals(event.getType()) && firstCurrent == null) {
+                    firstCurrent = (event.data.has("current") ? event.data.getLong("current") : null);
+                    firstTotal = (event.data.has("total") ? event.data.getLong("total") : null);
+                }
+            }
+            if (complete) require(!downloading, "verified complete cache must avoid HTTPS transfer");
+            else require(downloadingStages == 1 && Long.valueOf(seeded).equals(firstCurrent) && Long.valueOf(archive.length()).equals(firstTotal),
+                    "resume progress must start at cached bytes: " + firstCurrent + "/" + firstTotal + ", expected " + seeded + "/" + archive.length());
+            require(!partial.exists(), "completed cache must be consumed");
+            JSONObject metadata = instanceMetadata(run(runtime.processBuilder(Arrays.asList("list", "--json"))), name);
+            require("mirror".equals(metadata.getString("source")) && url.equals(metadata.getString("source_url"))
+                    && archiveHash.equals(metadata.getString("sha256")), "official cached archive provenance");
+            Capture executed = run(runtime.exec(name, Arrays.asList("/bin/sh", "-c", "printf PDN_CACHE_EXEC_OK")));
+            require(executed.result.isSuccess() && "PDN_CACHE_EXEC_OK".equals(executed.stdout()), "cached guest execution: " + executed.stderr());
+            Capture removed = run(runtime.processBuilder(Arrays.asList("remove", name, "--yes")));
+            require(removed.result.isSuccess() && !new File(runtime.getRootfsDir(), name).exists(), "cached instance removal: " + removed.stderr());
+            return complete ? "complete pinned cache verified and consumed without HTTPS; official provenance, guest execution and removal"
+                    : "official HTTPS resumed from " + seeded + " cached bytes; verified archive consumed, guest execution and removal";
+        } finally {
+            try {
+                if (new File(runtime.getRootfsDir(), name).exists()) {
+                    Capture removed = run(runtime.processBuilder(Arrays.asList("remove", name, "--yes")));
+                    require(removed.result.isSuccess(), "cached instance cleanup: " + removed.stderr());
+                }
+            } finally { Files.deleteIfExists(partial.toPath()); }
+        }
+    }
+
+    private static String hex(byte[] bytes) {
+        char[] alphabet = "0123456789abcdef".toCharArray();
+        char[] result = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            result[i * 2] = alphabet[(bytes[i] & 255) >>> 4];
+            result[i * 2 + 1] = alphabet[bytes[i] & 15];
+        }
+        return new String(result);
     }
 
     private static void deleteTree(File directory) throws java.io.IOException {

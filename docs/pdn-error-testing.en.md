@@ -8,6 +8,7 @@ This document collects version-specific results, environments, coverage and fail
 
 | Version | Scope | Results |
 | --- | --- | --- |
+| 0.6.14 | HTTP Range resume, cache isolation and proxy CONNECT | Local regression: 306 passed / 2 skipped; resume: 17/17; modified C coverage: 86.62%; AAR: 54/54 each; .so: 46/46 each |
 | 0.6.13 | Instance clone / rename, path aliases and rollback | Native: 275 passed / 2 skipped; SDK: 100/100; targeted coverage collection: 102 passed; interface and PTY acceptance passed for all four APKs |
 | 0.6.12 | Installation aliases and stable instance metadata | Native: 254 passed / 2 skipped; SDK: 97/97; metadata module line coverage: 100%; changed C lines: 98.38% |
 | 0.6.11 | Optional guest /dev/full | Native: 238 passed / 2 skipped; AAR APK: 50/50; direct .so APK: 42/42; new extension line coverage: 86.78%; combined C scope: 86.95% |
@@ -21,6 +22,23 @@ This document collects version-specific results, environments, coverage and fail
 | 0.6.6 | AAR components, Ubuntu debugging and device acceptance of three integration paths | SDK: 90/90; packaging: 9/9; native regression: 16/16; rish: 14/14; AAR: 47/47; `.so`: 38/38; reproduced successfully in MT |
 
 The two independent APKs were accepted on Android 14 (SDK 34), targetSdk 35, in ordinary `untrusted_app` processes. PDN/loader inside the 0.6.4 APKs matched the Release originals byte for byte. The 0.6.5 results concern local builds. APKs were not reaccepted during the 0.6.6 component reduction round. Later tests of Release originals are recorded in the path-boundary section below.
+
+## 0.6.14 HTTP download resume
+
+Local regression ran 308 tests: 306 passed and two existing environment-dependent tests skipped. The targeted resume tests passed 17/17. Modified C line coverage was 246/284 (86.62%); overall installation-module line coverage was 90.08%. SDK implementation was unchanged, so its existing coverage records remain applicable.
+
+A controlled local HTTPS server actually disconnects mid-transfer; tests inspect retained bytes and the next Range request. Other cases cover ignored ranges, incorrect start/total, missing or duplicate range headers, malformed ranges, 416, content encoding, SIGTERM, bad digests, oversized and complete caches, mirror separation, cache symlinks and cumulative progress. A real HTTP CONNECT tunnel verifies that HTTPS proxy handshakes do not trigger a full restart. A compressed 503 response preserves the valid prefix; controlled write failure checks error precedence.
+
+The final raw ELF resumed Alpine from the official source in Android shell. The archive was 4,028,030 bytes, with the first 2,014,015 bytes preseeded. There was one downloading stage, progress never fell below the cached length, and verification, installation, guest execution and cache consumption succeeded.
+
+| Independent App integration | Debug | R8 Release |
+| --- | --- | --- |
+| AAR | 54/54 | 54/54 |
+| Direct `.so` | 46/46 | 46/46 |
+
+All four paths ran in ordinary `untrusted_app` processes and checked complete-cache offline reuse, official HTTPS resume, instance provenance, guest commands, events, asynchronous operations and PTY. The remaining half of the archive was downloaded from the official source. Checks require one downloading stage and no progress reset, preventing a full restart from being counted as resume. APK signatures, minSdk 28, targetSdk 35, actual R8 mappings and packaged PDN/loader byte parity passed.
+
+This round used `suiteOnly` API and PTY acceptance; the Activity kept the test App foregrounded, and the network check used an explicitly configured local HTTP proxy. In this environment background connections timed out, temporarily allowing background execution alone did not resolve the issue, and foreground execution succeeded. Original background settings were restored afterward. Historical GUI button acceptance remains in earlier version records.
 
 ## 0.6.13 Instance cloning, renaming and rollback
 

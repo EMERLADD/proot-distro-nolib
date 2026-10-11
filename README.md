@@ -126,6 +126,8 @@ mkdir -p "$PROOT_TMP_DIR"
 ./pdn list
 ```
 
+在线下载中断或取消后，保持相同 rootfs 管理目录并重复同一安装操作，会自动尝试从相同镜像 URL 续传；不会在后台自动重试。完整大小和 SHA256 校验通过后才解压，详见[发行版管理教程](docs/pdn-distributions.md)。
+
 支持 Alpine、Ubuntu Base、Debian slim 和 Arch Linux ARM。官方源选择、离线归档、挂载、账号、默认配置、备份恢复和完整指令索引见[发行版管理教程](docs/pdn-distributions.md)。
 
 同一发行版可以安装成不同实例；各自拥有独立 rootfs：
@@ -253,7 +255,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 - **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
 - **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不属于本次调试链路验收范围。
 - **执行性能**：原始 ELF 在宿主无继承 seccomp 过滤器时自动尝试加速；已有过滤器、查询失败或显式禁用时保留完整追踪。普通 App 与现有 AAR 继续兼容策略。Shell 压缩测试耗时下降约 54%，见[加速验收](docs/pdn-error-testing.md#067-原始-elf-seccomp-加速)。
-- **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入、自动镜像测速和断点续传。
+- **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入和自动镜像测速。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。Shizuku 入口在本次环境中需要宿主保持前台。
 - **发布与更新**：Maven 发布尚未实现；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
 - **旧 pr 接口**：AAR 不包含旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。

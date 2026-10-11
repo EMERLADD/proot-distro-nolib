@@ -68,6 +68,12 @@ The Executor must run callbacks it accepts, and listeners must return; a callbac
 
 The original `operations.run(builder, listener)` remains synchronous, with callbacks on the calling thread.
 
+## Resuming installation downloads
+
+The parameters and return types of `install()` and `installAs()` are unchanged; no resume flag is needed. After an online download is interrupted or handled cancellation stops it, submit the same installation again with the same rootfs management directory and exact mirror URL to automatically attempt reusing cached bytes. Download progress events include existing cached bytes, so the UI should use the reported cumulative value. The host decides when to submit again; PDN does not retry automatically in the background.
+
+The cache lives in `.pdn-downloads` under the rootfs management directory, keyed separately by the pinned SHA256 and mirror URL digest. Switching mirrors never splices bytes. Invalid Range responses, ignored Range requests or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are required before extraction; corrupt caches are removed and successful caches consumed. Ordinary extraction staging is still cleaned. ETag / If-Range and a cache management CLI are not supported yet. Before clearing `.pdn-downloads` contents in the selected management directory, confirm that no installation is running. See [distribution management](pdn-distributions.en.md).
+
 ## Independent terminals
 
 ```java

@@ -104,7 +104,7 @@ static int test_openat(int parent, const char *name, int flags, ...) {{
 #define fclose test_fclose
 #define openat test_openat
 #define flock test_flock
-#define mbedtls_md_file(info, path, digest) (getenv("TEST_HASH_FAIL") ? -1 : mbedtls_md_file(info, path, digest))
+#define mbedtls_md_finish(context, digest) (getenv("TEST_HASH_FAIL") ? -1 : mbedtls_md_finish(context, digest))
 #define syscall(number, sourcefd, source, destinationfd, destination, flags) (getenv("TEST_PUBLISH_FAIL") ? (errno = EIO, -1) : syscall(number, sourcefd, source, destinationfd, destination, flags))
 #define archive_write_data_block(out, data, size, offset) (getenv("TEST_EXTRACT_FAIL") ? (archive_set_error(out, EIO, "injected extraction write failure"), ARCHIVE_FATAL) : archive_write_data_block(out, data, size, offset))
 #include "{PROJECT / 'src/proot/src/cli/pdn_install.c'}"
@@ -172,13 +172,79 @@ int main(int argc, char **argv) {{
         subprocess.run([str(certgen), str(key), str(cls.cert)], check=True)
         payload = cls.archive.read_bytes()
         cls.requests = []
+        cls.range_requests = []
+        cls.resume_initials = {}
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
 
+            def do_CONNECT(self):
+                import socket
+                import select
+                if self.path != f"localhost:{cls.server.server_port}":
+                    self.send_error(502)
+                    return
+                cls.proxy_connects += 1
+                with socket.create_connection(("127.0.0.1", cls.server.server_port), timeout=5) as upstream:
+                    self.send_response(200, "Connection established")
+                    self.end_headers()
+                    while True:
+                        readable, _, _ = select.select([self.connection, upstream], [], [], 5)
+                        if not readable:
+                            break
+                        for source in readable:
+                            data = source.recv(65536)
+                            if not data:
+                                return
+                            (upstream if source is self.connection else self.connection).sendall(data)
+
             def do_GET(self):
                 cls.requests.append(self.path)
+                cls.range_requests.append((self.path, self.headers.get("Range")))
+                if self.path == "/compressed-error":
+                    self.send_response(503)
+                    self.send_header("Content-Encoding", "gzip")
+                    self.end_headers()
+                    return
+                if self.path.startswith("/resume"):
+                    import socket
+                    requested = self.headers.get("Range")
+                    offset = int(requested.removeprefix("bytes=").removesuffix("-")) if requested else 0
+                    if requested and self.path == "/resume-416":
+                        self.send_response(416)
+                        self.send_header("Content-Range", f"bytes */{len(payload)}")
+                        self.end_headers()
+                        return
+                    ranged = (bool(requested) and self.path != "/resume-ignore") or self.path == "/resume-unsolicited"
+                    self.send_response(206 if ranged else 200)
+                    if ranged and self.path != "/resume-missing":
+                        start = offset + 1 if self.path == "/resume-wrong" else offset
+                        total = len(payload) + 1 if self.path == "/resume-total" else len(payload)
+                        value = f"bytes {start}-{len(payload)-1}/{total}"
+                        if self.path == "/resume-malformed":
+                            value = "bytes nonsense"
+                        self.send_header("Content-Range", value)
+                        if self.path == "/resume-duplicate":
+                            self.send_header("Content-Range", value)
+                    if ranged and self.path == "/resume-encoded":
+                        self.send_header("Content-Encoding", "gzip")
+                    data = payload[offset:] if ranged else payload
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    initial = cls.resume_initials.get(self.path, 0)
+                    if not requested:
+                        cls.resume_initials[self.path] = initial + 1
+                    if self.path in ("/resume", "/resume-slow") and not requested and initial == 0:
+                        self.wfile.write(data[:len(data)//2])
+                        self.wfile.flush()
+                        if self.path == "/resume-slow":
+                            time.sleep(2)
+                        self.connection.shutdown(socket.SHUT_WR)
+                        self.close_connection = True
+                    else:
+                        self.wfile.write(data)
+                    return
                 if self.path == "/slow":
                     self.send_response(200)
                     self.send_header("Content-Length", str(len(payload)))
@@ -212,6 +278,13 @@ int main(int argc, char **argv) {{
         cls.addClassCleanup(cls.server.server_close)
         cls.addClassCleanup(cls.server.shutdown)
         cls.url = f"https://localhost:{cls.server.server_port}"
+        cls.proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.proxy_connects = 0
+        cls.proxy_thread = threading.Thread(target=cls.proxy.serve_forever, daemon=True)
+        cls.proxy_thread.start()
+        cls.addClassCleanup(cls.proxy.server_close)
+        cls.addClassCleanup(cls.proxy.shutdown)
+        cls.proxy_url = f"http://127.0.0.1:{cls.proxy.server_port}"
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="pdn-install-test-", dir=PROJECT / "build")
@@ -219,6 +292,9 @@ int main(int argc, char **argv) {{
         self.base = Path(self.temp.name)
         self.roots = self.base / "new roots" / "linux"
         self.requests.clear()
+        self.range_requests.clear()
+        self.resume_initials.clear()
+        type(self).proxy_connects = 0
         self.env = {"PATH": "/system/bin", "PDN_ROOTFS_DIR": str(self.roots),
                     "PDN_CA_BUNDLE": str(self.cert), "TEST_URL": self.url + "/archive", "TEST_URL_2": self.url + "/missing"}
         if "LLVM_PROFILE_FILE" in os.environ:
@@ -282,6 +358,7 @@ int main(int argc, char **argv) {{
         self.env.pop("TEST_WRITE_ERRNO")
         for injected, code in ((28, "storage_full"), (5, "file_io_failed"), (0, "file_io_failed")):
             with self.subTest(injected_close_errno=injected):
+                (self.base / "download").unlink(missing_ok=True)
                 self.env["TEST_CLOSE_ERRNO"] = str(injected)
                 path = self.event_channel()
                 self.assert_error_code(path, self.run_harness("download", self.url + "/archive", self.base / "download"), code)
@@ -545,11 +622,14 @@ int main(int argc, char **argv) {{
     def test_download_validation(self):
         output = self.base / "download"
         for endpoint in ("/archive", "/redirect"):
+            output.unlink(missing_ok=True)
             result = self.run_harness("download", self.url + endpoint, output)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output.read_bytes(), self.archive.read_bytes())
         for endpoint in ("/missing", "/large"):
+            output.unlink(missing_ok=True)
             self.assertNotEqual(self.run_harness("download", self.url + endpoint, output).returncode, 0)
+        output.unlink(missing_ok=True)
         self.assertNotEqual(self.run_harness("download", "http://localhost/", output).returncode, 0)
         self.assertNotEqual(self.run_harness("download", self.url + "/archive", self.base / "absent/file").returncode, 0)
         self.assertNotEqual(self.run_harness("download", self.url.replace("localhost", "127.0.0.1") + "/archive", output).returncode, 0)

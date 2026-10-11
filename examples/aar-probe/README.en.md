@@ -41,7 +41,7 @@ Inside Termux:
 ./gradlew -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-Output: `app/build/outputs/apk/release/app-release.apk`. Release enables code obfuscation, optimization, and resource shrinking, using Android's default optimization and JNI rules without additional SDK keep rules. The APK remains non-debuggable and is signed with the local Debug test key, not a production signing key. JaCoCo is disabled; do not pass coverage collection arguments. The current app version is 0.1.9 (versionCode 10).
+Output: `app/build/outputs/apk/release/app-release.apk`. Release enables code obfuscation, optimization, and resource shrinking, using Android's default optimization and JNI rules without additional SDK keep rules. The APK remains non-debuggable and is signed with the local Debug test key, not a production signing key. JaCoCo is disabled; do not pass coverage collection arguments. The current app version is 0.1.10 (versionCode 11).
 
 ## UI and acceptance
 
@@ -115,3 +115,7 @@ The official Alpine archive inside the APK can run full interface acceptance dir
 ```sh
 adb shell am instrument -e suiteOnly true -w -r org.example.pdnprobe/.ProbeInstrumentation
 ```
+
+The additional checks exercise complete-cache offline reuse and official HTTPS resume. The network check requires one downloading stage and no progress below the seeded byte count. If direct access from the test App is unavailable, pass `-e resumeProxy http://127.0.0.1:PORT` to instrumentation, replacing the address with the actual HTTP proxy. This affects only the network acceptance check and does not change SDK networking defaults.
+
+If the network check times out only in the background, keep the test App foregrounded and retry. With rish, split-screen it alongside the authorized terminal. `suiteOnly` does not launch the UI automatically; after starting instrumentation, use `am start -n org.example.pdnprobe/.MainActivity` to foreground the App.

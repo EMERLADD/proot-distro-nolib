@@ -134,18 +134,107 @@ static int exists_distro(const char *name)
 struct transfer {
     FILE *file;
     size_t size;
+    size_t offset;
     int percent;
     int write_errno;
     int write_failed;
     int too_large;
+    int retry;
+    int invalid;
+    int ready;
+    int range_seen;
+    int encoding_seen;
+    long response;
     const struct distro *distro;
 };
+
+static int verify(const struct distro *distro, const char *path);
+
+static int range_number(const char **value, unsigned long long *number)
+{
+    char *end;
+    if (**value < '0' || **value > '9') return -1;
+    errno = 0;
+    *number = strtoull(*value, &end, 10);
+    if (errno == ERANGE) return -1;
+    *value = end;
+    return 0;
+}
+
+static size_t receive_header(void *data, size_t size, size_t count, void *context)
+{
+    struct transfer *transfer = context;
+    size_t bytes = size * count;
+    char line[1024];
+    if (bytes >= sizeof(line)) {
+        if (transfer->response != 200 && transfer->response != 206 && strncmp(data, "HTTP/", 5))
+            return bytes;
+        if (strncasecmp(data, "Content-Range:", 14) && strncasecmp(data, "Content-Encoding:", 17) &&
+            strncmp(data, "HTTP/", 5)) return bytes;
+        transfer->invalid = 1;
+        transfer->retry = transfer->offset != 0;
+        return 0;
+    }
+    memcpy(line, data, bytes);
+    line[bytes] = '\0';
+    if (!strncmp(line, "HTTP/", 5)) {
+        char *space = strchr(line, ' ');
+        transfer->response = space ? strtol(space + 1, NULL, 10) : 0;
+        transfer->range_seen = 0;
+        transfer->encoding_seen = 0;
+        transfer->invalid = 0;
+        transfer->ready = 0;
+        transfer->retry = 0;
+    } else if (transfer->response != 200 && transfer->response != 206 &&
+               strcmp(line, "\r\n") && strcmp(line, "\n")) {
+        return bytes;
+    } else if (!strncasecmp(line, "Content-Range:", 14)) {
+        unsigned long long first, last, total;
+        const char *value = line + 14;
+        while (*value == ' ' || *value == '\t') value++;
+        if (transfer->range_seen++ ||
+            strncmp(value, "bytes ", 6) ||
+            (value += 6, range_number(&value, &first)) || *value++ != '-' ||
+            range_number(&value, &last) || *value++ != '/' || range_number(&value, &total) ||
+            strspn(value, " \t\r\n") != strlen(value) ||
+            first != transfer->offset || last != transfer->distro->size - 1 ||
+            total != transfer->distro->size || first > last)
+            transfer->invalid = 1;
+    } else if (!strncasecmp(line, "Content-Encoding:", 17)) {
+        char *value = line + 17;
+        while (*value == ' ' || *value == '\t') value++;
+        size_t length = strcspn(value, "\r\n");
+        while (length && (value[length - 1] == ' ' || value[length - 1] == '\t')) length--;
+        if (transfer->encoding_seen++ || length != 8 || strncasecmp(value, "identity", 8))
+            transfer->invalid = 1;
+    } else if (!strcmp(line, "\r\n") || !strcmp(line, "\n")) {
+        if (transfer->response >= 100 && transfer->response < 200) return bytes;
+        if (transfer->response >= 300 && transfer->response < 400) return bytes;
+        if (transfer->response >= 400 && transfer->response != 416) return bytes;
+        if (transfer->offset && (transfer->response == 200 || transfer->response == 416 ||
+            (transfer->response == 206 && (transfer->invalid || transfer->range_seen != 1)))) {
+            transfer->retry = 1;
+            return 0;
+        }
+        if (transfer->invalid || (!transfer->offset && transfer->response == 206) ||
+            (!transfer->offset && transfer->range_seen)) {
+            transfer->invalid = 1;
+            return 0;
+        }
+        transfer->ready = transfer->offset ? transfer->response == 206 : transfer->response == 200;
+    }
+    return bytes;
+}
 
 static size_t receive(void *data, size_t size, size_t count, void *context)
 {
     struct transfer *transfer = context;
     size_t bytes = size * count;
     if (cancelled) return 0;
+    if (!transfer->ready) {
+        if (transfer->response >= 300 && transfer->response < 400) return bytes;
+        return 0;
+    }
     if (bytes > transfer->distro->size - transfer->size) { transfer->too_large = 1; return 0; }
     size_t requested = bytes;
     errno = 0;
@@ -159,11 +248,11 @@ static int progress(void *context, curl_off_t total, curl_off_t current,
                     curl_off_t upload_total, curl_off_t uploaded)
 {
     struct transfer *transfer = context;
-    int percent = (int)(current * 100 / transfer->distro->size);
+    curl_off_t complete = (curl_off_t)transfer->offset + current;
+    if (complete > (curl_off_t)transfer->distro->size) complete = (curl_off_t)transfer->distro->size;
+    int percent = transfer->distro->size ? (int)(complete * 100 / transfer->distro->size) : 0;
     (void)total; (void)upload_total; (void)uploaded;
-    pdn_events_progress(current > (curl_off_t)transfer->distro->size ?
-                        (long long)transfer->distro->size : (long long)current,
-                        (long long)transfer->distro->size);
+    pdn_events_progress((long long)complete, (long long)transfer->distro->size);
     if (percent / 10 > transfer->percent / 10) {
         fprintf(stderr, "Downloading %s: %d%%\n", transfer->distro->name, percent);
         transfer->percent = percent;
@@ -173,73 +262,138 @@ static int progress(void *context, curl_off_t total, curl_off_t current,
 
 static int download(const struct distro *distro, const char *url, const char *path)
 {
-    CURL *curl;
-    CURLcode status;
-    struct transfer transfer = {.distro = distro};
-    char details[CURL_ERROR_SIZE] = {0};
+    struct stat st;
+    int fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600);
+    if (fd < 0) return system_error("file_io_failed", "cannot open download cache", errno) - 1;
+    if (fstat(fd, &st) < 0) {
+        int saved = errno; close(fd);
+        return system_error("file_io_failed", "cannot inspect download cache", saved) - 1;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_nlink != 1) {
+        close(fd); return problem("file_io_failed", "download cache must be a private regular file") - 1;
+    }
+    if (st.st_size < 0 || (uintmax_t)st.st_size > distro->size) {
+        if (ftruncate(fd, 0) < 0) {
+            int saved = errno; close(fd); return system_error("file_io_failed", "cannot clear oversized download", saved) - 1;
+        }
+        st.st_size = 0;
+    }
+    if ((size_t)st.st_size == distro->size) {
+        close(fd);
+        int result = verify(distro, path);
+        if (!result || cancelled || result == -2) return result;
+        if (unlink(path) < 0) return system_error("file_io_failed", "cannot remove corrupt download", errno) - 1;
+        pdn_events_clear_error();
+        return download(distro, url, path);
+    }
+    FILE *file = fdopen(fd, "r+b");
+    if (!file) { int saved = errno; close(fd); return system_error("file_io_failed", "cannot open download cache", saved) - 1; }
     const char *ca = getenv("PDN_CA_BUNDLE");
-    pdn_events_stage("downloading");
-    pdn_events_progress(0, (long long)distro->size);
-    transfer.file = fopen(path, "wb");
-    if (!transfer.file) return system_error("file_io_failed", strerror(errno), errno);
-    curl = curl_easy_init();
-    if (!curl) { fclose(transfer.file); return problem("download_failed", "cannot initialize HTTPS"); }
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.13");
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
-    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, distro->timeout);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)distro->size);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    if (ca && *ca) curl_easy_setopt(curl, CURLOPT_CAINFO, ca);
-    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, details);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, receive);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &transfer);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress);
-    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &transfer);
-    status = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-    if (fclose(transfer.file) != 0) {
-        transfer.write_errno = errno;
-        transfer.write_failed = 1;
-        if (status == CURLE_OK) status = CURLE_WRITE_ERROR;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        CURL *curl;
+        CURLcode status;
+        struct transfer transfer = {.distro = distro, .file = file, .size = (size_t)st.st_size,
+                                    .offset = (size_t)st.st_size};
+        char details[CURL_ERROR_SIZE] = {0};
+        pdn_events_stage("downloading");
+        pdn_events_progress((long long)transfer.offset, (long long)distro->size);
+        if (fseeko(file, st.st_size, SEEK_SET) != 0) {
+            int saved = errno; fclose(file); return system_error("file_io_failed", "cannot seek download cache", saved) - 1;
+        }
+        curl = curl_easy_init();
+        if (!curl) { fclose(file); return problem("download_failed", "cannot initialize HTTPS"); }
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.14");
+        curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+        curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, distro->timeout);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+        curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)distro->size);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(curl, CURLOPT_HTTP_CONTENT_DECODING, 0L);
+        if (transfer.offset) curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)transfer.offset);
+        if (ca && *ca) curl_easy_setopt(curl, CURLOPT_CAINFO, ca);
+        curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, details);
+        curl_easy_setopt(curl, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, receive_header);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &transfer);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, receive);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &transfer);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &transfer);
+        status = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        if (fflush(file) != 0) {
+            transfer.write_errno = errno;
+            transfer.write_failed = 1;
+            if (status == CURLE_OK) status = CURLE_WRITE_ERROR;
+        }
+        if (transfer.retry && !attempt && !cancelled && !transfer.write_failed) {
+            if (ftruncate(fileno(file), 0) < 0) {
+                int saved = errno; fclose(file); return system_error("file_io_failed", "cannot restart download cache", saved) - 1;
+            }
+            clearerr(file);
+            st.st_size = 0;
+            continue;
+        }
+        if (fclose(file) != 0) {
+            transfer.write_errno = errno;
+            transfer.write_failed = 1;
+            if (status == CURLE_OK) status = CURLE_WRITE_ERROR;
+        }
+        if (transfer.write_failed)
+            return system_error("file_io_failed", "cannot write or close download cache", transfer.write_errno) - 1;
+        if (transfer.too_large || transfer.invalid || status == CURLE_FILESIZE_EXCEEDED ||
+            (status == CURLE_OK && transfer.size != distro->size)) {
+            if (unlink(path) < 0 && errno != ENOENT)
+                return system_error("file_io_failed", "cannot remove invalid download", errno) - 1;
+            return problem("archive_size_mismatch", "invalid archive response or size");
+        }
+        if (status != CURLE_OK) {
+            const char *message = *details ? details : curl_easy_strerror(status);
+            const char *code = status == CURLE_COULDNT_RESOLVE_HOST || status == CURLE_COULDNT_RESOLVE_PROXY ? "resolution_failed" :
+                status == CURLE_COULDNT_CONNECT ? "connection_failed" :
+                status == CURLE_OPERATION_TIMEDOUT ? "download_timeout" :
+                status == CURLE_SSL_CONNECT_ERROR || status == CURLE_PEER_FAILED_VERIFICATION ||
+                status == CURLE_SSL_CERTPROBLEM || status == CURLE_SSL_CIPHER ||
+                status == CURLE_SSL_CACERT_BADFILE || status == CURLE_SSL_ISSUER_ERROR ? "tls_failed" :
+                status == CURLE_HTTP_RETURNED_ERROR ? "http_error" : "download_failed";
+            return problem(code, message);
+        }
+        pdn_events_progress((long long)transfer.size, (long long)distro->size);
+        return 0;
     }
-    if (status != CURLE_OK) {
-        const char *message = *details ? details : curl_easy_strerror(status);
-        if (transfer.write_failed) return system_error("file_io_failed", message, transfer.write_errno);
-        if (transfer.too_large || status == CURLE_FILESIZE_EXCEEDED)
-            return problem("archive_size_mismatch", message);
-        const char *code = status == CURLE_COULDNT_RESOLVE_HOST || status == CURLE_COULDNT_RESOLVE_PROXY ? "resolution_failed" :
-            status == CURLE_COULDNT_CONNECT ? "connection_failed" :
-            status == CURLE_OPERATION_TIMEDOUT ? "download_timeout" :
-            status == CURLE_SSL_CONNECT_ERROR || status == CURLE_PEER_FAILED_VERIFICATION ||
-            status == CURLE_SSL_CERTPROBLEM || status == CURLE_SSL_CIPHER ||
-            status == CURLE_SSL_CACERT_BADFILE || status == CURLE_SSL_ISSUER_ERROR ? "tls_failed" :
-            status == CURLE_HTTP_RETURNED_ERROR ? "http_error" : "download_failed";
-        return problem(code, message);
-    }
-    pdn_events_progress((long long)transfer.size, (long long)distro->size);
-    return 0;
+    fclose(file);
+    return problem("download_failed", "cannot restart download");
 }
 
-static int copy_archive(const struct distro *distro, const char *source, const char *destination)
+static int copy_archive_at(const struct distro *distro, const char *source, int directory, const char *destination)
 {
-    FILE *input = fopen(source, "rb"), *output;
+    int fd = open(source, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    struct stat st;
+    FILE *input, *output;
+    if (fd < 0) return system_error("file_io_failed", "cannot open local archive", errno);
+    if (fstat(fd, &st) < 0) {
+        int saved = errno; close(fd); return system_error("file_io_failed", "cannot inspect local archive", saved);
+    }
+    if (!S_ISREG(st.st_mode)) { close(fd); return problem("file_io_failed", "archive must be a regular file"); }
+    input = fdopen(fd, "rb");
+    if (!input) { int saved = errno; close(fd); return system_error("file_io_failed", "cannot open local archive", saved); }
     char buffer[65536];
     size_t size, total = 0;
     int result = 0;
     const char *message = "cannot copy local archive or archive is too large";
-    if (!input) return system_error("file_io_failed", "cannot open local archive", errno);
-    output = fopen(destination, "wb");
-    if (!output) { int saved = errno; fclose(input); return system_error("file_io_failed", "cannot stage local archive", saved); }
+    fd = openat(directory, destination, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0) { int saved = errno; fclose(input); return system_error("file_io_failed", "cannot stage local archive", saved); }
+    output = fdopen(fd, "wb");
+    if (!output) { int saved = errno; close(fd); fclose(input); return system_error("file_io_failed", "cannot stage local archive", saved); }
     for (;;) {
         errno = 0;
         size = fread(buffer, 1, sizeof(buffer), input);
@@ -257,17 +411,47 @@ static int copy_archive(const struct distro *distro, const char *source, const c
     return result;
 }
 
+static int copy_archive(const struct distro *distro, const char *source, const char *destination)
+{
+    return copy_archive_at(distro, source, AT_FDCWD, destination);
+}
+
 static int verify(const struct distro *distro, const char *path)
 {
-    unsigned char digest[32];
+    unsigned char digest[32], buffer[65536];
     char hex[65];
     struct stat st;
+    mbedtls_md_context_t context;
     size_t i;
+    ssize_t length;
+    int status = 0;
     pdn_events_stage("verifying");
-    if (stat(path, &st) < 0) return system_error("file_io_failed", "incorrect archive size", errno);
-    if (st.st_size != (off_t)distro->size) return problem("archive_size_mismatch", "incorrect archive size");
-    if (mbedtls_md_file(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), path, digest) != 0)
-        return problem("archive_hash_failed", "cannot hash archive");
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) return system_error("file_io_failed", "cannot open archive for verification", errno) - 1;
+    if (fstat(fd, &st) < 0) {
+        int saved = errno; close(fd); return system_error("file_io_failed", "incorrect archive size", saved) - 1;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_size != (off_t)distro->size) {
+        close(fd); return problem("archive_size_mismatch", "incorrect archive size");
+    }
+    mbedtls_md_init(&context);
+    status = mbedtls_md_setup(&context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 0);
+    if (!status) status = mbedtls_md_starts(&context);
+    while (!status && !cancelled) {
+        length = read(fd, buffer, sizeof(buffer));
+        if (length < 0 && errno == EINTR) continue;
+        if (length < 0) {
+            int saved = errno; mbedtls_md_free(&context); close(fd);
+            return system_error("file_io_failed", "cannot read archive for verification", saved) - 1;
+        }
+        if (!length) break;
+        status = mbedtls_md_update(&context, buffer, (size_t)length);
+    }
+    if (!status) status = mbedtls_md_finish(&context, digest);
+    mbedtls_md_free(&context);
+    close(fd);
+    if (cancelled) return -1;
+    if (status) return problem("archive_hash_failed", "cannot hash archive");
     for (i = 0; i < sizeof(digest); i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
     if (strcmp(hex, distro->sha256) != 0) return problem("archive_checksum_mismatch", "SHA256 mismatch; archive rejected");
     return 0;
@@ -349,22 +533,64 @@ int pdn_mirrors_json(const char *name)
 static int download_mirrors(const struct distro *distro, const struct mirror *mirrors, size_t count,
                             int selected, const char *path)
 {
+    unsigned char digest[32];
+    char filename[135];
     size_t i;
+    int result = -1;
+    int stage = open(".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (stage < 0) return system_error("file_io_failed", "cannot open installation stage", errno);
+    if (mkdir("../.pdn-downloads", 0700) < 0 && errno != EEXIST) {
+        int saved = errno; close(stage); return system_error("file_io_failed", "cannot create download cache", saved);
+    }
+    int cache = open("../.pdn-downloads", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (cache < 0) { int saved = errno; close(stage); return system_error("file_io_failed", "cannot open download cache", saved); }
+    if (strlen(distro->sha256) != 64 || strspn(distro->sha256, "0123456789abcdef") != 64) {
+        problem("archive_hash_failed", "invalid pinned archive digest"); goto done;
+    }
+    if (fchdir(cache) < 0) { system_error("file_io_failed", "cannot enter download cache", errno); goto done; }
     for (i = 0; i < count; i++) {
         if (selected >= 0 && i != (size_t)selected) continue;
-        if (cancelled) return -1;
+        if (cancelled) goto done;
+        if (mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                       (const unsigned char *)mirrors[i].url, strlen(mirrors[i].url), digest)) {
+            problem("archive_hash_failed", "cannot identify download URL"); goto done;
+        }
+        memcpy(filename, distro->sha256, 64);
+        filename[64] = '-';
+        for (size_t j = 0; j < sizeof(digest); j++) snprintf(filename + 65 + j * 2, 3, "%02x", digest[j]);
+        memcpy(filename + 129, ".part", 6);
         printf("Trying mirror: %s\n", mirrors[i].name);
         fflush(stdout);
-        if (download(distro, mirrors[i].url, path) == 0 && !cancelled && verify(distro, path) == 0) {
-            pdn_events_clear_error();
-            return (int)i;
+        int status = download(distro, mirrors[i].url, filename);
+        if (status == -2) goto done;
+        if (status == 0 && !cancelled) {
+            int verified = verify(distro, filename);
+            if (verified == -2) goto done;
+            if (verified == 0 && !cancelled) {
+                if (copy_archive_at(distro, filename, stage, path) < 0 || cancelled) goto done;
+                if (fchdir(stage) < 0) { system_error("file_io_failed", "cannot enter installation stage", errno); goto done; }
+                verified = verify(distro, path);
+                if (fchdir(cache) < 0) { system_error("file_io_failed", "cannot restore download cache", errno); goto done; }
+                if (verified < 0 || cancelled) goto done;
+                if (unlink(filename) < 0) { system_error("file_io_failed", "cannot remove completed download", errno); goto done; }
+                pdn_events_clear_error();
+                result = (int)i;
+                goto done;
+            }
+            if (!cancelled && unlink(filename) < 0 && errno != ENOENT) {
+                system_error("file_io_failed", "cannot remove corrupt download", errno); goto done;
+            }
         }
-        if (unlink(path) < 0 && errno != ENOENT) return system_error("file_io_failed", "cannot remove failed download", errno);
-        if (cancelled) return -1;
+        if (cancelled) goto done;
         if (selected >= 0) break;
         if (i + 1 < count) fprintf(stderr, "Mirror %s failed; trying the next source.\n", mirrors[i].name);
     }
-    return error("no mirror provided a verified rootfs archive");
+    error("no mirror provided a verified rootfs archive");
+ done:
+    if (fchdir(stage) < 0) result = system_error("file_io_failed", "cannot restore installation stage", errno);
+    close(cache);
+    close(stage);
+    return result;
 }
 
 static const char *safe_archive_path(const char *path)

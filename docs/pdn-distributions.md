@@ -67,7 +67,13 @@ pdn install alpine --archive /路径/对应固定版本的rootfs.tar.gz
 
 指定镜像后只使用该源。下载检查内置的固定文件大小和 SHA256，通过后才解压，不会自动改用未经校验的 `latest` 包。`install --archive` 也必须匹配内置版本的校验值，不是任意归档导入。具体来源和校验值见 [rootfs 来源目录](pdn-rootfs-sources.zh-CN.md)。
 
-目前没有镜像延迟测速排名或断点续传。Arch 压缩包约 791 MiB，安装时请预留数 GiB 空间。Kotlin 可以通过 `pdn.install("alpine", mirror = "official")` 生成操作；它返回 `ProcessBuilder`，还需启动或交给异步任务接口。
+在线下载中断或通过 Ctrl+C / SIGTERM 取消后，保持相同 rootfs 管理目录并重复同一安装操作，会自动尝试续传。下载缓存位于所选 `PDN_ROOTFS_DIR/.pdn-downloads`，以固定 SHA256 和镜像 URL 的摘要为键；只有完全相同的镜像 URL 才会复用，切换来源不会拼接不同镜像的字节。传输错误或可处理取消保留已下载内容，普通解压暂存目录仍会清理。下载进度包含已有缓存字节。
+
+续传使用 HTTP Range，并在追加前校验响应范围与固定总大小。服务器忽略 Range、返回错误范围或 HTTP 416 时，本次来源最多从零重新下载一次。包括完整缓存在内，所有归档均须通过完整大小和 SHA256 校验才可解压；损坏缓存会删除，成功下载的缓存在校验并复制到安装暂存目录后消费。
+
+没有自动后台重试，暂不使用 ETag / If-Range，也没有缓存管理 CLI。如需释放空间，先确认没有安装操作运行，再清理所选 rootfs 管理目录中 `.pdn-downloads` 的内容。
+
+目前没有镜像延迟测速排名。Arch 压缩包约 791 MiB，安装时请预留数 GiB 空间。Kotlin 可以通过 `pdn.install("alpine", mirror = "official")` 生成操作；它返回 `ProcessBuilder`，还需启动或交给异步任务接口。
 
 ## 执行、挂载与默认配置
 

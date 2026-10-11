@@ -130,6 +130,11 @@ adb shell run-as id.or.oo.pr files/usr/bin/pr-cli test debian
 
 - **rust suite on Alpine**: Previously 1/4 pass — rustc compile and cargo build failed with "linker `cc` not found". **Root cause:** hardcoded package name in bind mounts (see `docs/pr-improvements.md` #1). The bind mount pointed at `/data/data/id.or.oo.pr` regardless of the actual app package, which broke `.l2s` symlink resolution. Fixed by deriving `app_dir` dynamically from `APP_PREFIX` in `shared.rs`.
 
+## Network Test Policy
+
+- Before tests that download external data, explain the downloads and estimated transfer size, and wait for confirmation that the connection is suitable.
+- Prefer local HTTPS fixtures and offline assets for repeated regressions. Reuse downloads and avoid redundant external transfers.
+
 ## Code Conventions
 
 ### Working directory requirements

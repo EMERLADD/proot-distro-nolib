@@ -35,7 +35,7 @@ Inside Termux:
 ./gradlew --offline -Pandroid.aapt2FromMavenOverride="$(command -v aapt2)" :app:assembleRelease
 ```
 
-Output: `app/build/outputs/apk/release/app-release.apk`; Debug output remains `app/build/outputs/apk/debug/app-debug.apk`. Release enables code obfuscation, optimization, and resource shrinking, using Android's default optimization rules without broad keep rules. The APK remains non-debuggable and is signed with the local Debug test key, not a production signing key. JaCoCo is disabled. Before building, use normal `./prepare.sh` inputs without setting `PDN_PROBE_NATIVE_COVERAGE`; do not pass coverage arguments at runtime. The current app version is 0.1.7 (versionCode 8).
+Output: `app/build/outputs/apk/release/app-release.apk`; Debug output remains `app/build/outputs/apk/debug/app-debug.apk`. Release enables code obfuscation, optimization, and resource shrinking, using Android's default optimization rules without broad keep rules. The APK remains non-debuggable and is signed with the local Debug test key, not a production signing key. JaCoCo is disabled. Before building, use normal `./prepare.sh` inputs without setting `PDN_PROBE_NATIVE_COVERAGE`; do not pass coverage arguments at runtime. The current app version is 0.1.8 (versionCode 9).
 
 ## Run acceptance
 
@@ -93,3 +93,7 @@ The official Alpine archive inside the APK can run full interface acceptance dir
 ```sh
 adb shell am instrument -e suiteOnly true -w -r org.example.pdnsoleprobe/.ProbeInstrumentation
 ```
+
+The additional checks exercise complete-cache offline reuse and official HTTPS resume. The network check requires one downloading stage and no progress below the seeded byte count. If direct access from the test App is unavailable, pass `-e resumeProxy http://127.0.0.1:PORT` to instrumentation, replacing the address with the actual HTTP proxy. This affects only the network acceptance check and does not change SDK networking defaults.
+
+If the network check times out only in the background, keep the test App foregrounded and retry. With rish, split-screen it alongside the authorized terminal. `suiteOnly` does not launch the UI automatically; after starting instrumentation, use `am start -n org.example.pdnsoleprobe/.MainActivity` to foreground the App.

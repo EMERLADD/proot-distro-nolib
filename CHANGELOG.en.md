@@ -4,6 +4,18 @@
 
 These entries describe the scope and verification of each historical release. A result from an earlier release is not acceptance evidence for a later binary.
 
+## v0.6.14 — 2026-10-11
+
+- Support HTTP Range resume for online installation. Retain partial downloads after network interruption or handled cancellation and reuse them on a repeated install.
+- Store partials in `.pdn-downloads` under the selected rootfs management directory, keyed by pinned archive SHA256 and exact mirror URL. Never splice bytes from different mirrors.
+- Validate 206 and the Content-Range start, end and total before appending. Restart from zero at most once when a server ignores resume, returns an invalid range or responds with 416.
+- Verify complete caches by size and SHA256. Restart corrupt or oversized caches and consume successful ones; reject symlink, nonregular and multiply linked cache files.
+- Include cached bytes in progress while preserving Java/Kotlin install interfaces. Correct local-write error precedence and prevent compressed HTTP error pages from discarding valid prefixes.
+- Add complete-cache offline reuse and official HTTPS resume acceptance to both independent test Apps, update bilingual guides and include the English changelog in source distribution bundles.
+- Separate HTTPS proxy CONNECT headers from archive responses so tunnel-establishment 200 statuses do not trigger a false full restart.
+
+Validation: local regression 306 passed / two existing environment-dependent skips; targeted resume 17/17; modified C coverage 86.62%. Raw ELF official-source resume passed in Android shell. AAR Debug/R8 Release passed 54/54 each; direct `.so` passed 46/46 each, including complete-cache offline reuse and official HTTPS resume. Network App acceptance used a foreground Activity and an explicit proxy; see the test records for scope.
+
 ## v0.6.13 — 2026-10-10
 
 - Add `clone SOURCE TARGET`, `rename SOURCE TARGET` and matching Java/Kotlin methods. Source lookup accepts legacy names; new targets use the 128-character naming limit.

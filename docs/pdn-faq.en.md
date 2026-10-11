@@ -7,6 +7,7 @@
 - [Downloaded file will not execute](#downloaded-file-will-not-execute)
 - [Version still shows an old release](#version-still-shows-an-old-release)
 - [Rootfs or temporary directory unavailable](#rootfs-or-temporary-directory-unavailable)
+- [What happens after an interrupted installation download](#what-happens-after-an-interrupted-installation-download)
 - [Packaging in an App](#packaging-in-an-app)
 - [Rish will not execute inside Ubuntu](#rish-will-not-execute-inside-ubuntu)
 - [Shizuku disconnects in the background](#shizuku-disconnects-in-the-background)
@@ -48,6 +49,12 @@ mkdir -p "$PROOT_TMP_DIR"
 ```
 
 Use the reported path, reason and suggestion rather than blindly applying `chmod 777`. Other causes include insufficient space, a file occupying a directory name, or unsupported filesystem semantics. PDN does not silently switch storage locations after failure. See [error classification and tests](pdn-error-testing.en.md).
+
+## What happens after an interrupted installation download
+
+Keep the same rootfs management directory and repeat the original installation to automatically attempt resuming; for example, repeat `pdn install alpine --mirror official`. PDN does not retry automatically in the background. Only the exact same mirror URL reuses cached bytes; another mirror uses a separate cache. Progress includes cached bytes. Ignored Range requests, invalid ranges or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are still required before extraction.
+
+Transport errors and handled cancellation retain cache entries in the selected `PDN_ROOTFS_DIR/.pdn-downloads`; ordinary extraction staging is still cleaned. Corrupt cache entries are removed and successful caches consumed. ETag / If-Range and a cache management CLI are not supported yet. To reclaim space, first confirm that no installation is running, then clear `.pdn-downloads` contents in the selected rootfs management directory. See [distribution management](pdn-distributions.en.md) for cache keys and verification rules.
 
 ## Packaging in an App
 

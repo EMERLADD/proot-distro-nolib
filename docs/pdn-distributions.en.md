@@ -67,7 +67,13 @@ pdn install alpine --archive /path/to/matching-pinned-rootfs.tar.gz
 
 An explicit mirror selects only that source. Downloads must match the pinned size and SHA256 before extraction; PDN does not switch to an unchecked `latest` archive. `install --archive` also requires the built-in version's checksums and does not import arbitrary archives. See the [rootfs source catalog](pdn-rootfs-sources.md).
 
-Mirror latency ranking and resumed downloads are not implemented. The Arch archive is about 791 MiB; reserve several GiB for installation. Kotlin can prepare an operation with `pdn.install("alpine", mirror = "official")`; it returns a `ProcessBuilder` that must be started or passed to the asynchronous task API.
+After an online download is interrupted or cancelled with Ctrl+C / SIGTERM, repeat the same installation with the same rootfs management directory to automatically attempt resuming. The cache is stored in the selected `PDN_ROOTFS_DIR/.pdn-downloads`, keyed by the pinned SHA256 and a digest of the mirror URL. Only the exact same mirror URL reuses those bytes; switching sources never appends bytes from different mirrors. Transport errors and handled cancellation retain downloaded bytes, while ordinary extraction staging is still cleaned. Download progress includes cached bytes.
+
+Resuming uses HTTP Range and validates the response range against the pinned total size before appending. If the server ignores Range, returns an invalid range or responds with HTTP 416, that source restarts from zero at most once. Every archive, including a full-size cache entry, must pass full-size and SHA256 verification before extraction. Corrupt cache entries are removed; a successful download cache is consumed after verification and copying into installation staging.
+
+There is no automatic background retry, ETag / If-Range support or cache management CLI. To reclaim space, first confirm that no installation is running, then clear the contents of `.pdn-downloads` in the selected rootfs management directory.
+
+Mirror latency ranking is not implemented. The Arch archive is about 791 MiB; reserve several GiB for installation. Kotlin can prepare an operation with `pdn.install("alpine", mirror = "official")`; it returns a `ProcessBuilder` that must be started or passed to the asynchronous task API.
 
 ## Commands, binds and saved configuration
 
