@@ -241,7 +241,7 @@ pdn login alpine
 
 允许 seccomp 自动选择时，移除 `PROOT_NO_SECCOMP`；禁用时设置 `PROOT_NO_SECCOMP=1`。任何已设置的值，包括 `0` 或空字符串，都禁用自身加速过滤器。tracer 没有继承过滤器、查询成功且未显式禁用时才尝试启用；已有过滤器、查询或安装失败都保留完整 syscall 追踪。版本里的 `seccomp_filter = yes` 仅表示编译支持，不表示当前启用。
 
-AAR 默认设置禁用变量，普通 App 通常已继承 Android 过滤器。不能靠删除环境变量绕过系统过滤。详细性能与兼容验证见[测试记录](pdn-error-testing.md)。
+AAR 默认设置禁用变量，普通 App 通常已继承 Android 过滤器。不能靠删除环境变量绕过系统过滤。
 
 底层引擎自己的临时目录顺序为非空 `PROOT_TMP_DIR`、非空 `TMPDIR`、`/tmp`；这个默认行为与前端 login 创建 `.pdn-tmp` 不同。底层路径也须已经存在且可写。
 
@@ -258,25 +258,4 @@ PROOT_EMULATE_DEV_FULL=1 pdn exec alpine -- /bin/sh -c 'printf x > /dev/full'
 
 ## 构建与产物
 
-```sh
-make
-make test
-make help
-make NDK_PATH=/路径/android-ndk CC=clang
-```
-
-默认交叉编译 ARM64、Android API 24 及以上。需要构建宿主的 Clang、LLVM 工具、Make、POSIX shell、curl、tar 与 Android NDK sysroot；测试需要 Python 3 和允许 PRoot 追踪的 ARM64 Android 环境。ARM64 Android 不能直接运行 NDK 内的 Linux x86_64 编译器，应使用原生 Clang 配合 NDK sysroot。
-
-NDK 按 `ANDROID_SDK_ROOT/ndk`、`ANDROID_HOME/ndk`、`$HOME/android-sdk/ndk` 查找，也可用 `ANDROID_NDK_HOME` 或 `NDK_PATH` 指定。构建复制工作源码到临时目录，不修改 vendor。`make clean` 只清除 `build/proot-distro-nolib`，同时清除该目录的依赖缓存。
-
-首次构建下载固定摘要的 curl、Mbed TLS、libarchive 与 zlib 源码并静态链接，之后复用缓存。运行时不要求宿主提供这些程序或 TLS 共享库。
-
-| 产物 | 用途 |
-| --- | --- |
-| `pdn` / `proot-distro-nolib` | 同字节的独立 ELF，使用 `/system/bin/linker64`，动态依赖仅 libc/libdl |
-| `proot-loader` | 可选外部 ARM64 loader |
-| `proot-distro-nolib.debug` | 调试用未剥离 ELF |
-| `jniLibs/arm64-v8a/libpdn.so`、`libproot-loader.so` | 用于 APK 解压和执行的 ELF 文件名，并非 JNI 共享库 |
-| `SHA256SUMS`、`dynamic.txt`、`licenses/` | 校验、动态依赖检查及许可证 |
-
-默认输出在 `build/proot-distro-nolib/arm64/`。构建检查拒绝 RPATH/RUNPATH、额外动态依赖及残留宿主私有路径。转发时保留对应源码与许可证。AAR 中 PTY JNI 才是实际 JNI 共享库，App 接入和发布步骤见[构建与发布](pdn-build-and-release.md)。历史测试与覆盖率集中在[测试记录](pdn-error-testing.md)。
+编译、发布文件和许可证说明见[从源码构建与发布文件](pdn-build-and-release.md)。App 打包步骤见[接入教程](android-embedding.md)。

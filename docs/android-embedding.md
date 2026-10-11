@@ -298,8 +298,7 @@ make package NDK_PATH=/你的/NDK/目录
 
 编译输出在 `build/proot-distro-nolib/arm64/`，包含 `jniLibs/arm64-v8a/`。
 发布输出在 `build/packages/`，包含独立程序、两个 `.so`、完整包和校验值。
-发布脚本要求提交项目变更，以便完整包内的源码对应构建版本。GitHub 工作流
-将这些文件上传为 Actions artifact；符合版本条件时还会创建草稿预发布 Release。公开发布前必须完成 AAR / 直接 `.so` 的 Debug 与 R8 Release 四种 Android 验收，核对附件字节、签名、Manifest、事件和 PTY。正式 Release 同时附上完整包和 `SHA256SUMS`，详见[构建与发布](pdn-build-and-release.md)。
+分发二进制时保留对应源码、许可证和 `SHA256SUMS`，详见[构建与发布](pdn-build-and-release.md)。
 
 构建仓库的示例 APK，在 Android/Termux 上执行：
 
@@ -310,7 +309,3 @@ sh scripts/build-android-termux.sh assembleDebug --no-daemon
 该脚本使用 NDK sysroot、可在 Android 上运行的 Clang、兼容 Gradle 和原生 aapt2，
 打包现有 PDN/loader，并核对复制后的摘要。先运行独立 PDN 构建以更新引擎。
 APK 输出是 `android/app/build/outputs/apk/debug/app-debug.apk`。
-
-## 验证范围
-
-AAR 和直接 `.so` 两条接入路径均已在普通 Android App 身份下通过独立 APK 实测，覆盖安装、命令执行、事件与终端。历史版本、产物对应关系、覆盖率和未验证范围见 [测试记录](pdn-error-testing.md)。Android shell 调试操作见 [教程](pdn-shizuku-android-shell.md)。

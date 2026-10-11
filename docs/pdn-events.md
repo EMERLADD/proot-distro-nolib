@@ -72,7 +72,7 @@ val result = runInterruptible(Dispatchers.IO) {
 
 `error` 是诊断事件，不是最终结果。例如第一个镜像下载失败产生错误，第二个镜像成功后，最终结果仍然是 `success`。成功结果不会携带此前失败镜像的错误。界面只在最终失败时显示 `code`、`message`、`suggestion`，详细日志仍从 stderr 读取。
 
-目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与逐项测试触发方法见 [错误分类与验证](pdn-error-testing.md)。启动错误从 PRoot、loader、guest shell 和 ELF interpreter 的实际失败点提供分类，详见下表。未能取得具体原因的内部错误仍保留兜底分类和 stderr。`PdnOperations.start()` 提供后台任务、运行超时和取消；通过 `PdnTask` 查询或等待完成，清理先尝试正常结束并在必要时强制终止。接口与回调线程约束见 [AAR API](pdn-aar-api.md)。
+目录类错误区分不存在、不是目录、权限不足及只读；安装、校验、归档和配置错误从实际失败点提供更细的分类。具体分类与处理建议见 [错误说明](pdn-errors.md)。启动错误从 PRoot、loader、guest shell 和 ELF interpreter 的实际失败点提供分类，详见下表。未能取得具体原因的内部错误仍保留兜底分类和 stderr。`PdnOperations.start()` 提供后台任务、运行超时和取消；通过 `PdnTask` 查询或等待完成，清理先尝试正常结束并在必要时强制终止。接口与回调线程约束见 [AAR API](pdn-aar-api.md)。
 
 ### PRoot 与 guest 启动错误
 
@@ -162,7 +162,3 @@ proot-engine-*.aar
 `libptyjni.so` 是给交互终端使用的 JNI 共享库。标准 AAR 仅包含上述三项原生文件，`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名。旧 Java/Kotlin 类保留接口兼容，但依赖旧 pr-cli 的方法需要宿主另行提供原生程序；PDN 操作与终端应使用当前 API。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
 
 宿主导入 AAR 后，还需配置 Kotlin 标准库依赖、ARM64、minSdk 28、原生库解压和联网权限。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
-
-## 独立 App 实测
-
-生成的 AAR 已在 [全新的 Java Android 验证 App](../examples/aar-probe/README.md) 中实测可用。该工程不引用原项目模块，仅导入 AAR 与 Kotlin 标准库；进入 Alpine 后，在交互终端成功执行 `apk add nano`。AAR 和直接 `.so` 接入均已通过 Debug 与 R8 Release 的独立 App 验收，包含初始化、发行版安装、命令执行、事件和 PTY；各版本的实际原件、检查项数和覆盖范围见 [测试记录](pdn-error-testing.md)，不将旧版结果当作新版验收。

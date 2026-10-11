@@ -48,7 +48,7 @@ export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
 mkdir -p "$PROOT_TMP_DIR"
 ```
 
-报错中的具体路径、原因和建议比盲目 `chmod 777` 更有用。权限之外还可能有空间不足、文件占用了目录名或文件系统不支持所需语义等原因。PDN 不会在失败后擅自换存储位置；详细错误分类见 [测试与错误记录](pdn-error-testing.md)。
+报错中的具体路径、原因和建议比盲目 `chmod 777` 更有用。权限之外还可能有空间不足、文件占用了目录名或文件系统不支持所需语义等原因。PDN 不会在失败后擅自换存储位置；详细错误分类见 [错误说明](pdn-errors.md)。
 
 ## 安装下载中断后怎么办
 
@@ -74,7 +74,7 @@ AAR 提供 Java/Kotlin 封装、PDN、loader 和 PTY JNI。宿主需要 Kotlin �
 ./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
 ```
 
-本次测试的运行环境具备上述路径；其他系统需要核对实际布局。在 Ubuntu 中把 Android shell 调用封装成函数：
+请先核对系统是否具备上述路径。在 Ubuntu 中把 Android shell 调用封装成函数：
 
 ```sh
 rish() {
@@ -87,9 +87,9 @@ rish -c 'getprop ro.build.version.sdk'
 
 ## Shizuku 在后台断连
 
-本次 MT 复现中，获得 Shizuku 授权的宿主进入后台会断连，即使电池设为“无限制”仍然发生。照此教程操作时，保持被授权宿主全程在前台；断连后检查 Shizuku 状态并重新连接。
+在部分系统中，获得 Shizuku 授权的宿主进入后台会断连，即使电池设为“无限制”仍然发生。照此教程操作时，保持被授权宿主全程在前台；断连后检查 Shizuku 状态并重新连接。
 
-这是已观察到的环境行为，不是所有 Android ROM 的统一机制。不要把授予权限或取消电池限制当作本次流程能在后台保持连接的保证。
+这是已观察到的环境行为，不是所有 Android ROM 的统一机制。不要把授予权限或取消电池限制当作后台连接持续的保证。
 
 ## root 与 Android 权限
 

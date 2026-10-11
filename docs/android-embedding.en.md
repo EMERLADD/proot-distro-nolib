@@ -250,7 +250,7 @@ make NDK_PATH=/path/to/NDK
 make package NDK_PATH=/path/to/NDK
 ```
 
-Build output is in `build/proot-distro-nolib/arm64/`, including `jniLibs/arm64-v8a/`. Release output is in `build/packages/`, containing the standalone programs, two `.so` files, complete package and checksums. The publication script requires project changes to be committed so that bundled source corresponds to the built version. The GitHub workflow uploads these files as Actions artifacts and also creates a draft prerelease when its version conditions are met. Before public release, complete all four Android acceptance paths: AAR and direct `.so`, each in Debug and R8 Release. Verify artifact bytes, signatures, Manifest settings, events and PTY. Public Releases also include the complete package and `SHA256SUMS`; see [building and releasing](pdn-build-and-release.en.md).
+Build output is in `build/proot-distro-nolib/arm64/`, including `jniLibs/arm64-v8a/`. Release output is in `build/packages/`, containing the standalone programs, two `.so` files, complete package and checksums. Retain corresponding source, licenses and checksums when redistributing binaries; see [source builds and release files](pdn-build-and-release.en.md).
 
 Build the repository's example APK on Android/Termux:
 
@@ -259,7 +259,3 @@ sh scripts/build-android-termux.sh assembleDebug --no-daemon
 ```
 
 The script uses the NDK sysroot, a Clang executable that runs on Android, compatible Gradle and native aapt2. It packages the existing PDN/loader and verifies copied digests. Build standalone PDN first to update the engine. APK output is `android/app/build/outputs/apk/debug/app-debug.apk`.
-
-## Verification scope
-
-Both AAR and direct `.so` integration have passed independent APK tests under ordinary Android App identities, covering installation, command execution, events and terminals. See [test records](pdn-error-testing.en.md) for historical versions, artifact correspondence, coverage and unverified areas. For Android shell debugging, see the [guide](pdn-shizuku-android-shell.en.md).

@@ -48,7 +48,7 @@ export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
 mkdir -p "$PROOT_TMP_DIR"
 ```
 
-Use the reported path, reason and suggestion rather than blindly applying `chmod 777`. Other causes include insufficient space, a file occupying a directory name, or unsupported filesystem semantics. PDN does not silently switch storage locations after failure. See [error classification and tests](pdn-error-testing.en.md).
+Use the reported path, reason and suggestion rather than blindly applying `chmod 777`. Other causes include insufficient space, a file occupying a directory name, or unsupported filesystem semantics. PDN does not silently switch storage locations after failure. See [error classification and tests](pdn-errors.en.md).
 
 ## What happens after an interrupted installation download
 

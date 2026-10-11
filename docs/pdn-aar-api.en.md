@@ -148,8 +148,6 @@ Mirror entries provide the distribution, mirror name, base URL, full archive URL
 
 Queries use version 1 JSON envelopes from native `list --json`, `list --available --json`, and `mirrors [NAME] --json`. JSONL events remain on a separate channel. Invalid format, UTF-8, types, version, or size throws `host_catalog_protocol`. Native query failures throw `PdnQueryException`; `getResult()` retains the native cause and suggestion.
 
-## Validation and release scope
+## Integration notes
 
-Builds provide a non-instrumented AAR and matching ELF and `.so` files, retaining the legacy lite download name as a byte-identical alias. Both standard and Termux builds exclude the legacy pr native components from the AAR. Packaging filters them again and verifies the three native files, API metadata, byte consistency, and checksums. Version-specific builds, unit tests, packaging checks, and independent APK acceptance results are recorded in the [test records](pdn-error-testing.en.md).
-
-The AAR has passed acceptance in non-debuggable Release test Apps with R8 minification, optimization, and resource shrinking enabled. Android's default optimization/JNI rules are used; no rule retaining the entire SDK is required. Test APKs use a local Debug signing key. Maven publishing, terminal rendering components, and an automatic background service are not currently provided. See the [AAR verification project](../examples/aar-probe/README.en.md) for building and testing an independent App.
+The standard and lite AAR files are identical and retain all terminal APIs. The host must provide the Kotlin standard library. R8 is supported with Android's default optimization and JNI rules; retaining the entire SDK is unnecessary. Maven publication, terminal rendering widgets and an automatic background service are not provided. See the [AAR example](../examples/aar-probe/README.en.md).

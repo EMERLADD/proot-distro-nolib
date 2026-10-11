@@ -4,7 +4,7 @@
 
 This applies to Android shells that can run PDN and access the chosen directories, without requiring a particular terminal app. The examples use MT Manager and Shizuku/rish; an existing ADB shell can start at PDN deployment. All permissions still depend on the real Android identity starting PDN and on system restrictions.
 
-Calling Android commands and reading/writing system settings from Ubuntu were verified and reproduced in MT Manager. See the [test records](pdn-error-testing.en.md#ubuntu-android-commands) for versions, environments and detailed results.
+This tutorial uses MT Manager as an example and also applies to other Android shells with the required permissions.
 
 ## Contents
 
@@ -36,11 +36,11 @@ The host app's original terminal
 
 The root shown in Ubuntu's prompt is a PRoot-simulated identity. Underlying processes inherit the Android permissions held when PDN starts. Shizuku in wireless debugging mode usually provides shell privileges, not real Android root.
 
-The `rish` defined later inside Ubuntu is a Bash function calling `/system/bin/sh` with inherited permissions. It does not reconnect to Shizuku. Nested startup of the original rish client in this shell still timed out during testing, so this tutorial uses the function wrapper.
+The `rish` defined later inside Ubuntu is a Bash function calling `/system/bin/sh` with inherited permissions. It does not reconnect to Shizuku.
 
 ## Foreground and connection requirements
 
-Keep the Shizuku-authorized host app that starts the original rish client in the foreground throughout use. In the tested environment, backgrounding the host disconnected it; even the “Unrestricted” battery policy did not guarantee a persistent connection. Other systems may behave differently. Follow this requirement when reproducing the test.
+Keep the Shizuku-authorized host app that starts the original rish client in the foreground throughout use. In the tested environment, backgrounding the host disconnected it; even the “Unrestricted” battery policy did not guarantee a persistent connection. Other systems may behave differently. Keep the host foregrounded when using this flow.
 
 After restarting Shizuku, start the original rish client again from the host terminal, then enter Ubuntu. You do not need to reinstall Ubuntu.
 
@@ -84,7 +84,7 @@ sh "$MT_RISH_DIR/rish"
 
 If the exported script requires changing its `PKG`, enter the actual host application ID according to Shizuku's export instructions. Confirm that Shizuku has authorized the app, then run `id` after entering to check the real identity.
 
-This initial setup was not part of the MT reproduction acceptance test; MT reproduction started with an already working rish. If Android shell cannot access MT's private directory, return to MT's original terminal to configure it.
+If Android shell cannot access MT's private directory, return to MT's original terminal to configure it.
 
 ## Deploy PDN and install Ubuntu
 
@@ -101,7 +101,7 @@ cd /data/local/tmp/pdn-mt
 ./pdn --version
 ```
 
-Both version commands should show the current PDN version, 0.6.6 in this test. `Based on PRoot 5.4.0-pr` identifies the underlying version.
+Both version commands should show the PDN version you downloaded. `Based on PRoot 5.4.0-pr` identifies the underlying version.
 
 ```sh
 export PDN_ROOTFS_DIR=/data/local/tmp/pdn-mt/linux
@@ -130,11 +130,11 @@ head -n 2 /etc/os-release
 grep '^Uid:' /proc/self/status
 ```
 
-The test used Ubuntu 24.04.5 LTS with actual UID 2000; the guest's `id` reports simulated root.
+The host identity remains unchanged; the guest's `id` reports simulated root.
 
-These three mounts provide Android system programs, APEX runtime libraries, and dynamic linker configuration. They apply only to this login and must be supplied again next time. Listing `/linkerconfig` may be disallowed while the specific configuration file remains accessible; this test mounted the file directly.
+These three mounts provide Android system programs, APEX runtime libraries, and dynamic linker configuration. They apply only to this login and must be supplied again next time. Listing `/linkerconfig` may be disallowed while the specific configuration file remains accessible; mount the file directly.
 
-These mounts were sufficient for the tested commands. Other programs or systems may need additional Android paths.
+These mounts provide the paths required by the commands below. Other programs or systems may need additional Android paths.
 
 ## Give the long command the name rish
 
@@ -154,7 +154,7 @@ rish -c 'getprop ro.build.version.sdk'
 rish -c 'cmd package path android'
 ```
 
-`type rish` should show `rish is a function`. In this test, the Android commands printed SDK `34` and `package:/system/framework/framework-res.apk`. The SDK number depends on your system.
+`type rish` should show `rish is a function`. The Android commands print your system's SDK number and the Android framework package path.
 
 After it works, save it inside Ubuntu. **Append it only once**:
 
@@ -206,7 +206,7 @@ settings get global pdn_ubuntu_demo_20261009
 
 The first command should print `hello-from-ubuntu`; after cleanup it should print `null`. This is Android's real settings database, not an Ubuntu configuration file. The dedicated test key does not toggle existing system features such as airplane mode.
 
-If disconnected midway, delete the test key after reconnecting to the Android shell. This verification was successfully reproduced in MT Manager.
+If disconnected midway, delete the test key after reconnecting to the Android shell.
 
 ## Next login and environment removal
 

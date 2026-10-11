@@ -39,7 +39,7 @@ TUNA 和 USTC 镜像对应的 `ubuntu-cdimage/ubuntu-base/releases/24.04/release
 
 归档的分离签名已使用[官方构建系统密钥](https://archlinuxarm.org/about/package-signing) 核验，指纹为 `68B3537F39A313B3E574D06777193F152BDBE6A6`；SHA256 固定为上表的值。
 
-核验时，TUNA、USTC、NJU 与美国 Florida 镜像通过 HTTPS 返回了相同大小的日期归档。自动 GeoIP 入口曾因 TLS 主机名校验失败而被排除，没有关闭 TLS 校验。当前顺序为 `tuna → ustc → nju → official`。
+这些镜像提供相同的固定日期归档，当前顺序为 `tuna → ustc → nju → official`。
 
 这是完整上游文件系统，含内核与固件包，解压后约 2 GiB；应为归档、rootfs 和更新预留数 GiB 空间。它是 Arch Linux ARM，不是 x86-64 Arch Linux。
 
@@ -55,8 +55,5 @@ pdn install alpine --archive /路径/alpine-minirootfs-3.24.2-aarch64.tar.gz
 
 显式指定 `--mirror` 时只尝试该来源；不指定时按固定顺序回退。`--archive` 必须匹配对应发行版的固定大小与摘要，不能与 `--mirror` 同时使用，也不是任意归档导入接口。自备 rootfs 的登录和备份恢复见[中文 CLI 手册](proot-distro-nolib.zh-CN.md)。
 
-## 更新固定归档
 
-更新来源时，应核验上游身份、架构、签名或校验描述，记录准确大小与 SHA256，检查归档布局，并验证安装、登录和包管理操作，再修改程序目录。
-
-上游删除旧归档时，安装会失败，需要更新目录；程序不会静默接受新的校验值。发行版内各软件的许可仍由各自上游决定。完整历史验证见[测试记录](pdn-error-testing.md)。
+上游删除旧归档时需要更新 PDN；程序不会静默接受新的校验值。发行版内各软件的许可仍由各自上游决定。

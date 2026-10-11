@@ -4,7 +4,7 @@
 
 适用于能运行 PDN、访问所选目录的 Android shell，不绑定某个终端 App。下面以 MT 管理器和 Shizuku/rish 为例；已有 ADB shell 也可从部署 PDN 开始。所有权限仍取决于启动 PDN 的真实 Android 身份及系统限制。
 
-Ubuntu 内调用 Android 命令及系统设置读写已验证，并在 MT 管理器中复现。版本、环境和详细结果见 [测试记录](pdn-error-testing.md#066-ubuntu-调用-android-命令验证)。
+本教程以 MT 管理器为例，也适用于具有相应权限的其他 Android shell。
 
 ## 目录
 
@@ -36,7 +36,7 @@ Ubuntu 内调用 Android 命令及系统设置读写已验证，并在 MT 管理
 
 Ubuntu 提示符显示 root，是 PRoot 模拟身份；底层进程继承启动 PDN 时的 Android 权限。无线调试模式的 Shizuku 通常提供 shell 权限，不会因此获得 Android 真 root。
 
-Ubuntu 内后面定义的 `rish` 是 Bash 函数，使用已经继承的权限调用 `/system/bin/sh`，不会再次连接 Shizuku。原始 rish 客户端在本次 shell 内嵌套启动仍超时，因此教程采用函数封装。
+Ubuntu 内后面定义的 `rish` 是 Bash 函数，使用已经继承的权限调用 `/system/bin/sh`，不会再次连接 Shizuku。
 
 ## 前台与连接要求
 
@@ -84,7 +84,7 @@ sh "$MT_RISH_DIR/rish"
 
 如果导出的脚本要求修改其中的 `PKG`，按 Shizuku 导出说明填入实际宿主应用 ID。确认 Shizuku 已授权该 App，进入后执行 `id` 核对真实身份。
 
-这个初次配置不是本次 MT 复现的验收内容；MT 复现从已有可用 rish 开始。Android shell 无权访问 MT 私有目录时，退回 MT 原来的终端再做配置。
+Android shell 无权访问 MT 私有目录时，退回 MT 原来的终端再做配置。
 
 ## 部署 PDN 和安装 Ubuntu
 
@@ -101,7 +101,7 @@ cd /data/local/tmp/pdn-mt
 ./pdn --version
 ```
 
-两个版本命令都应显示当前 PDN 版本，本次为 0.6.6。`Based on PRoot 5.4.0-pr` 是底层版本。
+两个版本命令都应显示已下载版本的 PDN 版本号；PRoot 基底版本单独显示。
 
 ```sh
 export PDN_ROOTFS_DIR=/data/local/tmp/pdn-mt/linux
@@ -130,11 +130,11 @@ head -n 2 /etc/os-release
 grep '^Uid:' /proc/self/status
 ```
 
-本次为 Ubuntu 24.04.5 LTS，实际 UID 为 2000；guest 的 `id` 会显示模拟 root。
+宿主身份保持不变；guest 的 `id` 会显示模拟 root。
 
-三个挂载提供 Android 系统程序、APEX 运行库和动态链接器配置，仅作用于此次登录，之后也要带上。目录 `/linkerconfig` 可能不允许列出，但具体配置文件可以访问，本次直接挂载了文件。
+三个挂载提供 Android 系统程序、APEX 运行库和动态链接器配置，仅作用于此次登录，之后也要带上。目录 `/linkerconfig` 可能不允许列出，但具体配置文件可以访问，这里直接挂载配置文件。
 
-这些挂载足够运行本次测试命令；其他程序或系统可能还需额外 Android 路径。
+这些挂载足够运行上面列出的命令；其他程序或系统可能还需额外 Android 路径。
 
 ## 把长命令注册为 rish
 
@@ -154,7 +154,7 @@ rish -c 'getprop ro.build.version.sdk'
 rish -c 'cmd package path android'
 ```
 
-`type rish` 应显示 `rish is a function`；本次 Android 命令输出 SDK `34` 和 `package:/system/framework/framework-res.apk`。SDK 数值以实际系统为准。
+`type rish` 应显示 `rish is a function`；Android 命令会输出设备的 SDK 数值和 Android 框架包路径，以实际系统为准。
 
 成功后在 Ubuntu 保存，**只追加一次**：
 
@@ -206,7 +206,7 @@ settings get global pdn_ubuntu_demo_20261009
 
 第一次应输出 `hello-from-ubuntu`，清理后应输出 `null`。这是 Android 真实设置数据库，不是 Ubuntu 中的配置文件；专用测试键不切换飞行模式等现有系统功能。
 
-中途断连时，重连到 Android shell 后也要删除测试项。此验证在 MT 管理器中已复现成功。
+中途断连时，重连到 Android shell 后也要删除测试项。
 
 ## 下次进入与删除环境
 

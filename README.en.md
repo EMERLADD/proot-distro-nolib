@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. Instance cloning, renaming and stable metadata are available. See [test records](docs/pdn-error-testing.en.md) for syscall fixes and integration verification, and [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) for downloads.
+**ARM64 Android · Early test release**. Find the current version on [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and changes in [CHANGELOG](CHANGELOG.en.md).
 
 ## Contents
 
@@ -35,7 +35,7 @@ Current local ELF and AAR: **v0.6.13 · ARM64 Android · Early test release**. I
 | The same Termux + PDN | **35 ms** |
 | Android shell + PDN | **41 ms** |
 
-Measured with each tool's default login configuration through the first command and exit, excluding rish connection, downloads and installation. Each clean Termux comparison uses 20 samples; Android shell uses 40. [Full benchmark and scope](docs/pdn-error-testing.en.md#alpine-startup-benchmark).
+Measured through the first command and exit using each tool's default login configuration, excluding rish connection, download and installation. These are reference results from one device; actual times vary with the system, storage and load.
 
 - **Manage Linux directly**: install, log in, execute commands, bind project directories, save configuration, back up, restore and remove distributions.
 - **Callable from other APKs**: two integration options, AAR and directly packaged `.so` files, for workspaces, AI frontends and other Apps needing Linux execution.
@@ -43,7 +43,7 @@ Measured with each tool's default login configuration through the first command 
 - **Host-controlled paths**: executable, data, cache and project directories come from arguments or the host, without binding to MT Manager, Termux or a fixed App package name.
 - **Android debugging when permissions allow**: starting PDN from Shizuku/rish or ADB shell lets Linux call Android debugging commands such as `cmd`, `settings` and `getprop` with inherited privileges.
 
-The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for results and the [test records](docs/pdn-error-testing.en.md) for versions and environments. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
+The main paths above have been verified with **MT Manager, an independent APK built with the AAR, and an independent APK directly packaging `.so` files**. See [verified use cases](#4-verified-use-cases) for results. The Android debugging path verifies system commands with ADB shell-level privileges, not actual Android root or the full functionality of a standalone adb client inside Linux.
 
 | Integration method | Best suited for |
 | --- | --- |
@@ -72,15 +72,15 @@ Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-noli
 | Java/Kotlin App integration | `pdn-engine-VERSION.aar` |
 | App-managed process launch | `libpdn.so`, `libproot-loader.so` |
 | Source and license materials | `proot-distro-nolib-vVERSION-android-arm64.tar.gz` |
-| Independent App integration tests | `pdn-aar-probe-VERSION-debug-test.apk`, `pdn-so-probe-VERSION-debug-test.apk` |
+| Independent App integration tests | `pdn-aar-probe-VERSION-*-test.apk`, `pdn-so-probe-VERSION-*-test.apk` |
 
-The two test APKs are ordinary Debug test builds for verifying and demonstrating AAR / direct `.so` integration. They retain the test interface and acceptance checks and are not production Apps.
+Both test Apps offer Debug and R8 Release builds demonstrating AAR / direct `.so` integration. All use test signing keys and are not production Apps.
 
 The AAR contains Java/Kotlin APIs and three native files: PDN, its loader and PTY JNI. All terminal session APIs are retained; the host App provides the terminal interface. The standard and lite files have identical contents, so import either one. PDN and its loader use `.so` filenames for APK packaging but are invoked through processes; `libptyjni.so` is called through JNI.
 
 Exit old Linux sessions before updating, replace the program and restore its executable permissions. Existing rootfs installations do not need reinstalling. Keep ELF, `.so`, AAR and loader versions aligned; both `pdn version` and `pdn --version` should report the current PDN version. Retain corresponding source and licenses when redistributing binaries.
 
-Development builds are available through [Actions](https://github.com/EMERLADD/proot-distro-nolib/actions/workflows/ci.yml) artifacts. See [building and releasing](docs/pdn-build-and-release.en.md) for file structure, build origins and update precautions.
+See [building and release files](docs/pdn-build-and-release.en.md) for file structure and update precautions.
 
 ## 3. Quick start
 
@@ -203,9 +203,8 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 | Independent AAR APK | Debug and R8 Release passed initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminal checks |
 | Independent direct `.so` APK | Debug and R8 Release passed independent process, event and PTY integration checks |
 | Install Linux software through a GUI | Installing nano and curl in Alpine, and HTTPS access passed |
-| Error-handling fault injection | All 9 lock-error combinations passed in native Termux |
 
-Both APK paths were verified under ordinary Android App identities. Versions, environments, individual results, coverage and unverified areas are collected in the [test and version records](docs/pdn-error-testing.en.md).
+Both APK paths run under ordinary Android App identities; simulated Linux root does not change host permissions.
 
 ## 5. Documentation
 
@@ -215,15 +214,15 @@ Both APK paths were verified under ordinary Android App identities. Versions, en
 | Install, log in, bind, configure, back up or remove Linux | [Distribution management](docs/pdn-distributions.en.md) |
 | Embed PDN in another APK | [App integration](docs/android-embedding.en.md) |
 | Look up Java/Kotlin configuration, tasks, queries and terminals | [AAR API](docs/pdn-aar-api.en.md) |
-| Handle events or investigate classified errors | [Event protocol](docs/pdn-events.en.md), [tests and error classification](docs/pdn-error-testing.en.md) |
+| Handle events or investigate classified errors | [Event protocol](docs/pdn-events.en.md), [Error reference](docs/pdn-errors.en.md) |
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |
-| Build locally, use CI or release source | [Building and releasing](docs/pdn-build-and-release.en.md) |
+| Build from source and redistribute | [Building and releasing](docs/pdn-build-and-release.en.md) |
 | Diagnose directory, version, permission or terminal issues | [Frequently asked questions](docs/pdn-faq.en.md) |
 | Find complete CLI details | [Native CLI manual](docs/proot-distro-nolib.md) |
 
 ## 6. Building and contributing
 
-Standalone PDN does not need Java, Gradle or Rust to build; the AAR needs the Android/Gradle toolchain. See [building and releasing](docs/pdn-build-and-release.en.md) for dependencies, NDK configuration, native and AAR artifacts, tests, CI and license delivery.
+Standalone PDN does not need Java, Gradle or Rust to build; the AAR needs the Android/Gradle toolchain. See [building and releasing](docs/pdn-build-and-release.en.md) for dependencies, NDK configuration, native and AAR artifacts and license delivery.
 
 [Issues](https://github.com/EMERLADD/proot-distro-nolib/issues) are welcome for bugs, ideas and documentation improvements. Include the host App, Android version, `pdn version`, reproduction commands and error output. Do not include passwords, tokens, device serials or other private information. See [CHANGELOG](CHANGELOG.en.md) for changes.
 
@@ -253,11 +252,9 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 - **Instance migration**: clone follows backup copying rules. Rename migrates rootfs-owned host-absolute links and saved binds; arbitrary file contents and environment strings are not rewritten. Handled SIGINT/SIGTERM can roll back; SIGKILL/power-loss recovery is not implemented.
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
-- **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside this debugging path's acceptance scope.
-- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Shell compression took about 54% less time in this test; see [verification](docs/pdn-error-testing.en.md#native-seccomp-acceleration).
+- **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside the debugging flow described here.
+- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Actual gains depend on the host and workload.
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import and automatic mirror latency ranking are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
 - **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
 - **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.
-
-See the [test records](docs/pdn-error-testing.en.md) for each version's verified scope.

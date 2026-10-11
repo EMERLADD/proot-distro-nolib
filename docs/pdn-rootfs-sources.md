@@ -43,9 +43,7 @@ filename. The fetched archive's detached signature was verified with the
 [official build-system key](https://archlinuxarm.org/about/package-signing),
 fingerprint `68B3537F39A313B3E574D06777193F152BDBE6A6`; its SHA256 is pinned above.
 
-TUNA, USTC, NJU and the Florida US mirror returned the matching dated artifact
-size over verified HTTPS. The automatic GeoIP host was excluded after TLS
-hostname verification failed; TLS checks were not disabled. The full archive
+The configured mirrors supply the same pinned archive. The full archive
 includes kernel/firmware packages and expands to roughly 2 GiB.
 
 ## Alpine and updates
@@ -53,8 +51,5 @@ includes kernel/firmware packages and expands to roughly 2 GiB.
 Alpine retains the [official minirootfs](https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/)
 and five-source configuration from v0.3.1. Source order is fixed, not a speed test.
 
-When updating a pinned artifact, verify its upstream provenance and architecture,
-record a new exact size and SHA256, inspect archive layout, and test installation,
-login and package operations before changing the catalogue. Retired upstream
-archives fail closed and require a catalogue update. Software/package licensing
-inside downloaded distributions remains governed by those upstream projects.
+
+Retired upstream archives require a PDN update; the installer never silently accepts a new checksum. Software inside downloaded distributions remains governed by its upstream licenses.
