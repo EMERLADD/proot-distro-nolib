@@ -110,6 +110,8 @@ mkdir -p "$PROOT_TMP_DIR"
 
 The current working directory does not automatically determine rootfs storage. Android shell may set `HOME=/`, so configure paths explicitly. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) for complete steps and the MT example.
 
+The AAR accepts document URIs, descriptors and streams for archive import and backup export. The example App includes document-picker buttons; see the [AAR API](docs/pdn-aar-api.en.md).
+
 ### 3.2 Install, log in and manage distributions
 
 ```sh

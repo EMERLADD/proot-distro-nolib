@@ -18,6 +18,8 @@ class PdnRuntime @JvmOverloads constructor(
 
     fun catalog(): PdnCatalog = PdnCatalog(this)
 
+    fun documents(): PdnDocuments = PdnDocuments(this)
+
     val executable: File get() = File(host.nativeLibDir, "libpdn.so")
     val loader: File get() = File(host.nativeLibDir, "libproot-loader.so")
 

@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
+## v0.6.16 — 2026-10-11
+
+Add AAR document URI, descriptor and stream import/export for installation, restore and backup. Shell install/restore accept stdin and backup supports binary stdout.
+
 ## v0.6.15 — 2026-10-11
 
 Add download-cache listing and clearing with distribution filters and byte usage. Provide typed Java/Kotlin queries and clearing methods; cleanup respects installation locks and preserves installed systems.

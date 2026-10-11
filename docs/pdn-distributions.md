@@ -172,3 +172,16 @@ pdn cache clear --yes
 ```
 
 清理需要显式确认，只删除 PDN 格式的普通下载缓存文件，不删除已安装 rootfs、项目文件或其他缓存目录。清理后再次安装会重新下载。安装正在运行或操作锁被占用时返回 `operation_busy`；等待结束后重试。可疑软链接、非普通文件和多硬链接缓存会被拒绝，不会递归清理未知内容。
+
+
+## 通过标准流导入与导出
+
+路径参数 `-` 表示标准流：安装／恢复读取 stdin，备份把 gzip 归档写入 stdout，不混入提示文字。
+
+```sh
+pdn install alpine --name workspace --archive - < alpine-rootfs.tar.gz
+pdn restore workspace-copy - < backup.tar.gz
+pdn backup workspace - > backup.tar.gz.part && mv backup.tar.gz.part backup.tar.gz
+```
+
+也可通过管道传递归档。安装仍校验官方固定大小与 SHA256，任意自带 rootfs 使用 restore。流输出不能回滚：失败时删除不完整的输出文件，管道脚本还应检查各进程退出码。原来的文件路径接口保持不覆盖既有备份的行为；Shell 重定向本身会创建或截断目标文件。备份 stdout 不应直接输出到交互终端。Android 系统选择器接入见 [AAR API](pdn-aar-api.md)。

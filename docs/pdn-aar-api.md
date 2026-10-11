@@ -165,3 +165,29 @@ PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
 ```
 
 `pdn.cache()` / `cache("alpine")` 返回 JSON 查询的 `ProcessBuilder`；`pdn.clearCache()` 清理全部可识别格式的下载残片。快照和条目不可修改，条目提供 `getId()`、`getDistro()`、`getMirror()`、`getBytes()`、`getTotal()` 和 `getUpdatedAt()`；最后一项为 Unix 秒，未知来源字段可为 null。大小不是校验通过的证明。
+
+
+## 系统文件选择器、FD 与流
+
+`pdn.documents()` 提供同步的 `install`、`installAs`、`restore`、`backup`。输入可为 `InputStream`、`ParcelFileDescriptor`，或 `ContentResolver` 与 `Uri`；备份输出可为 `OutputStream`、文件描述符，或 resolver 与 URI。Java/Kotlin 均可调用。宿主使用 `ACTION_OPEN_DOCUMENT` 选择压缩包、`ACTION_CREATE_DOCUMENT` 新建备份文档，并保留所需 URI 读写授权。PDN 不负责打开选择器界面。
+
+```java
+PdnDocuments documents = pdn.documents();
+PdnResult installed = documents.installAs("alpine", "workspace", resolver, inputUri, listener);
+PdnResult saved = documents.backup("workspace", resolver, outputUri, listener);
+PdnResult restored = documents.restore("workspace-copy", resolver, backupUri, listener);
+```
+
+这些方法会阻塞，必须在工作线程调用；监听器也在该线程执行。原生事件与 stdout/stderr 继续回调，`onComplete` 在文件传输与暂存清理完成后调用；读写或宿主失败通过异常抛出，不自动调用 `onFailure`。原生失败返回非成功的 `PdnResult`。导出的原生 `result` 事件仅表示原生备份阶段结束，整个导出应以方法返回或 `onComplete` 为准。
+
+```java
+try (ParcelFileDescriptor fd = resolver.openFileDescriptor(inputUri, "r")) {
+    PdnResult result = documents.restore("workspace-copy", fd, listener);
+}
+```
+
+FD 会被复制，SDK 关闭副本，不关闭传入 FD；副本与原 FD 共享当前位置。调用方提供的流不会被关闭，URI 打开的流由 SDK 关闭。传输从当前位置开始；流与 FD 必须保持有效，避免并发读写。线程中断可取消传输和原生操作，但文档提供者若阻塞且忽略中断，取消需等待它返回；这些接口不返回 `PdnTask`。
+
+输入先保存到宿主私有缓存的临时目录，再交给原生接口。安装仍验证固定发行版大小与 SHA256；任意自带 rootfs 包应使用 `restore`。备份先生成完整私有归档，成功后才打开 URI 输出并复制。需预留完整归档大小的额外私有缓存空间，正常完成、失败和可处理取消后清理暂存；进程被强杀或掉电后的遗留恢复暂未实现。
+
+`host_document_io_failed` 表示文档权限、提供者、存储空间或流读写失败。输出文档可能在导出失败后留有部分内容，无法保证跨提供者事务回滚；选择新文档保存，失败后删除不完整文件再重试。线程中断后同样检查输出文档。共享存储／SD 卡可以存放压缩包和备份，这不表示它们适合作为 Linux rootfs 安装目录。

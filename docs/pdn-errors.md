@@ -46,3 +46,5 @@
 PRoot、loader、guest shell 和 ELF 动态加载器的启动分类见[事件协议](pdn-events.md#proot-与-guest-启动错误)。兼容旧版本或无法进一步细分时可能返回其他兜底分类，调用方应保留未知 code 的原始说明。
 
 Java/Kotlin 调用需要检查 `PdnResult.isSuccess()`。宿主错误抛出继承 `IOException` 的 `PdnHostException`，通过 `getCode()`、`getSuggestion()` 和 `getCause()` 排查；参数错误与线程中断保持原有异常。错误处理接口见 [AAR API](pdn-aar-api.md)。
+
+`host_document_io_failed`: 所选文档或流读写失败；检查 URI 授权、提供者状态和存储空间，导出失败后移除不完整文档再重试。

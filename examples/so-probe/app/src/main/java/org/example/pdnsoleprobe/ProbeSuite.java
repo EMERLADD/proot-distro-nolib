@@ -68,6 +68,14 @@ public final class ProbeSuite {
         checks.put(entry);
     }
 
+    private static byte[] readStream(java.io.InputStream input) throws java.io.IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int size;
+        while ((size = input.read(buffer)) >= 0) if (size > 0) output.write(buffer, 0, size);
+        return output.toByteArray();
+    }
+
     private JSONObject instanceMetadata(Capture capture, String name) throws Exception {
         require(capture.result.isSuccess(), "instance listing: " + capture.stderr());
         JSONArray rows = new JSONObject(capture.stdout()).getJSONArray("distributions");
@@ -93,8 +101,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.15"), "version: " + c.stderr());
-            return "native PDN 0.6.15, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.16"), "version: " + c.stderr());
+            return "native PDN 0.6.16, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -117,6 +125,27 @@ public final class ProbeSuite {
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "cache_management", () -> verifyCacheManagement());
+        check(checks, "archive_stdio", () -> {
+            java.lang.Process exporter = runtime.processBuilder(Arrays.asList("backup", "alpine", "-")).start();
+            byte[] archive;
+            try {
+                exporter.getOutputStream().close();
+                archive = readStream(exporter.getInputStream());
+                String errors = new String(readStream(exporter.getErrorStream()), StandardCharsets.UTF_8);
+                require(exporter.waitFor() == 0, "stdout backup: " + errors);
+            } finally { exporter.destroyForcibly(); }
+            require(archive.length > 100 && archive[0] == (byte)0x1f && archive[1] == (byte)0x8b, "binary stdout contamination");
+            java.lang.Process importer = runtime.processBuilder(Arrays.asList("restore", "stdio-restored", "-")).start();
+            try {
+                try (java.io.OutputStream input = importer.getOutputStream()) { input.write(archive); }
+                String output = new String(readStream(importer.getInputStream()), StandardCharsets.UTF_8);
+                String errors = new String(readStream(importer.getErrorStream()), StandardCharsets.UTF_8);
+                require(importer.waitFor() == 0, "stdin restore: " + output + errors);
+                require(run(runtime.exec("stdio-restored", Arrays.asList("/bin/sh", "-c", "test -x /bin/sh"))).result.isSuccess(), "stdio restored guest");
+                return "binary gzip stdout and pipe stdin roundtrip with working guest";
+            } finally { importer.destroyForcibly(); run(runtime.processBuilder(Arrays.asList("remove", "stdio-restored", "--yes"))); }
+        });
+
         check(checks, "named_instances", () -> {
             File archive = new File(host.getCacheDir(), "alpine.tar.gz");
             File backup = new File(host.getCacheDir(), "instance-" + java.util.UUID.randomUUID() + ".tar.gz");

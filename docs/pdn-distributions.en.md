@@ -172,3 +172,16 @@ pdn cache clear --yes
 ```
 
 Clearing requires explicit confirmation and removes only ordinary PDN download-cache files. It does not remove installed rootfs, project files or other cache directories. The next installation downloads cleared data again. An active installation or conflicting lock returns `operation_busy`; wait and retry. Suspicious symlinks, nonregular files and multiply linked cache files are rejected; unknown content is never removed recursively.
+
+
+## Archive input/output streams
+
+Use `-` as the archive path: install/restore read stdin; backup writes binary gzip to stdout without status text.
+
+```sh
+pdn install alpine --name workspace --archive - < alpine-rootfs.tar.gz
+pdn restore workspace-copy - < backup.tar.gz
+pdn backup workspace - > backup.tar.gz.part && mv backup.tar.gz.part backup.tar.gz
+```
+
+Archives can also pass through pipes. Install still verifies the pinned official size and SHA256; use restore for custom rootfs archives. Stream output cannot be rolled back: remove incomplete output after failure and check each process exit status in pipelines. Path-based backup still refuses overwriting existing files, while Shell redirection itself creates/truncates the destination. Redirect backup stdout away from an interactive terminal. See the [AAR API](pdn-aar-api.en.md) for Android document access.

@@ -165,3 +165,29 @@ PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
 ```
 
 `pdn.cache()` / `cache("alpine")` returns a JSON-query `ProcessBuilder`; `pdn.clearCache()` clears all download partials with recognized filenames. Snapshots and entries are immutable. Entries expose `getId()`, `getDistro()`, `getMirror()`, `getBytes()`, `getTotal()` and `getUpdatedAt()` (Unix seconds); unknown source fields may be null. Size does not establish checksum validity.
+
+
+## Android document picker, descriptors and streams
+
+`pdn.documents()` provides synchronous `install`, `installAs`, `restore` and `backup` methods for Java/Kotlin. Inputs accept `InputStream`, `ParcelFileDescriptor`, or a `ContentResolver` plus `Uri`. Backup accepts an `OutputStream`, descriptor, or resolver plus URI. The host opens `ACTION_OPEN_DOCUMENT` for input and `ACTION_CREATE_DOCUMENT` for a new backup, retaining appropriate URI access. PDN does not launch the picker UI.
+
+```java
+PdnDocuments documents = pdn.documents();
+PdnResult installed = documents.installAs("alpine", "workspace", resolver, inputUri, listener);
+PdnResult saved = documents.backup("workspace", resolver, outputUri, listener);
+PdnResult restored = documents.restore("workspace-copy", resolver, backupUri, listener);
+```
+
+Call these blocking methods on a worker thread; listeners run on that thread. Native events and stdout/stderr are forwarded. `onComplete` follows transfer and staging cleanup. Host/I/O failures are thrown and do not automatically call `onFailure`; native failures return an unsuccessful `PdnResult`. A native result event only finishes the native archive stage; use the return value or completion callback for the entire export.
+
+```java
+try (ParcelFileDescriptor fd = resolver.openFileDescriptor(inputUri, "r")) {
+    PdnResult result = documents.restore("workspace-copy", fd, listener);
+}
+```
+
+Descriptors are duplicated and only the duplicate is closed; both share the current offset. Caller-supplied streams remain open, while URI streams are owned by the SDK. Transfer starts at the current position. Keep resources valid and avoid concurrent access. Thread interruption cancels transfer/native execution, but a provider ignoring interrupts may block cancellation until it returns. These methods do not return `PdnTask`.
+
+Input is staged in private cache before native processing. Install still checks the pinned distribution size and SHA256; use `restore` for custom rootfs archives. Backup completes a private archive before opening a URI destination. Reserve extra private cache space for a complete archive. Staging is removed on completion, failure and handled interruption; SIGKILL/power-loss recovery is not implemented.
+
+`host_document_io_failed` covers document access, provider, storage and stream failures. Failed or interrupted export may leave a partial output document; cross-provider transactional rollback is unavailable. Create a new output document and delete incomplete output before retrying. Shared storage/SD cards can hold archives and backups, but this does not make them suitable rootfs installation locations.

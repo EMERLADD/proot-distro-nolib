@@ -2,14 +2,14 @@
 
 [简体中文](proot-distro-nolib.zh-CN.md) | English · [README](../README.en.md)
 
-Current native ELF version: **0.6.13**, based on **PRoot 5.4.0-pr**.
+Native ARM64 Android ELF, based on **PRoot 5.4.0-pr**.
 
 For Java/Kotlin operation events, see [the event API and AAR guide](pdn-events.en.md).
 `--version`, `-V`, and `--about` display the slanted NoLib logo and the project
 version on separate lines, followed by the base version and original copyright
 and license information.
 
-Version 0.2.0 adds a native local-rootfs frontend to the existing engine.
+The engine includes a native distribution-management frontend.
 The same executable is built as `pdn` and `proot-distro-nolib`; either supports
 `install`, `mirrors`, `login`, `exec`, `config`, `backup`, `restore`, `clone`, `rename`, `list` (alias `ls`), `uninstall` (alias `remove`), `help`, and `version`. No host Python, Bash, BusyBox, or app
 package name is required. Android system libc/libdl are still required.
@@ -464,3 +464,16 @@ pdn cache clear --yes
 ```
 
 Clearing requires explicit confirmation and removes only ordinary PDN download-cache files. It does not remove installed rootfs, project files or other cache directories. The next installation downloads cleared data again. An active installation or conflicting lock returns `operation_busy`; wait and retry. Suspicious symlinks, nonregular files and multiply linked cache files are rejected; unknown content is never removed recursively.
+
+
+## Archive input/output streams
+
+Use `-` as the archive path: install/restore read stdin; backup writes binary gzip to stdout without status text.
+
+```sh
+pdn install alpine --name workspace --archive - < alpine-rootfs.tar.gz
+pdn restore workspace-copy - < backup.tar.gz
+pdn backup workspace - > backup.tar.gz.part && mv backup.tar.gz.part backup.tar.gz
+```
+
+Archives can also pass through pipes. Install still verifies the pinned official size and SHA256; use restore for custom rootfs archives. Stream output cannot be rolled back: remove incomplete output after failure and check each process exit status in pipelines. Path-based backup still refuses overwriting existing files, while Shell redirection itself creates/truncates the destination. Redirect backup stdout away from an interactive terminal. See the [AAR API](pdn-aar-api.en.md) for Android document access.

@@ -71,6 +71,14 @@ public final class ProbeSuite {
         checks.put(entry);
     }
 
+    private static byte[] readStream(java.io.InputStream input) throws java.io.IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int size;
+        while ((size = input.read(buffer)) >= 0) if (size > 0) output.write(buffer, 0, size);
+        return output.toByteArray();
+    }
+
     private JSONObject instanceMetadata(Capture capture, String name) throws Exception {
         require(capture.result.isSuccess(), "instance listing: " + capture.stderr());
         JSONArray rows = new JSONObject(capture.stdout()).getJSONArray("distributions");
@@ -96,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.15"), "version: " + c.stderr());
-            return "native PDN 0.6.15, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.16"), "version: " + c.stderr());
+            return "native PDN 0.6.16, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -120,6 +128,73 @@ public final class ProbeSuite {
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "cache_management", () -> verifyCacheManagement());
+        check(checks, "archive_stdio", () -> {
+            java.lang.Process exporter = runtime.processBuilder(Arrays.asList("backup", "alpine", "-")).start();
+            byte[] archive;
+            try {
+                exporter.getOutputStream().close();
+                archive = readStream(exporter.getInputStream());
+                String errors = new String(readStream(exporter.getErrorStream()), StandardCharsets.UTF_8);
+                require(exporter.waitFor() == 0, "stdout backup: " + errors);
+            } finally { exporter.destroyForcibly(); }
+            require(archive.length > 100 && archive[0] == (byte)0x1f && archive[1] == (byte)0x8b, "binary stdout contamination");
+            java.lang.Process importer = runtime.processBuilder(Arrays.asList("restore", "stdio-restored", "-")).start();
+            try {
+                try (java.io.OutputStream input = importer.getOutputStream()) { input.write(archive); }
+                String output = new String(readStream(importer.getInputStream()), StandardCharsets.UTF_8);
+                String errors = new String(readStream(importer.getErrorStream()), StandardCharsets.UTF_8);
+                require(importer.waitFor() == 0, "stdin restore: " + output + errors);
+                require(run(runtime.exec("stdio-restored", Arrays.asList("/bin/sh", "-c", "test -x /bin/sh"))).result.isSuccess(), "stdio restored guest");
+                return "binary gzip stdout and pipe stdin roundtrip with working guest";
+            } finally { importer.destroyForcibly(); run(runtime.remove("stdio-restored")); }
+        });
+
+        check(checks, "document_import_export", () -> {
+            id.or.oo.pr.engine.PdnDocuments documents = runtime.documents();
+            File source = new File(context.getCacheDir(), "document-archive.tar.gz");
+            File backup = new File(context.getCacheDir(), "document-backup.tar.gz");
+            File fdBackup = new File(context.getCacheDir(), "document-fd.tar.gz");
+            Files.copy(new File(host.getCacheDir(), "alpine.tar.gz").toPath(), source.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            android.net.Uri inputUri = android.net.Uri.parse("content://" + context.getPackageName() + ".documents/archive");
+            android.net.Uri outputUri = android.net.Uri.parse("content://" + context.getPackageName() + ".documents/backup");
+            try {
+                require(documents.installAs("alpine", "document-in", context.getContentResolver(), inputUri, new Capture(log)).isSuccess(), "URI install");
+                Files.write(backup.toPath(), new byte[]{7, 8, 9});
+                require(!documents.backup("document-missing", context.getContentResolver(), outputUri, new Capture(log)).isSuccess(), "missing source backup");
+                require(Arrays.equals(Files.readAllBytes(backup.toPath()), new byte[]{7, 8, 9}), "failed native backup truncated URI destination");
+                require(documents.backup("document-in", context.getContentResolver(), outputUri, new Capture(log)).isSuccess(), "URI backup");
+                try (android.os.ParcelFileDescriptor fd = android.os.ParcelFileDescriptor.open(backup, android.os.ParcelFileDescriptor.MODE_READ_ONLY)) {
+                    require(documents.restore("document-fd", fd, new Capture(log)).isSuccess(), "FD restore");
+                    android.system.Os.fstat(fd.getFileDescriptor());
+                }
+                try (java.io.InputStream input = Files.newInputStream(backup.toPath())) {
+                    require(documents.restore("document-stream", input, new Capture(log)).isSuccess(), "stream restore");
+                }
+                try (android.os.ParcelFileDescriptor fd = android.os.ParcelFileDescriptor.open(fdBackup,
+                        android.os.ParcelFileDescriptor.MODE_CREATE | android.os.ParcelFileDescriptor.MODE_TRUNCATE | android.os.ParcelFileDescriptor.MODE_WRITE_ONLY)) {
+                    require(documents.backup("document-stream", fd, new Capture(log)).isSuccess(), "FD backup");
+                    android.system.Os.fstat(fd.getFileDescriptor());
+                }
+                ByteArrayOutputStream exported = new ByteArrayOutputStream();
+                require(documents.backup("document-fd", exported, new Capture(log)).isSuccess(), "stream backup");
+                require(exported.size() > 100 && exported.toByteArray()[0] == (byte)0x1f, "gzip export");
+                require(!documents.restore("document-bad", new java.io.ByteArrayInputStream(new byte[]{1, 2}), new Capture(log)).isSuccess(), "corrupt input refusal");
+                try {
+                    documents.restore("document-missing", context.getContentResolver(), android.net.Uri.parse("content://" + context.getPackageName() + ".documents/missing"), new Capture(log));
+                    throw new IllegalStateException("missing provider file accepted");
+                } catch (id.or.oo.pr.engine.PdnHostException expected) {
+                    require("host_document_io_failed".equals(expected.getCode()), "provider failure classification");
+                }
+                require(run(runtime.exec("document-fd", Arrays.asList("/bin/sh", "-c", "test -x /bin/sh"))).result.isSuccess(), "restored guest command");
+                File[] leftovers = host.getCacheDir().listFiles((dir, name) -> name.startsWith("pdn-document-"));
+                require(leftovers != null && leftovers.length == 0, "document staging leak");
+                return "content URI, duplicated descriptors and streams; restored guest, invalid input and cleanup";
+            } finally {
+                for (String name : Arrays.asList("document-in", "document-fd", "document-stream", "document-bad", "document-missing")) run(runtime.remove(name));
+                Files.deleteIfExists(source.toPath()); Files.deleteIfExists(backup.toPath()); Files.deleteIfExists(fdBackup.toPath());
+            }
+        });
+
         check(checks, "named_instances", () -> {
             File archive = new File(host.getCacheDir(), "alpine.tar.gz");
             File backup = new File(host.getCacheDir(), "instance-" + java.util.UUID.randomUUID() + ".tar.gz");

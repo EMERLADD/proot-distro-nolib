@@ -303,7 +303,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
         curl = curl_easy_init();
         if (!curl) { fclose(file); return problem("download_failed", "cannot initialize HTTPS"); }
         curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.15");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.16");
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -376,14 +376,15 @@ static int download(const struct distro *distro, const char *url, const char *pa
 
 static int copy_archive_at(const struct distro *distro, const char *source, int directory, const char *destination)
 {
-    int fd = open(source, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    int stream = !strcmp(source, "-");
+    int fd = stream ? dup(STDIN_FILENO) : open(source, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
     struct stat st;
     FILE *input, *output;
     if (fd < 0) return system_error("file_io_failed", "cannot open local archive", errno);
     if (fstat(fd, &st) < 0) {
         int saved = errno; close(fd); return system_error("file_io_failed", "cannot inspect local archive", saved);
     }
-    if (!S_ISREG(st.st_mode)) { close(fd); return problem("file_io_failed", "archive must be a regular file"); }
+    if (!S_ISREG(st.st_mode) && !(stream && (S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode)))) { close(fd); return problem("file_io_failed", "archive must be a regular file or input stream"); }
     input = fdopen(fd, "rb");
     if (!input) { int saved = errno; close(fd); return system_error("file_io_failed", "cannot open local archive", saved); }
     char buffer[65536];
@@ -1118,7 +1119,7 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
         free(base);
         return problem(missing ? "out_of_memory" : "directory_missing", "set PDN_ROOTFS_DIR or HOME") != 0;
     }
-    if (local_archive && !(archive = realpath(local_archive, NULL))) {
+    if (local_archive && !(archive = !strcmp(local_archive, "-") ? strdup("-") : realpath(local_archive, NULL))) {
         int saved = errno; free(base); return system_error("file_io_failed", "local archive not found", saved) != 0;
     }
     cwd = open(".", O_DIRECTORY | O_CLOEXEC);

@@ -124,7 +124,7 @@ static int help(void)
 #ifdef PDN_WITH_INSTALL
          "  pdn install DISTRO [--name INSTANCE] [--mirror NAME | --archive PATH]\n"
          "  pdn mirrors [NAME] [--json]\n  pdn list --available [--json]\n"
-         "  pdn backup NAME FILE.tar.gz\n  pdn restore NAME FILE.tar.gz\n"
+         "  pdn backup NAME FILE.tar.gz|-\n  pdn restore NAME FILE.tar.gz|-\n"
          "  pdn clone SOURCE TARGET\n  pdn rename SOURCE TARGET\n"
          "  pdn cache list [DISTRO] [--json]\n  pdn cache clear [DISTRO] --yes\n"
 #endif
@@ -143,7 +143,7 @@ static int help(void)
          "Names and commands ignore ASCII case; paths and guest arguments do not.\n"
          "Use -- /bin/sh -c 'COMMAND' for shell expressions.\n"
 #ifdef PDN_WITH_INSTALL
-         "Install: alpine, ubuntu, debian, arch (ARM64); --archive uses a pinned local tar.gz."
+         "Install: alpine, ubuntu, debian, arch (ARM64); --archive uses a pinned local tar.gz; use - for stdin."
 #else
          "Rootfs must already be extracted."
 #endif

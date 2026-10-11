@@ -66,6 +66,10 @@ public final class MainActivity extends Activity {
             append("交互终端已打开，可连续发送命令。");
         }));
         add(row, "关闭终端", () -> task(() -> { if (terminal != null) { terminal.close(); terminal = null; } }));
+        row = row(root);
+        add(row, "导入 Alpine 包", () -> chooseDocument(201));
+        add(row, "导入 rootfs", () -> chooseDocument(202));
+        add(row, "导出 Alpine", () -> chooseDocument(203));
         ScrollView scroll = new ScrollView(this);
         logs = new TextView(this);
         logs.setTypeface(Typeface.MONOSPACE);
@@ -86,6 +90,33 @@ public final class MainActivity extends Activity {
         add(row, "Ctrl-C", () -> task(() -> requireTerminal().send("\u0003")));
         add(row, "32×96", () -> task(() -> requireTerminal().resize(32, 96)));
         setContentView(root);
+    }
+
+    private void chooseDocument(int request) {
+        if (busy) return;
+        android.content.Intent intent = new android.content.Intent(request == 203
+                ? android.content.Intent.ACTION_CREATE_DOCUMENT : android.content.Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        intent.setType(request == 203 ? "application/gzip" : "*/*");
+        if (request == 203) intent.putExtra(android.content.Intent.EXTRA_TITLE, "alpine-backup.tar.gz");
+        startActivityForResult(intent, request);
+    }
+    @Override protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request < 201 || request > 203 || result != RESULT_OK || data == null || data.getData() == null) return;
+        android.net.Uri uri = data.getData();
+        task(() -> {
+            ProbeSuite.Capture capture = new ProbeSuite.Capture(this::append);
+            id.or.oo.pr.engine.PdnDocuments documents = suite.getRuntime().documents();
+            if (request == 203) documents.backup("alpine", getContentResolver(), uri, capture);
+            else {
+                String name = "imported-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+                if (request == 201) documents.installAs("alpine", name, getContentResolver(), uri, capture);
+                else documents.restore(name, getContentResolver(), uri, capture);
+                append("导入实例：" + name);
+            }
+            print(capture);
+        });
     }
 
     private LinearLayout row(LinearLayout parent) {

@@ -361,9 +361,9 @@ int pdn_archive(const char *name, const char *file, int restoring)
     char *destination = NULL, *parent = NULL, *temp = NULL;
     char stage[] = ".pdn-restore-XXXXXX";
     int basefd = -1, lock = -1, rootfd = -1, fd = -1, cwd = -1, outputfd = -1;
-    int count, staged = 0, result = 2;
+    int count, staged = 0, result = 2, stream = !strcmp(file, "-");
     struct stat st;
-    struct sigaction action = {0}, old_int, old_term;
+    struct sigaction action = {0}, old_int, old_term, old_pipe;
     struct archive *out = NULL;
     struct limits limits = {0};
     pdn_events_stage("preparing");
@@ -373,6 +373,8 @@ int pdn_archive(const char *name, const char *file, int restoring)
     sigemptyset(&action.sa_mask);
     sigaction(SIGINT, &action, &old_int);
     sigaction(SIGTERM, &action, &old_term);
+    action.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &action, &old_pipe);
     base = pdn_rootfs_base();
     if (!base || !*base) { rootfs_problem(ENOENT); goto done; }
     if (restoring && mkdirs(base) < 0) { rootfs_problem(errno); goto done; }
@@ -394,9 +396,9 @@ int pdn_archive(const char *name, const char *file, int restoring)
     if (restoring) {
         pdn_events_stage("restoring");
         pdn_events_progress(0, -1);
-        fd = open(file, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        fd = stream ? dup(STDIN_FILENO) : open(file, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0 || fstat(fd, &st) < 0) { system_error("file_io_failed", "archive must be a readable regular file", errno); goto done; }
-        if (!S_ISREG(st.st_mode)) { problem("archive_invalid", "archive must be a readable regular file"); goto done; }
+        if (!S_ISREG(st.st_mode) && !(stream && (S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode)))) { problem("archive_invalid", "archive must be a readable regular file or input stream"); goto done; }
         if (fchdir(basefd) < 0 || !mkdtemp(stage)) { system_error("file_io_failed", "cannot create restore directory", errno); goto done; }
         staged = 1;
         if (asprintf(&rootpath, "%s/%s", resolved, name) < 0) { problem("out_of_memory", "cannot allocate restore path"); goto done; }
@@ -428,6 +430,11 @@ int pdn_archive(const char *name, const char *file, int restoring)
         struct pdn_instance instance;
         if (pdn_instance_read(rootfd, &instance) < 0) { system_error("instance_metadata_failed", "cannot read backup instance metadata", errno); goto done; }
         if (asprintf(&rootpath, "%s/%s", resolved, found) < 0) { problem("out_of_memory", "cannot allocate backup path"); goto done; }
+        if (stream) {
+            if (isatty(STDOUT_FILENO)) { problem("archive_invalid", "redirect backup output to a file or pipe"); goto done; }
+            fd = dup(STDOUT_FILENO);
+            if (fd < 0) { system_error("file_io_failed", "cannot open backup output stream", errno); goto done; }
+        } else {
         destination = strdup(file);
         if (!destination) { problem("out_of_memory", "cannot allocate backup path"); goto done; }
         char *slash = strrchr(destination, '/');
@@ -452,6 +459,7 @@ int pdn_archive(const char *name, const char *file, int restoring)
         if (fchdir(outputfd) < 0) { system_error("file_io_failed", "cannot enter backup output directory", errno); goto done; }
         fd = mkstemp(temp);
         if (fd < 0) { system_error("file_io_failed", "cannot create backup output", errno); goto done; }
+        }
         pdn_events_stage("backing_up");
         pdn_events_progress(0, -1);
         out = archive_write_new();
@@ -463,14 +471,14 @@ int pdn_archive(const char *name, const char *file, int restoring)
         if (fstat(rootfd, &st) < 0) { system_error("file_io_failed", "backup failed; source may be changing or unreadable", errno); goto done; }
         if (pack(out, rootfd, "", st.st_dev, &limits, 0, rootpath) < 0) { fail("backup failed; source may be changing or unreadable"); goto done; }
         if (archive_write_close(out) != ARCHIVE_OK) { archive_problem(out, 1); goto done; }
-        if (fsync(fd) < 0) { system_error("file_io_failed", "backup failed; source may be changing or unreadable", errno); goto done; }
+        if (!stream && fsync(fd) < 0) { system_error("file_io_failed", "backup failed; source may be changing or unreadable", errno); goto done; }
         if (stopped) goto done;
         pdn_events_stage("publishing");
-        if (syscall(SYS_renameat2, outputfd, temp, outputfd, strrchr(destination, '/') + 1, 1) < 0) {
+        if (!stream && syscall(SYS_renameat2, outputfd, temp, outputfd, strrchr(destination, '/') + 1, 1) < 0) {
             if (errno == EEXIST) problem("file_exists", "cannot publish backup without replacing an existing file");
             else system_error("publish_failed", "cannot publish backup without replacing an existing file", errno); goto done;
         }
-        printf("Backup saved: %s\n", destination);
+        if (!stream) printf("Backup saved: %s\n", destination);
     }
     result = 0;
 done:
@@ -487,6 +495,7 @@ done:
     free(base); free(resolved); free(found); free(rootpath); free(destination); free(parent); free(temp);
     sigaction(SIGINT, &old_int, NULL);
     sigaction(SIGTERM, &old_term, NULL);
+    sigaction(SIGPIPE, &old_pipe, NULL);
     if (stopped) { pdn_events_cancelled(stopped); return 128 + stopped; }
     if (result && !pdn_events_has_error()) pdn_events_problem("file_io_failed", "Archive operation failed", "Check the selected archive and destination, then retry");
     if (result) fprintf(stderr, "pdn: %s failed; existing files were not replaced\n", restoring ? "restore" : "backup");

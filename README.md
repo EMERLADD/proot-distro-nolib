@@ -110,6 +110,8 @@ mkdir -p "$PROOT_TMP_DIR"
 
 当前工作目录不会自动决定 rootfs 位置。Android shell 的 `HOME` 可能是 `/`，因此应显式设置目录。完整步骤和 MT 示例见[Android shell 教程](docs/pdn-shizuku-android-shell.md)。
 
+AAR 支持系统文件选择器返回的 URI、FD 和流，用于压缩包导入与备份导出；示例 App 提供选择器按钮，详见 [AAR API](docs/pdn-aar-api.md)。
+
 ### 3.2 安装、登录和管理发行版
 
 ```sh

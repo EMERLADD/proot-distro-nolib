@@ -46,3 +46,5 @@ On failure, inspect `message`, `suggestion` and stderr. `code` classifies the ca
 See the [event protocol](pdn-events.en.md#proot-and-guest-startup-errors) for PRoot, loader, guest-shell and ELF-interpreter startup classifications. Compatibility and unspecialized failures may use other fallback codes; retain the original explanation for unknown codes.
 
 Java/Kotlin callers must check `PdnResult.isSuccess()`. Host failures throw `PdnHostException`, which extends `IOException`; inspect `getCode()`, `getSuggestion()` and `getCause()`. Argument errors and thread interruption retain their existing exceptions. See the [AAR API](pdn-aar-api.en.md).
+
+`host_document_io_failed`: Selected document/stream I/O failed. Check URI access, provider availability and storage; remove incomplete exports before retrying.
