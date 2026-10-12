@@ -2,9 +2,11 @@
 
 简体中文 | [English](pdn-aar-api.en.md) · [返回 README](../README.md)
 
-AAR 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独立终端和结构化发行版查询。最低 Android 9（API 28），目前提供 ARM64；宿主提供 Kotlin 标准库，不需要 Compose、协程或 Termux。
+AAR 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独立终端和结构化发行版查询。最低 Android 9（API 28），目前提供 ARM64；Maven 接入自动传递 Kotlin 标准库，本地 AAR 由宿主提供；不需要 Compose、协程或 Termux。
 
 ## 产物与目录
+
+可通过 Maven Central 使用 `implementation("io.github.emerladd:pdn-engine:0.6.18")`，Kotlin 标准库自动传递；完整仓库配置见 [App 接入教程](android-embedding.md)。下面的文件名用于本地 AAR 和直接 ELF 接入。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -171,7 +173,7 @@ List<PdnMirrorInfo> mirrors = catalog.mirrors("debian");
 
 ## 接入注意事项
 
-标准 AAR 与 lite 文件内容相同，均保留完整终端接口。宿主需提供 Kotlin 标准库。支持 R8 混淆，使用 Android 默认优化及 JNI 规则，无需保留整个 SDK。当前没有 Maven 发布、终端渲染控件或自动后台服务。可参考 [AAR 示例](../examples/aar-probe/README.md)。
+标准 AAR 与 lite 文件内容相同，均保留完整终端接口。本地 AAR 接入需提供 Kotlin 标准库；Maven 接入自动传递。支持 R8 混淆，使用 Android 默认优化及 JNI 规则，无需保留整个 SDK。当前没有终端渲染控件或自动后台服务。可参考 [AAR 示例](../examples/aar-probe/README.md)。
 
 ## 下载缓存
 
@@ -186,7 +188,6 @@ PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
 ```
 
 `pdn.cache()` / `cache("alpine")` 返回 JSON 查询的 `ProcessBuilder`；`pdn.clearCache()` 清理全部可识别格式的下载残片。快照和条目不可修改，条目提供 `getId()`、`getDistro()`、`getMirror()`、`getBytes()`、`getTotal()` 和 `getUpdatedAt()`；最后一项为 Unix 秒，未知来源字段可为 null。大小不是校验通过的证明。
-
 
 ## 系统文件选择器、FD 与流
 
@@ -212,7 +213,6 @@ FD 会被复制，SDK 关闭副本，不关闭传入 FD；副本与原 FD 共享
 输入先保存到宿主私有缓存的临时目录，再交给原生接口。安装仍验证固定发行版大小与 SHA256；任意自带 rootfs 包应使用 `restore`。备份先生成完整私有归档，成功后才打开 URI 输出并复制。需预留完整归档大小的额外私有缓存空间，正常完成、失败和可处理取消后清理暂存；进程被强杀或掉电后的遗留恢复暂未实现。
 
 `host_document_io_failed` 表示文档权限、提供者、存储空间或流读写失败。输出文档可能在导出失败后留有部分内容，无法保证跨提供者事务回滚；选择新文档保存，失败后删除不完整文件再重试。线程中断后同样检查输出文档。共享存储／SD 卡可以存放压缩包和备份，这不表示它们适合作为 Linux rootfs 安装目录。
-
 
 ## 中断安装清理接口
 

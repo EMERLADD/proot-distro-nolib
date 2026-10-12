@@ -43,7 +43,7 @@ The main paths above have been verified with **MT Manager, an independent APK bu
 | AAR | Kotlin / Java Android Apps that want packaged APIs |
 | Direct `.so` packaging | Android Apps that manage processes, events and PTY themselves |
 
-`nolib` means no dependency on Termux dynamic libraries. PDN still uses Android's `libc.so` and `libdl.so`; download, TLS and extraction components are statically linked. AAR integration also requires the host to provide the Kotlin standard library.
+`nolib` means no dependency on Termux dynamic libraries. PDN still uses Android's `libc.so` and `libdl.so`; download, TLS and extraction components are statically linked. AAR integration also needs the Kotlin standard library: Maven brings it transitively, while local AAR imports require it explicitly.
 
 ## 1. Requirements and permissions
 
@@ -171,13 +171,18 @@ See the [complete tutorial](docs/pdn-shizuku-android-shell.en.md) for original r
 
 ### 3.4 Integrate an App with the AAR
 
-1. Download the standard AAR, place it in the App's `libs/`, import it and provide the Kotlin standard library.
+1. Enable `mavenCentral()` in the dependency repositories in `settings.gradle.kts`, then add the dependency below. The Kotlin standard library is transitive. Alternatively, import a local AAR and provide the standard library manually.
 2. Configure network permission and native library extraction; provide executable, data, cache and project directories from the host.
 3. Prepare operations with `PdnRuntime`, then start tasks and receive events and results through `PdnOperations`.
 4. For interactive terminals, use `PdnTerminal`; the App renders the interface and handles the lifecycle.
 
-For ordinary task input, use `startInteractive()`, `task.writeStdin()` and `task.closeStdin()`; see the [stdin API](docs/pdn-aar-api.en.md#ordinary-task-input-stdin). Default tasks still close input.
+```kotlin
+dependencies {
+    implementation("io.github.emerladd:pdn-engine:0.6.18")
+}
+```
 
+For ordinary task input, use `startInteractive()`, `task.writeStdin()` and `task.closeStdin()`; see the [stdin API](docs/pdn-aar-api.en.md#ordinary-task-input-stdin). Default tasks still close input.
 
 ```java
 PdnRuntime pdn = new PdnRuntime(host);
@@ -254,8 +259,8 @@ See [frequently asked questions](docs/pdn-faq.en.md) for commands and troublesho
 
 - **Platform**: ARM64 Android is currently provided. There is no cross-architecture emulation or guarantee of compatibility with every ROM, App or permission environment.
 - **Permissions and isolation**: PRoot provides neither actual root nor a security isolation boundary. Shizuku/shell privileges remain restricted by Android; a standalone adb client inside Linux is outside the debugging flow described here.
-- **Execution performance**: The native ELF attempts acceleration when the host has no inherited seccomp filter. Existing filters, query failures and explicit disabling retain full syscall tracing. Ordinary Apps and the existing AAR keep the compatibility policy. Actual gains depend on the host and workload.
+- **System call compatibility**: The native ELF selects its tracing path based on inherited seccomp filters and inspection results. Existing filters, inspection failures and explicit disabling use full tracing. Ordinary Apps and the AAR use the compatibility policy.
 - **Distribution sources**: only built-in pinned archives are supported; offline installation also requires matching checksums. General OCI/Docker image import and automatic mirror latency ranking are not supported.
 - **UI and background execution**: the AAR provides terminal sessions, without a terminal rendering widget or full desktop. There is no automatic background session service. The tested Shizuku flow requires the host to stay foregrounded.
-- **Releases and updates**: Maven publication is not implemented. The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
+- **Releases and updates**: The advanced feature for automatically fetching source, patching and updating PRoot on the device is not implemented.
 - **Legacy pr interfaces**: the AAR excludes legacy pr native components. Retained compatibility classes with methods requiring old pr-cli cannot run those methods using only the PDN AAR.

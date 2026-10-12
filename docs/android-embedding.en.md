@@ -21,11 +21,34 @@ PDN and its loader should come from the same build. GitHub Releases also provide
 
 ## Integrating through the AAR
 
+Import through Maven Central by enabling it in `settings.gradle.kts`:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+```
+
+Add the dependency in the App module's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("io.github.emerladd:pdn-engine:0.6.18")
+}
+```
+
+The Kotlin standard library is transitive. Pure Java Apps can also use this dependency without the Kotlin Android plugin.
+
+Local AAR import remains available:
+
 Download `pdn-engine-VERSION.aar` from the same Release and place it in your App's `libs/` directory. Since 0.6.6, the AAR contains Java/Kotlin APIs and three native files: PDN, its accompanying loader and PTY JNI. All terminal-session APIs remain available; the host App supplies the terminal UI. The standard and lite artifacts have identical contents; import either one.
 
 ```kotlin
 dependencies {
-    implementation(files("libs/pdn-engine-0.6.13.aar"))
+    implementation(files("libs/pdn-engine-0.6.18.aar"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
 }
 ```

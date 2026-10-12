@@ -43,7 +43,7 @@
 | AAR | Kotlin / Java Android App，希望使用封装好的 API |
 | 直接打包 `.so` | 希望自行管理进程、事件和 PTY 的 Android App |
 
-`nolib` 表示不依赖 Termux 的动态库。PDN 仍使用 Android 系统 `libc.so`、`libdl.so`，下载、TLS 和解压组件静态链接；AAR 接入还需宿主提供 Kotlin 标准库。
+`nolib` 表示不依赖 Termux 的动态库。PDN 仍使用 Android 系统 `libc.so`、`libdl.so`，下载、TLS 和解压组件静态链接；AAR 接入需要 Kotlin 标准库：Maven 依赖自动传递，本地 AAR 接入需手动添加。
 
 ## 1. 运行条件与权限
 
@@ -171,13 +171,18 @@ rish -c 'cmd package path android'
 
 ### 3.4 通过 AAR 接入 App
 
-1. 下载标准 AAR，放入 App 的 `libs/`，导入 AAR 并提供 Kotlin 标准库。
+1. 在 `settings.gradle.kts` 的依赖仓库中启用 `mavenCentral()`，再添加下面的依赖；Kotlin 标准库会自动传递。也可下载本地 AAR，并手动提供标准库。
 2. 配置网络权限和原生库解压，从宿主提供程序、数据、缓存、项目目录。
 3. 通过 `PdnRuntime` 生成操作，再用 `PdnOperations` 启动任务、接收事件和结果。
 4. 需要交互终端时使用 `PdnTerminal`，由 App 绘制界面并处理生命周期。
 
-普通任务需要输入时，使用 `startInteractive()`、`task.writeStdin()` 和 `task.closeStdin()`，详见 [stdin 接口](docs/pdn-aar-api.md#普通任务输入stdin)。默认任务仍关闭输入。
+```kotlin
+dependencies {
+    implementation("io.github.emerladd:pdn-engine:0.6.18")
+}
+```
 
+普通任务需要输入时，使用 `startInteractive()`、`task.writeStdin()` 和 `task.closeStdin()`，详见 [stdin 接口](docs/pdn-aar-api.md#普通任务输入stdin)。默认任务仍关闭输入。
 
 ```java
 PdnRuntime pdn = new PdnRuntime(host);
@@ -254,8 +259,8 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 - **运行平台**：当前提供 ARM64 Android；不提供跨架构模拟，也不能保证所有 ROM、App 或权限环境可运行。
 - **权限和隔离**：PRoot 不提供真实 root，也不是安全隔离边界。Shizuku/shell 权限同样受 Android 限制；Linux 内的独立 adb 客户端不在这里描述的调试链路支持范围。
-- **执行性能**：原始 ELF 在宿主无继承 seccomp 过滤器时自动尝试加速；已有过滤器、查询失败或显式禁用时保留完整追踪。普通 App 与现有 AAR 继续兼容策略。实际加速效果取决于宿主环境和任务。
+- **系统调用兼容性**：原始 ELF 根据宿主已有的 seccomp 过滤器及查询结果选择追踪路径；已有过滤器、查询失败或显式禁用时使用完整追踪。普通 App 与 AAR 使用兼容策略。
 - **发行版来源**：只支持内置的固定归档；离线安装也需要匹配校验值。暂不支持通用 OCI/Docker 镜像导入和自动镜像测速。
 - **界面与后台**：AAR 提供终端会话能力，不附带终端渲染控件或完整桌面；没有自动后台会话服务。使用 Shizuku 入口时应保持宿主前台。
-- **发布与更新**：Maven 发布尚未实现；设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
+- **发布与更新**：设备本地自动拉源码、打补丁并更新 PRoot 的高级功能尚未实现。
 - **旧 pr 接口**：AAR 不包含旧 pr 原生组件；保留的兼容类中，依赖旧 pr-cli 的方法不能只靠 PDN AAR 运行。

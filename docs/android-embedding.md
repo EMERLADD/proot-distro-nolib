@@ -23,11 +23,34 @@ PDN 和 loader 应来自同一次构建。GitHub Release 已提供独立 AAR；�
 
 ## 通过 AAR 接入
 
+推荐通过 Maven Central 导入。在 `settings.gradle.kts` 的仓库配置中启用 Maven Central：
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+```
+
+在 App 模块的 `build.gradle.kts` 中添加：
+
+```kotlin
+dependencies {
+    implementation("io.github.emerladd:pdn-engine:0.6.18")
+}
+```
+
+Kotlin 标准库随 Maven 依赖自动传递；纯 Java App 也可使用，无需添加 Kotlin Android 插件。
+
+本地 AAR 仍可直接导入：
+
 从同一 Release 下载 `pdn-engine-版本号.aar`，放到 App 的 `libs/`。0.6.6 起 AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个原生文件，保留全部终端会话接口；终端界面由宿主 App 提供。标准版与 lite 内容相同，选一个导入。
 
 ```kotlin
 dependencies {
-    implementation(files("libs/pdn-engine-0.6.13.aar"))
+    implementation(files("libs/pdn-engine-0.6.18.aar"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
 }
 ```
@@ -99,7 +122,6 @@ dependencies {
 宿主需提供 Kotlin 标准库，并保留上面的 ARM64、SDK、原生库解压及网络权限配置。
 Java 工程也可使用 Java 监听器 API；Kotlin 实现需要的运行时依赖仍须保留。
 AAR 已包含原生程序，不要再重复放同名 `.so`；引擎 AAR 不包含终端 UI 模块。
-
 
 ```kotlin
 import android.content.Context

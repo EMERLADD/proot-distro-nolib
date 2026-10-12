@@ -2,9 +2,11 @@
 
 [简体中文](pdn-aar-api.md) | English · [Back to README](../README.en.md)
 
-The AAR packages PDN's native components and provides configuration objects, asynchronous tasks, independent terminals, and structured distribution queries. It requires Android 9 (API 28) or later and currently supports ARM64. The host supplies the Kotlin standard library; Compose, coroutines, and Termux are not required.
+The AAR packages PDN's native components and provides configuration objects, asynchronous tasks, independent terminals, and structured distribution queries. It requires Android 9 (API 28) or later and currently supports ARM64. Maven integration brings the Kotlin standard library transitively; local AAR imports require the host to supply it. Compose, coroutines, and Termux are not required.
 
 ## Artifacts and layout
+
+Use `implementation("io.github.emerladd:pdn-engine:0.6.18")` through Maven Central; the Kotlin standard library is transitive. See [App integration](android-embedding.en.md) for repository configuration. The filenames below apply to local AAR and direct ELF integration.
 
 | File | Contents |
 | --- | --- |
@@ -171,7 +173,7 @@ Queries use version 1 JSON envelopes from native `list --json`, `list --availabl
 
 ## Integration notes
 
-The standard and lite AAR files are identical and retain all terminal APIs. The host must provide the Kotlin standard library. R8 is supported with Android's default optimization and JNI rules; retaining the entire SDK is unnecessary. Maven publication, terminal rendering widgets and an automatic background service are not provided. See the [AAR example](../examples/aar-probe/README.en.md).
+The standard and lite AAR files are identical and retain all terminal APIs. Local AAR imports require the Kotlin standard library; Maven integration brings it transitively. R8 is supported with Android's default optimization and JNI rules; retaining the entire SDK is unnecessary. Terminal rendering widgets and an automatic background service are not provided. See the [AAR example](../examples/aar-probe/README.en.md).
 
 ## Download caches
 
@@ -186,7 +188,6 @@ PdnTask task = operations.start(pdn.clearCache("alpine"), listener);
 ```
 
 `pdn.cache()` / `cache("alpine")` returns a JSON-query `ProcessBuilder`; `pdn.clearCache()` clears all download partials with recognized filenames. Snapshots and entries are immutable. Entries expose `getId()`, `getDistro()`, `getMirror()`, `getBytes()`, `getTotal()` and `getUpdatedAt()` (Unix seconds); unknown source fields may be null. Size does not establish checksum validity.
-
 
 ## Android document picker, descriptors and streams
 
@@ -212,7 +213,6 @@ Descriptors are duplicated and only the duplicate is closed; both share the curr
 Input is staged in private cache before native processing. Install still checks the pinned distribution size and SHA256; use `restore` for custom rootfs archives. Backup completes a private archive before opening a URI destination. Reserve extra private cache space for a complete archive. Staging is removed on completion, failure and handled interruption; SIGKILL/power-loss recovery is not implemented.
 
 `host_document_io_failed` covers document access, provider, storage and stream failures. Failed or interrupted export may leave a partial output document; cross-provider transactional rollback is unavailable. Create a new output document and delete incomplete output before retrying. Shared storage/SD cards can hold archives and backups, but this does not make them suitable rootfs installation locations.
-
 
 ## Interrupted installation cleanup API
 

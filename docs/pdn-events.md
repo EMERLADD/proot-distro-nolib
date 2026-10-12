@@ -162,4 +162,4 @@ proot-engine-*.aar
 
 `libptyjni.so` 是给交互终端使用的 JNI 共享库。标准 AAR 仅包含上述三项原生文件，`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名。旧 Java/Kotlin 类保留接口兼容，但依赖旧 pr-cli 的方法需要宿主另行提供原生程序；PDN 操作与终端应使用当前 API。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
 
-宿主导入 AAR 后，还需配置 Kotlin 标准库依赖、ARM64、minSdk 28、原生库解压和联网权限。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
+宿主导入 AAR 后，还需配置 ARM64、minSdk 28、原生库解压和联网权限。Maven 接入自动传递 Kotlin 标准库，本地 AAR 需手动提供。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
