@@ -41,6 +41,9 @@ On failure, inspect `message`, `suggestion` and stderr. `code` classifies the ca
 | `host_cache_failed` / `host_event_channel_failed` | Host cache or event channel unavailable; check the App private directory. |
 | `host_process_start_failed` | Native process startup failed; check nativeLibraryDir, native-library extraction and loader. |
 | `host_output_failed` / `host_cleanup_failed` | Output reading or cleanup failed; inspect the original cause and suppressed exceptions. |
+| `host_input_disabled` / `host_input_closed` | Enable input with `startInteractive()`; start a new task after close, exit or cancellation. |
+| `host_input_backpressure` | Write exceeds 64 KiB or total buffering exceeds 256 KiB; the entire write is rejected. Split and retry after reading resumes. |
+| `host_input_failed` | Pipe write or close failed; inspect the cause and whether the program still reads stdin. |
 | `host_protocol_error` / `host_catalog_protocol` | Invalid or incomplete event/query format; check API and native program versions. |
 
 See the [event protocol](pdn-events.en.md#proot-and-guest-startup-errors) for PRoot, loader, guest-shell and ELF-interpreter startup classifications. Compatibility and unspecialized failures may use other fallback codes; retain the original explanation for unknown codes.

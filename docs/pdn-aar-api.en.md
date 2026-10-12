@@ -74,6 +74,27 @@ The parameters and return types of `install()` and `installAs()` are unchanged; 
 
 The cache lives in `.pdn-downloads` under the rootfs management directory, keyed separately by the pinned SHA256 and mirror URL digest. Switching mirrors never splices bytes. Invalid Range responses, ignored Range requests or HTTP 416 trigger at most one restart from zero. Full-size and SHA256 verification are required before extraction; corrupt caches are removed and successful caches consumed. Ordinary extraction staging is still cleaned. ETag / If-Range is not supported. Query with `pdn.catalog().cache()` and clear with `pdn.clearCache()`; conflicting installation locks return an error. See [distribution management](pdn-distributions.en.md).
 
+## Ordinary task input (stdin)
+
+`start()` and synchronous `run()` close stdin immediately by default. Use `startInteractive()` to interact through a normal pipe, with the same timeout and callback Executor overloads.
+
+```java
+PdnTask task = operations.startInteractive(
+    pdn.exec("alpine", Arrays.asList("/bin/sh", "-c", "cat")), listener);
+task.writeStdin("hello\n");
+task.writeStdin(new byte[]{65, 66, 67});
+task.closeStdin();
+// PdnResult result = task.await();
+```
+
+Java and Kotlin use the same methods. Strings are UTF-8 without an implicit newline; byte arrays are copied. Input can be queued before process startup or sent and closed from output callbacks. Never await the same task from its callback; call `await()` only on a worker thread. A successful write means queue acceptance, not that the guest has consumed the bytes.
+
+Writes are sent in order. `closeStdin()` is nonblocking and idempotent: it drains accepted input and then closes the pipe to deliver EOF. Subsequent writes are rejected. `isStdinOpen()` is only a snapshot. Exit, cancellation and runtime timeout seal input and clean up the pipe.
+
+Each write is limited to 64 KiB; queued and in-flight input together are limited to 256 KiB. Exceeding either limit rejects the entire write with `host_input_backpressure`. Split input into chunks and retry after the program continues reading, without a busy loop. Disabled input throws `host_input_disabled`; writes after close, exit or cancellation throw `host_input_closed`. These rejections are returned to the caller and do not automatically fail the task. Pipe write/close failures reach task `onFailure` and `await()` as `host_input_failed`.
+
+A stdin pipe has no terminal line discipline, window size or terminal signals; use the PTY API below for nano and interactive shells. Raw ELF already inherits host stdin without new flags. Direct `.so` integrations own writes and closure through `Process.getOutputStream()`.
+
 ## Independent terminals
 
 ```java

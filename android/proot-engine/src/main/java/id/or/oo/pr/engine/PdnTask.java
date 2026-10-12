@@ -22,6 +22,7 @@ public final class PdnTask {
     private final ProcessBuilder builder;
     private final PdnListener listener;
     private final Executor callbacks;
+    private final PdnTaskInput input;
     private final CountDownLatch completed = new CountDownLatch(1);
     private Thread worker;
     private boolean finishing;
@@ -31,10 +32,15 @@ public final class PdnTask {
     private Exception failure;
 
     PdnTask(PdnOperations operations, ProcessBuilder builder, PdnListener listener, long timeoutMillis, Executor callbacks, Executor workers) {
+        this(operations, builder, listener, timeoutMillis, callbacks, workers, false);
+    }
+
+    PdnTask(PdnOperations operations, ProcessBuilder builder, PdnListener listener, long timeoutMillis, Executor callbacks, Executor workers, boolean interactive) {
         this.operations = operations;
         this.builder = builder;
         this.listener = Objects.requireNonNull(listener);
         this.callbacks = callbacks;
+        this.input = interactive ? new PdnTaskInput() : null;
         if (timeoutMillis < 0) throw new IllegalArgumentException("Timeout cannot be negative");
         if (timeoutMillis > 0) timeout = TIMER.schedule(() -> stop(true), timeoutMillis, TimeUnit.MILLISECONDS);
         try { workers.execute(this::execute); }
@@ -51,12 +57,41 @@ public final class PdnTask {
 
     public boolean cancel() { return stop(false); }
 
+    public void writeStdin(String text) throws PdnHostException {
+        Objects.requireNonNull(text);
+        if (text.length() > PdnTaskInput.MAX_WRITE) throw new PdnHostException("host_input_backpressure",
+                "Task input write exceeds 64 KiB", "Split input into smaller chunks", null);
+        writeStdin(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public synchronized void writeStdin(byte[] bytes) throws PdnHostException {
+        Objects.requireNonNull(bytes);
+        requireInput();
+        if (finishing || stopped != null) throw PdnTaskInput.closed();
+        input.write(bytes);
+    }
+
+    public synchronized void closeStdin() throws PdnHostException {
+        requireInput();
+        input.closeInput();
+    }
+
+    public synchronized boolean isStdinOpen() {
+        return input != null && !finishing && stopped == null && input.isOpen();
+    }
+
+    private void requireInput() throws PdnHostException {
+        if (input == null) throw new PdnHostException("host_input_disabled", "Task stdin was not enabled",
+                "Use PdnOperations.startInteractive to enable task input", null);
+    }
+
     private boolean stop(boolean timedOut) {
         synchronized (this) {
             if (finishing || stopped != null) return false;
             stopped = new PdnHostException(timedOut ? "host_operation_timeout" : "host_operation_cancelled",
                     timedOut ? "Operation timed out" : "Operation cancelled",
                     timedOut ? "Increase the timeout or retry the operation" : "Start a new operation to retry", null);
+            if (input != null) input.end();
             if (worker != null) worker.interrupt();
         }
         return true;
@@ -77,7 +112,7 @@ public final class PdnTask {
                 public void onEvent(PdnEvent event) { dispatch(() -> listener.onEvent(event)); }
                 public void onStdout(byte[] data) { dispatch(() -> listener.onStdout(data)); }
                 public void onStderr(byte[] data) { dispatch(() -> listener.onStderr(data)); }
-            });
+            }, input);
         } catch (CallbackRejectedException caught) { error = (Exception) caught.getCause(); }
         catch (Exception caught) { error = caught; }
         catch (Error caught) { error = new RuntimeException("Operation failed", caught); }
@@ -134,6 +169,7 @@ public final class PdnTask {
     private void finishRejected(Exception error) {
         synchronized (this) {
             finishing = true;
+            if (input != null) input.end();
             if (timeout != null) timeout.cancel(false);
             if (stopped != null) {
                 stopped.addSuppressed(error);
@@ -163,6 +199,7 @@ public final class PdnTask {
         synchronized (this) {
             if (finishing) return;
             finishing = true;
+            if (input != null) input.end();
             if (timeout != null) timeout.cancel(false);
             if (stopped != null) {
                 if (error != null) stopped.addSuppressed(error);

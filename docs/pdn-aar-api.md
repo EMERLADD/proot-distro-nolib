@@ -74,6 +74,27 @@ Executor 必须执行已接受的回调，监听器必须返回；正在执行�
 
 缓存位于 rootfs 管理目录下的 `.pdn-downloads`，按固定 SHA256 与镜像 URL 摘要分开保存；切换镜像不会拼接字节。Range 响应不符合要求、服务器忽略 Range 或返回 416 时，最多从零重启一次。完整大小和 SHA256 校验通过后才解压，损坏缓存删除，成功缓存消费；普通解压暂存目录仍会清理。暂不支持 ETag / If-Range。通过 `pdn.catalog().cache()` 查询并用 `pdn.clearCache()` 清理；安装锁被占用时清理返回错误。详见[发行版管理](pdn-distributions.md)。
 
+## 普通任务输入（stdin）
+
+`start()` 和同步 `run()` 默认立即关闭 stdin。需要与普通管道程序交互时，显式使用 `startInteractive()`，它支持同样的运行超时和回调 Executor 参数。
+
+```java
+PdnTask task = operations.startInteractive(
+    pdn.exec("alpine", Arrays.asList("/bin/sh", "-c", "cat")), listener);
+task.writeStdin("hello\n");
+task.writeStdin(new byte[]{65, 66, 67});
+task.closeStdin();
+// PdnResult result = task.await();
+```
+
+Java/Kotlin 共用这些方法。字符串按 UTF-8 编码，不自动添加换行；字节数组会被复制。可以在进程启动前排队输入，或在输出回调中发送输入和关闭管道；不要在回调中等待同一个任务完成，`await()` 只在工作线程调用。写入成功表示入队，不保证 guest 已读取。
+
+输入按写入顺序发送。`closeStdin()` 不阻塞，已接受的输入发送完后关闭管道、传递 EOF；重复调用无副作用，关闭后拒绝新写入。`isStdinOpen()` 仅是当前状态快照。退出、取消和运行超时均封闭输入并回收管道。
+
+单次写入最多 64 KiB，排队及正在发送的输入合计最多 256 KiB。超过上限会整次拒绝并抛出 `host_input_backpressure`；分块发送，在程序继续读取后再重试，避免忙循环。未启用输入时抛出 `host_input_disabled`；关闭、退出或取消后写入抛出 `host_input_closed`。这些拒绝直接返回调用方，不使任务自动失败。底层管道写入／关闭失败通过任务 `onFailure` 和 `await()` 提供 `host_input_failed`。
+
+stdin 管道不提供终端行规程、窗口大小或终端信号；nano、交互 shell 等仍使用下面的 PTY 接口。原始 ELF 已继承宿主 stdin，无需新增参数；直接打包 `.so` 时由接入方通过 `Process.getOutputStream()` 自行写入和关闭 stdin。
+
 ## 独立终端
 
 ```java

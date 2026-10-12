@@ -104,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.17"), "version: " + c.stderr());
-            return "native PDN 0.6.17, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.18"), "version: " + c.stderr());
+            return "native PDN 0.6.18, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -129,6 +129,7 @@ public final class ProbeSuite {
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "cache_management", () -> verifyCacheManagement());
         check(checks, "interrupted_install_recovery", () -> verifyRecovery());
+        check(checks, "interactive_task_stdin", () -> verifyTaskInput());
         check(checks, "archive_stdio", () -> {
             java.lang.Process exporter = runtime.processBuilder(Arrays.asList("backup", "alpine", "-")).start();
             byte[] archive;
@@ -446,6 +447,47 @@ public final class ProbeSuite {
         Files.write(new File(context.getFilesDir(), "acceptance.json").toPath(), report.toString(2).getBytes(StandardCharsets.UTF_8));
         log.accept(success ? "ALL CHECKS PASSED" : "CHECKS FAILED — see acceptance.json");
         return report;
+    }
+
+    private String verifyTaskInput() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        java.util.concurrent.CountDownLatch prompt = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger completed = new java.util.concurrent.atomic.AtomicInteger();
+        id.or.oo.pr.engine.PdnTask task = operations.startInteractive(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c",
+                "printf READY; IFS= read -r line; printf 'INPUT:%s\\n' \"$line\"; cat")), new PdnListener() {
+            public void onStdout(byte[] bytes) { output.write(bytes, 0, bytes.length); prompt.countDown(); }
+            public void onComplete(PdnResult result) { completed.incrementAndGet(); }
+        }, 15000);
+        try {
+            require(prompt.await(10, java.util.concurrent.TimeUnit.SECONDS) && task.isStdinOpen() && !task.isDone(), "interactive input readiness");
+            task.writeStdin("hello 世界\n"); task.writeStdin("binary bytes\n".getBytes(StandardCharsets.UTF_8));
+            task.closeStdin(); task.closeStdin();
+            require(task.await(15, java.util.concurrent.TimeUnit.SECONDS).isSuccess() && completed.get() == 1, "interactive completion");
+            require(output.toString("UTF-8").contains("INPUT:hello 世界") && output.toString("UTF-8").contains("binary bytes"), "stdin data: " + output.toString("UTF-8"));
+            try { task.writeStdin("late"); throw new IllegalStateException("post-exit input accepted"); }
+            catch (id.or.oo.pr.engine.PdnHostException expected) { require("host_input_closed".equals(expected.getCode()), "closed input classification"); }
+        } finally { task.cancel(); }
+        id.or.oo.pr.engine.PdnTask ordinary = operations.start(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", "if read line; then exit 23; fi")), new PdnListener() {});
+        require(ordinary.await(15, java.util.concurrent.TimeUnit.SECONDS).isSuccess() && !ordinary.isStdinOpen(), "default EOF preserved");
+        try { ordinary.writeStdin("x"); throw new IllegalStateException("default input accepted"); }
+        catch (id.or.oo.pr.engine.PdnHostException expected) { require("host_input_disabled".equals(expected.getCode()), "disabled input classification"); }
+        for (boolean timeout : new boolean[]{false, true}) {
+            java.util.concurrent.CountDownLatch waiting = new java.util.concurrent.CountDownLatch(1);
+            id.or.oo.pr.engine.PdnTask stopped = operations.startInteractive(runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", "printf READY; cat")), new PdnListener() {
+                public void onStdout(byte[] bytes) { waiting.countDown(); }
+            }, timeout ? 2500 : 0);
+            try {
+                require(waiting.await(10, java.util.concurrent.TimeUnit.SECONDS), "waiting input prompt");
+                if (!timeout) require(stopped.cancel(), "input cancellation");
+                try { stopped.await(15, java.util.concurrent.TimeUnit.SECONDS); throw new IllegalStateException("stopped input succeeded"); }
+                catch (java.util.concurrent.ExecutionException expected) {
+                    require(expected.getCause() instanceof id.or.oo.pr.engine.PdnHostException
+                            && (timeout ? "host_operation_timeout" : "host_operation_cancelled").equals(((id.or.oo.pr.engine.PdnHostException)expected.getCause()).getCode()), "cancel/timeout classification: " + expected);
+                }
+                require(!stopped.isStdinOpen(), "cancelled input remains open");
+            } finally { stopped.cancel(); }
+        }
+        return "ordinary EOF preserved; interactive prompt, UTF-8/binary input, ordered EOF, exit refusal and cancel/timeout cleanup";
     }
 
     private String verifyRecovery() throws Exception {

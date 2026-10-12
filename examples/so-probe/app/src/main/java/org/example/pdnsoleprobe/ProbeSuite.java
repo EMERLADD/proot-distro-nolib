@@ -101,8 +101,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.17"), "version: " + c.stderr());
-            return "native PDN 0.6.17, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.18"), "version: " + c.stderr());
+            return "native PDN 0.6.18, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -126,6 +126,19 @@ public final class ProbeSuite {
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "cache_management", () -> verifyCacheManagement());
         check(checks, "interrupted_install_recovery", () -> verifyRecovery());
+        check(checks, "guest_stdin_pipe", () -> {
+            java.lang.Process process = runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", "IFS= read -r line; printf 'INPUT:%s' \"$line\"; cat")).start();
+            try {
+                try (java.io.OutputStream input = process.getOutputStream()) {
+                    input.write("hello 世界\n".getBytes(StandardCharsets.UTF_8)); input.write(new byte[]{65, 66, 67});
+                }
+                String output = new String(readStream(process.getInputStream()), StandardCharsets.UTF_8);
+                String errors = new String(readStream(process.getErrorStream()), StandardCharsets.UTF_8);
+                require(process.waitFor() == 0 && output.equals("INPUT:hello 世界ABC"), "guest stdin pipe: " + output + errors);
+                return "direct ELF host owns stdin; guest reads UTF-8 and binary input then EOF";
+            } finally { process.destroyForcibly(); }
+        });
+
         check(checks, "archive_stdio", () -> {
             java.lang.Process exporter = runtime.processBuilder(Arrays.asList("backup", "alpine", "-")).start();
             byte[] archive;

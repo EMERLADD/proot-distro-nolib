@@ -182,6 +182,9 @@ See the [complete tutorial](docs/pdn-shizuku-android-shell.en.md) for original r
 3. Prepare operations with `PdnRuntime`, then start tasks and receive events and results through `PdnOperations`.
 4. For interactive terminals, use `PdnTerminal`; the App renders the interface and handles the lifecycle.
 
+For ordinary task input, use `startInteractive()`, `task.writeStdin()` and `task.closeStdin()`; see the [stdin API](docs/pdn-aar-api.en.md#ordinary-task-input-stdin). Default tasks still close input.
+
+
 ```java
 PdnRuntime pdn = new PdnRuntime(host);
 PdnOperations operations = new PdnOperations(pdn);

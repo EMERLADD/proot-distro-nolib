@@ -182,6 +182,9 @@ rish -c 'cmd package path android'
 3. 通过 `PdnRuntime` 生成操作，再用 `PdnOperations` 启动任务、接收事件和结果。
 4. 需要交互终端时使用 `PdnTerminal`，由 App 绘制界面并处理生命周期。
 
+普通任务需要输入时，使用 `startInteractive()`、`task.writeStdin()` 和 `task.closeStdin()`，详见 [stdin 接口](docs/pdn-aar-api.md#普通任务输入stdin)。默认任务仍关闭输入。
+
+
 ```java
 PdnRuntime pdn = new PdnRuntime(host);
 PdnOperations operations = new PdnOperations(pdn);

@@ -2,6 +2,10 @@
 
 简体中文 | [English](CHANGELOG.en.md) · [返回 README](README.md)
 
+## v0.6.18 — 2026-10-12
+
+增加普通任务 stdin 接口：`startInteractive()`、UTF-8／二进制 `writeStdin()`、有序 EOF 的 `closeStdin()` 与 `isStdinOpen()`。输入在后台发送，有界缓冲提供明确的错误分类；退出、取消和超时清理管道。默认任务关闭 stdin 的行为及完整 PTY 功能保持一致。
+
 ## v0.6.17 — 2026-10-12
 
 增加中断安装的检查与显式清理：持久记录 UUID、PID、启动时间与 boot ID，检查安装／会话锁，保留未知条目、已安装系统和下载缓存。提供 Java/Kotlin 结构化查询及清理接口，示例 App 增加检查、清理按钮。

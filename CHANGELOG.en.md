@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
+## v0.6.18 — 2026-10-12
+
+Add explicit ordinary task stdin through `startInteractive()`, UTF-8/binary `writeStdin()`, ordered EOF via `closeStdin()` and `isStdinOpen()`. Bounded background input reports rejection and pipe failures; exit, cancellation and timeout clean up the pipe. Default stdin closure and full PTY support are preserved.
+
 ## v0.6.17 — 2026-10-12
 
 Add interrupted-install inspection and explicit cleanup with persistent UUID, PID, start ticks and boot ID plus installation/session locks. Preserve unknown entries, installed systems and download cache. Java/Kotlin queries and cleanup builders are available, with example App controls.

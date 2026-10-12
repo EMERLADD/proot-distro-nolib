@@ -61,6 +61,24 @@ public final class PdnOperations {
         return new PdnTask(this, copyBuilder(builder), listener, timeoutMillis, callbackExecutor, Objects.requireNonNull(workerExecutor));
     }
 
+    public PdnTask startInteractive(ProcessBuilder builder, PdnListener listener) {
+        return startInteractive(builder, listener, 0, null);
+    }
+    public PdnTask startInteractive(ProcessBuilder builder, PdnListener listener, java.util.concurrent.Executor callbackExecutor) {
+        return startInteractive(builder, listener, 0, callbackExecutor);
+    }
+    public PdnTask startInteractive(ProcessBuilder builder, PdnListener listener, long timeoutMillis) {
+        return startInteractive(builder, listener, timeoutMillis, null);
+    }
+    public PdnTask startInteractive(ProcessBuilder builder, PdnListener listener, long timeoutMillis, java.util.concurrent.Executor callbackExecutor) {
+        return startInteractive(builder, listener, timeoutMillis, callbackExecutor, PdnTask.workers());
+    }
+    PdnTask startInteractive(ProcessBuilder builder, PdnListener listener, long timeoutMillis,
+            java.util.concurrent.Executor callbackExecutor, java.util.concurrent.Executor workerExecutor) {
+        return new PdnTask(this, copyBuilder(builder), Objects.requireNonNull(listener), timeoutMillis,
+                callbackExecutor, Objects.requireNonNull(workerExecutor), true);
+    }
+
     private static ProcessBuilder copyBuilder(ProcessBuilder original) {
         Objects.requireNonNull(original);
         if (original.redirectErrorStream() || original.redirectInput() != ProcessBuilder.Redirect.PIPE
@@ -76,6 +94,10 @@ public final class PdnOperations {
     }
 
     public PdnResult run(ProcessBuilder original, PdnListener listener) throws IOException, InterruptedException {
+        return run(original, listener, null);
+    }
+
+    PdnResult run(ProcessBuilder original, PdnListener listener, PdnTaskInput input) throws IOException, InterruptedException {
         Objects.requireNonNull(listener);
         ProcessBuilder builder = copyBuilder(original);
         File cache = new File(runtime.environment().get("PROOT_TMP_DIR"));
@@ -113,17 +135,19 @@ public final class PdnOperations {
                 throw hostFailure("host_process_start_failed", "Cannot start operation process",
                         "Check that the native executable exists and can be executed", failure);
             }
-            try { process.getOutputStream().close(); }
+            try { if (input == null) process.getOutputStream().close(); }
             catch (IOException failure) {
                 throw hostFailure("host_output_failed", "Cannot close operation input stream",
                         "Retry the operation and check the native process", failure);
             }
             stdout = reader(process, process.getInputStream(), false, queue);
             stderr = reader(process, process.getErrorStream(), true, queue);
+            if (input != null) input.attach(process);
             Tail tail = new Tail(id, events);
             int completedStreams = 0;
             long drainDeadline = 0;
             while (process.isAlive() || completedStreams < 2 || !queue.isEmpty()) {
+                if (input != null) input.check();
                 if (!process.isAlive()) {
                     if (drainDeadline == 0) drainDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
                     if (queue.isEmpty() && System.nanoTime() > drainDeadline) throw hostFailure("host_output_failed", "Operation streams did not finish after process exit",
@@ -145,6 +169,7 @@ public final class PdnOperations {
                 }
             }
             int status = process.waitFor();
+            if (input != null) input.check();
             tail.read(listener);
             PdnResult result = new PdnResult(id, status, tail.finalEvent(status));
             listener.onComplete(result);
@@ -154,7 +179,15 @@ public final class PdnOperations {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
             throw failure;
         } finally {
+            if (input != null) input.end();
             Throwable cleanupFailure = cleanup(process, stdout, stderr);
+            if (input != null) {
+                try { input.join(); input.check(); }
+                catch (PdnHostException failure) {
+                    if (cleanupFailure == null) cleanupFailure = failure;
+                    else cleanupFailure.addSuppressed(failure);
+                }
+            }
             if (events != null) {
                 try { events.close(); }
                 catch (IOException | SecurityException failure) {
@@ -168,10 +201,10 @@ public final class PdnOperations {
                 else cleanupFailure.addSuppressed(failure);
             }
             if (cleanupFailure != null) {
-                PdnHostException structured = hostFailure("host_cleanup_failed", "Cannot clean up operation resources",
+                PdnHostException structured = cleanupFailure instanceof PdnHostException ? (PdnHostException) cleanupFailure : hostFailure("host_cleanup_failed", "Cannot clean up operation resources",
                         "Check cache permissions and retry after stopping the native process", cleanupFailure);
                 if (primaryFailure == null) throw structured;
-                primaryFailure.addSuppressed(structured);
+                if (primaryFailure != structured) primaryFailure.addSuppressed(structured);
             }
         }
     }

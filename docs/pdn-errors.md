@@ -41,6 +41,9 @@
 | `host_cache_failed` / `host_event_channel_failed` | 宿主缓存或事件通道不可用；检查 App 私有目录。 |
 | `host_process_start_failed` | 无法启动原生程序；检查 nativeLibraryDir、原生库解压和 loader。 |
 | `host_output_failed` / `host_cleanup_failed` | 输出读取或资源清理失败；检查原始 cause 与 suppressed 异常。 |
+| `host_input_disabled` / `host_input_closed` | 使用 `startInteractive()` 启用输入；关闭、退出或取消后需启动新任务。 |
+| `host_input_backpressure` | 单次输入超过 64 KiB 或总缓冲超过 256 KiB；整次拒绝，分块并等待读取后重试。 |
+| `host_input_failed` | 管道写入或关闭失败；检查 cause，确认程序仍读取 stdin。 |
 | `host_protocol_error` / `host_catalog_protocol` | 事件或查询格式无效、不完整；确认 API 与原生程序版本匹配。 |
 
 PRoot、loader、guest shell 和 ELF 动态加载器的启动分类见[事件协议](pdn-events.md#proot-与-guest-启动错误)。兼容旧版本或无法进一步细分时可能返回其他兜底分类，调用方应保留未知 code 的原始说明。
