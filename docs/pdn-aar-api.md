@@ -191,3 +191,16 @@ FD 会被复制，SDK 关闭副本，不关闭传入 FD；副本与原 FD 共享
 输入先保存到宿主私有缓存的临时目录，再交给原生接口。安装仍验证固定发行版大小与 SHA256；任意自带 rootfs 包应使用 `restore`。备份先生成完整私有归档，成功后才打开 URI 输出并复制。需预留完整归档大小的额外私有缓存空间，正常完成、失败和可处理取消后清理暂存；进程被强杀或掉电后的遗留恢复暂未实现。
 
 `host_document_io_failed` 表示文档权限、提供者、存储空间或流读写失败。输出文档可能在导出失败后留有部分内容，无法保证跨提供者事务回滚；选择新文档保存，失败后删除不完整文件再重试。线程中断后同样检查输出文档。共享存储／SD 卡可以存放压缩包和备份，这不表示它们适合作为 Linux rootfs 安装目录。
+
+
+## 中断安装清理接口
+
+```java
+PdnRecoveryInfo info = pdn.catalog().recovery();
+List<PdnRecoveryEntry> entries = info.getEntries();
+PdnTask task = operations.start(pdn.clearRecovery(selectedId), listener);
+```
+
+查询为同步方法，在工作线程调用。`pdn.recovery()` 返回 JSON 查询的 ProcessBuilder，`pdn.clearRecovery()` 清理全部明确中断的原生安装暂存，传入 ID 则只处理该条目；启动清理前由界面取得确认。快照不可修改，条目提供目录、ID、目标、阶段、PID、启动时钟计数、boot ID、创建时间、状态及原因，未知字段为 null。启动时钟计数不是 Unix 时间；创建时间为 Unix 秒。
+
+`isInterrupted()` 仅说明安装身份判断，清理时仍重新拿锁并检查目录和会话；可能返回 `operation_busy` 或 `recovery_unsafe`。未知记录不自动删除。此接口不恢复原任务事件或会话，也不处理 restore、clone/rename 或文档选择器的私有暂存。详细规则见 [发行版管理](pdn-distributions.md#中断安装检查与清理)。

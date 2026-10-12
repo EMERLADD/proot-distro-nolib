@@ -112,6 +112,8 @@ mkdir -p "$PROOT_TMP_DIR"
 
 AAR 支持系统文件选择器返回的 URI、FD 和流，用于压缩包导入与备份导出；示例 App 提供选择器按钮，详见 [AAR API](docs/pdn-aar-api.md)。
 
+中断安装可用 `pdn recovery list` 检查、`pdn recovery clear --yes` 清理明确中断的暂存；已安装系统、未知条目和续传缓存保留，详见 [发行版管理](docs/pdn-distributions.md#中断安装检查与清理)。
+
 ### 3.2 安装、登录和管理发行版
 
 ```sh

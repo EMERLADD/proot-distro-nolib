@@ -70,6 +70,14 @@ public final class MainActivity extends Activity {
         add(row, "导入 Alpine 包", () -> chooseDocument(201));
         add(row, "导入 rootfs", () -> chooseDocument(202));
         add(row, "导出 Alpine", () -> chooseDocument(203));
+        row = row(root);
+        add(row, "检查遗留", () -> task(() -> print(suite.run(suite.getRuntime().processBuilder(java.util.Arrays.asList("recovery", "list"))))));
+        add(row, "清理遗留", () -> new android.app.AlertDialog.Builder(this)
+                .setTitle("清理中断安装")
+                .setMessage("只清理身份明确且已中断的安装暂存。运行中任务、未知目录、已安装系统和下载缓存会保留。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("清理", (dialog, which) -> task(() -> print(suite.run(suite.getRuntime().processBuilder(java.util.Arrays.asList("recovery", "clear", "--yes"))))))
+                .show());
         ScrollView scroll = new ScrollView(this);
         logs = new TextView(this);
         logs.setTypeface(Typeface.MONOSPACE);

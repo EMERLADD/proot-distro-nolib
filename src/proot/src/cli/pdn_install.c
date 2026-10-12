@@ -20,6 +20,7 @@
 #include "pdn_events.h"
 #include "pdn_json.h"
 #include "pdn_instance.h"
+#include "pdn_recovery.h"
 #include <sys/wait.h>
 
 char *pdn_rootfs_base(void);
@@ -303,7 +304,7 @@ static int download(const struct distro *distro, const char *url, const char *pa
         curl = curl_easy_init();
         if (!curl) { fclose(file); return problem("download_failed", "cannot initialize HTTPS"); }
         curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.16");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "proot-distro-nolib/0.6.17");
         curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -1109,8 +1110,7 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     errno = 0;
     char *base = pdn_rootfs_base(), *archive = NULL;
     int base_errno = errno;
-    char stage[64];
-    snprintf(stage, sizeof(stage), ".pdn-%s-XXXXXX", distro.name);
+    char stage[64] = {0};
     int cwd = -1, basefd = -1, lock = -1, staged = 0, result = 1;
     struct sigaction action = {0}, old_int, old_term;
     cancelled = 0;
@@ -1128,12 +1128,16 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     if (chdir(base) < 0) { rootfs_error("enter", base, errno); goto done; }
     basefd = open(".", O_DIRECTORY | O_CLOEXEC);
     if (basefd < 0) { rootfs_error("open", base, errno); goto done; }
-    lock = open(".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+    lock = open(".pdn-install.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600);
     if (lock < 0) {
         int saved = errno;
         rootfs_error("create install lock in", base, saved);
         pdn_events_system_problem("lock_failed", "Cannot create install lock", "Check the rootfs directory and retry", saved);
         goto done;
+    }
+    struct stat lock_stat;
+    if (fstat(lock, &lock_stat) < 0 || !S_ISREG(lock_stat.st_mode) || lock_stat.st_nlink != 1 || lock_stat.st_uid != getuid()) {
+        problem("lock_failed", "install lock must be a private regular file"); goto done;
     }
     if (flock(lock, LOCK_EX | LOCK_NB) < 0) {
         int saved = errno;
@@ -1145,8 +1149,9 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     int existing = exists_distro(instance_name);
     if (existing < 0) goto done;
     if (existing) { problem("rootfs_exists", "rootfs already exists; no files changed"); goto done; }
-    if (!mkdtemp(stage)) { system_error("file_io_failed", "cannot create installation directory", errno); goto done; }
-    staged = 1;
+    int identity = pdn_recovery_begin(basefd, stage, sizeof(stage), instance_name);
+    staged = *stage != 0;
+    if (identity < 0) goto done;
     action.sa_handler = cancel_install;
     sigemptyset(&action.sa_mask);
     sigaction(SIGINT, &action, &old_int);
@@ -1154,6 +1159,7 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     if (chdir(stage) < 0) { system_error("file_io_failed", "cannot enter installation directory", errno); goto restore; }
     printf("Installing %s %s (ARM64)...\n", distro.name, distro.version);
     fflush(stdout);
+    if (pdn_recovery_phase(basefd, stage, archive ? "copying" : "downloading") < 0) goto restore;
     if (archive) {
         if (copy_archive(&distro, archive, "rootfs.tar.gz") != 0) goto restore;
     } else {
@@ -1162,12 +1168,16 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     }
     free(archive);
     archive = realpath("rootfs.tar.gz", NULL);
+    if (pdn_recovery_phase(basefd, stage, "verifying") < 0) goto restore;
     puts("Verifying SHA256...");
     if (!archive) { system_error("file_io_failed", "cannot resolve staged archive", errno); goto restore; }
     if (verify(&distro, archive) != 0 || cancelled) goto restore;
     if (mkdir("rootfs", 0700) < 0 || chdir("rootfs") < 0) { system_error("file_io_failed", "cannot create extracted rootfs", errno); goto restore; }
     puts("Extracting rootfs...");
-    if (extract(&distro, archive) != 0 || configure(&distro, &mirrors[downloaded]) != 0 || cancelled) goto restore;
+    if (pdn_recovery_phase(basefd, stage, "extracting") < 0) goto restore;
+    if (extract(&distro, archive) != 0 || cancelled) goto restore;
+    if (pdn_recovery_phase(basefd, stage, "configuring") < 0) goto restore;
+    if (configure(&distro, &mirrors[downloaded]) != 0 || cancelled) goto restore;
     if (!strcmp(distro.name, "arch") && initialize_arch() < 0) goto restore;
     if (cancelled) goto restore;
     int instancefd = open(".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
@@ -1181,6 +1191,7 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
     existing = exists_distro(instance_name);
     if (existing < 0) goto restore;
     if (existing) { problem("rootfs_exists", "rootfs appeared during installation; refusing to replace it"); goto restore; }
+    if (pdn_recovery_phase(basefd, stage, "publishing") < 0) goto restore;
     pdn_events_stage("publishing");
     {
         char source[sizeof(stage) + 8];

@@ -185,3 +185,21 @@ pdn backup workspace - > backup.tar.gz.part && mv backup.tar.gz.part backup.tar.
 ```
 
 Archives can also pass through pipes. Install still verifies the pinned official size and SHA256; use restore for custom rootfs archives. Stream output cannot be rolled back: remove incomplete output after failure and check each process exit status in pipelines. Path-based backup still refuses overwriting existing files, while Shell redirection itself creates/truncates the destination. Redirect backup stdout away from an interactive terminal. See the [AAR API](pdn-aar-api.en.md) for Android document access.
+
+
+## Interrupted installation checks and cleanup
+
+```sh
+pdn recovery list
+pdn recovery list --json
+pdn recovery clear 0123456789abcdef0123456789abcdef --yes
+pdn recovery clear --yes
+```
+
+Inspect first and use an ID from the list to clean one entry. Without an ID, only provably interrupted installation staging is removed. Cleanup does not resume extraction or repair Linux. Published rootfs, project directories and `.pdn-downloads` resume cache are preserved; retrying install may still reuse download cache.
+
+New installations persist a random 128-bit UUID (32 lowercase hexadecimal characters), PID, process start ticks, available boot ID, target and phase. Entries have interrupted, active or unknown status and a reason. A matching PID with different start ticks indicates PID reuse; a different boot ID indicates a previous system boot. A missing original process also proves interruption. A missing /proc entry alone is insufficient: a signal-free `kill(pid, 0)` probe checks existence; live or permission-denied owners are retained. Insufficient identity or /proc access, legacy records, damaged metadata and unproven ownership remain unknown and are retained.
+
+Queries and cleanup hold the installation lock. Installation, backup, clone/rename or another cleanup can return operation_busy. A staging rootfs session lock also prevents deletion while in use. Cleanup does not follow symlinks or cross mounts, and checks all selected trees before deletion. Storage failure or cancellation may leave partial staging; inspect again following the error advice. Host permissions still apply; deletion is refused when mount identity cannot be verified.
+
+This covers recorded native install staging only; legacy installation directories are listed for manual review. Interrupted restore, clone/rename transactions and AAR document staging remain unsupported. Published-system damage after power loss is outside this repair scope. With an unavailable boot ID, cleanup requires other evidence proving that the original process is absent or has a different identity; unprovable state is retained.

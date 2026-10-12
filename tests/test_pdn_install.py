@@ -157,7 +157,7 @@ int main(int argc, char **argv) {{
             flags += ["-fprofile-instr-generate", "-fcoverage-mapping", "-DPDN_TEST_COVERAGE"]
             runtime = subprocess.check_output([compiler, "-print-resource-dir"], text=True).strip()
             flags += [f"{runtime}/lib/linux/libclang_rt.profile-aarch64-android.a"]
-        subprocess.run([compiler, *flags, str(source), str(PROJECT / "src/proot/src/cli/pdn_events.c"), str(PROJECT / "src/proot/src/cli/pdn_instance.c"), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
+        subprocess.run([compiler, *flags, str(source), str(PROJECT / "src/proot/src/cli/pdn_events.c"), str(PROJECT / "src/proot/src/cli/pdn_instance.c"), str(PROJECT / "src/proot/src/cli/pdn_recovery.c"), f"-I{DEPS / 'include'}", f"-L{DEPS / 'lib'}",
                         "-lcurl", "-larchive", "-lmbedtls", "-lmbedx509", "-lmbedcrypto", "-lz",
                         "-o", str(cls.harness)], check=True)
         if os.environ.get("PDN_COVERAGE"):
@@ -306,7 +306,7 @@ int main(int argc, char **argv) {{
 
     def assert_clean(self):
         self.assertFalse((self.roots / "alpine").exists())
-        self.assertFalse(list(self.roots.glob(".pdn-alpine-*")))
+        self.assertFalse(list(self.roots.glob(".pdn-install-*")))
 
     def event_channel(self):
         path = self.base / "events.jsonl"
@@ -473,7 +473,7 @@ int main(int argc, char **argv) {{
         required = ["verifying", "extracting", "configuring", "publishing"]
         self.assertEqual([stage for stage in stages if stage in required], required)
         self.assertTrue((self.roots / "alpine/bin/tool").exists())
-        self.assertFalse(list(self.roots.glob(".pdn-alpine-*")))
+        self.assertFalse(list(self.roots.glob(".pdn-install-*")))
 
     def test_mirror_fallback_events_final_result_authoritative(self):
         path = self.event_channel()
@@ -540,7 +540,7 @@ int main(int argc, char **argv) {{
         self.assertEqual((root / "bin/tool").stat().st_mode & 0o777, 0o755)
         self.assertIn("tuna.tsinghua.edu.cn/alpine/v3.24", (root / "etc/apk/repositories").read_text())
         self.assertIn("nameserver", (root / "etc/resolv.conf").read_text())
-        self.assertFalse(list(self.roots.glob(".pdn-alpine-*")))
+        self.assertFalse(list(self.roots.glob(".pdn-install-*")))
         (root / "keep").write_text("existing")
         self.assertNotEqual(self.run_harness(self.archive).returncode, 0)
         self.assertEqual((root / "keep").read_text(), "existing")

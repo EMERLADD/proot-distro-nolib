@@ -191,3 +191,16 @@ Descriptors are duplicated and only the duplicate is closed; both share the curr
 Input is staged in private cache before native processing. Install still checks the pinned distribution size and SHA256; use `restore` for custom rootfs archives. Backup completes a private archive before opening a URI destination. Reserve extra private cache space for a complete archive. Staging is removed on completion, failure and handled interruption; SIGKILL/power-loss recovery is not implemented.
 
 `host_document_io_failed` covers document access, provider, storage and stream failures. Failed or interrupted export may leave a partial output document; cross-provider transactional rollback is unavailable. Create a new output document and delete incomplete output before retrying. Shared storage/SD cards can hold archives and backups, but this does not make them suitable rootfs installation locations.
+
+
+## Interrupted installation cleanup API
+
+```java
+PdnRecoveryInfo info = pdn.catalog().recovery();
+List<PdnRecoveryEntry> entries = info.getEntries();
+PdnTask task = operations.start(pdn.clearRecovery(selectedId), listener);
+```
+
+Query synchronously on a worker thread. `pdn.recovery()` builds the JSON query; `pdn.clearRecovery()` cleans all provably interrupted native install staging, or accepts one ID. Obtain UI confirmation before starting cleanup. Immutable entries expose directory, ID, target, phase, PID, process start ticks, boot ID, creation time, status and reason; unknown fields are null. Start ticks are not Unix time; creation time is Unix seconds.
+
+`isInterrupted()` describes the installation identity check only. Cleanup rechecks locks, directories and sessions and can return operation_busy or recovery_unsafe. Unknown records remain untouched. This does not restore task events/sessions or recover restore, clone/rename or document-picker private staging. See [distribution management](pdn-distributions.en.md#interrupted-installation-checks-and-cleanup).

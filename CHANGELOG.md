@@ -2,6 +2,10 @@
 
 简体中文 | [English](CHANGELOG.en.md) · [返回 README](README.md)
 
+## v0.6.17 — 2026-10-12
+
+增加中断安装的检查与显式清理：持久记录 UUID、PID、启动时间与 boot ID，检查安装／会话锁，保留未知条目、已安装系统和下载缓存。提供 Java/Kotlin 结构化查询及清理接口，示例 App 增加检查、清理按钮。
+
 ## v0.6.16 — 2026-10-11
 
 增加 AAR 文档 URI、FD 与流接入，支持选取压缩包安装／恢复和导出备份；Shell 安装／恢复支持 stdin，备份支持二进制 stdout。

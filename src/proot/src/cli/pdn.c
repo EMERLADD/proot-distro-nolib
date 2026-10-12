@@ -18,6 +18,7 @@ int pdn_install_as(const char *name, const char *local_archive, const char *mirr
 int pdn_mirrors(const char *name);
 int pdn_available(void);
 int pdn_cache(const char *name, int clearing, int json, int yes);
+int pdn_recovery(const char *id, int clearing, int json);
 int pdn_available_json(void);
 int pdn_mirrors_json(const char *name);
 int pdn_archive(const char *name, const char *file, int restoring);
@@ -127,6 +128,7 @@ static int help(void)
          "  pdn backup NAME FILE.tar.gz|-\n  pdn restore NAME FILE.tar.gz|-\n"
          "  pdn clone SOURCE TARGET\n  pdn rename SOURCE TARGET\n"
          "  pdn cache list [DISTRO] [--json]\n  pdn cache clear [DISTRO] --yes\n"
+         "  pdn recovery list [--json]\n  pdn recovery clear [ID] --yes\n"
 #endif
          "  pdn login NAME|--rootfs PATH [OPTIONS] [-- COMMAND ARG...]\n"
          "  pdn exec NAME|--rootfs PATH [OPTIONS] -- COMMAND ARG...\n"
@@ -517,6 +519,20 @@ static int dispatch(int argc, char *const argv[])
             if (argc != 4) return fail("usage", "backup|restore NAME FILE.tar.gz");
             return pdn_archive(argv[2], argv[3], equal(argv[1], "restore"));
         }
+        if (equal(argv[1], "recovery")) {
+            if (argc < 3 || (!equal(argv[2], "list") && !equal(argv[2], "clear")))
+                return fail("usage", "recovery list [--json] | recovery clear [ID] --yes");
+            int clearing = equal(argv[2], "clear"), json = 0, yes = 0;
+            const char *id = NULL;
+            for (int i = 3; i < argc; i++) {
+                if (equal(argv[i], "--json") && !clearing && !json) json = 1;
+                else if ((equal(argv[i], "--yes") || equal(argv[i], "-y")) && clearing && !yes) yes = 1;
+                else if (clearing && argv[i][0] != '-' && !id) id = argv[i];
+                else return fail("unexpected argument", argv[i]);
+            }
+            if (clearing && !yes) return fail("confirmation required", "recovery clear [ID] --yes");
+            return pdn_recovery(id, clearing, json);
+        }
         if (equal(argv[1], "cache")) {
             if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
             if (argc < 3 || (!equal(argv[2], "list") && !equal(argv[2], "clear")))
@@ -600,7 +616,7 @@ static int dispatch(int argc, char *const argv[])
 int main(int argc, char *const argv[])
 {
     const char *operation = "proot";
-    const char *names[] = {"install", "login", "exec", "config", "backup", "restore", "clone", "rename", "cache", "mirrors", "list", "remove", "help", "version"};
+    const char *names[] = {"install", "login", "exec", "config", "backup", "restore", "clone", "rename", "cache", "recovery", "mirrors", "list", "remove", "help", "version"};
     if (argc > 1) {
         operation = argv[1][0] == '-' ? "proot" : "unknown";
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) if (equal(argv[1], names[i])) operation = names[i];

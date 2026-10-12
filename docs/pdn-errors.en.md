@@ -48,3 +48,10 @@ See the [event protocol](pdn-events.en.md#proot-and-guest-startup-errors) for PR
 Java/Kotlin callers must check `PdnResult.isSuccess()`. Host failures throw `PdnHostException`, which extends `IOException`; inspect `getCode()`, `getSuggestion()` and `getCause()`. Argument errors and thread interruption retain their existing exceptions. See the [AAR API](pdn-aar-api.en.md).
 
 `host_document_io_failed`: Selected document/stream I/O failed. Check URI access, provider availability and storage; remove incomplete exports before retrying.
+
+Interrupted installation errors:
+
+- `recovery_unsafe`：Staging ownership, identity, tree or mount safety is unproven; retain and inspect.
+- `recovery_io_failed`：Recovery record, phase persistence, inspection or cleanup I/O failed; check permissions/storage. Cleanup may be partial.
+- `recovery_not_found`：Selected recovery ID is missing; refresh the list.
+- `recovery_limit_exceeded`：Too many management directory entries; reduce unrelated files and retry.

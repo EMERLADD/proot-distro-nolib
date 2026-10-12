@@ -48,3 +48,10 @@ PRoot、loader、guest shell 和 ELF 动态加载器的启动分类见[事件协
 Java/Kotlin 调用需要检查 `PdnResult.isSuccess()`。宿主错误抛出继承 `IOException` 的 `PdnHostException`，通过 `getCode()`、`getSuggestion()` 和 `getCause()` 排查；参数错误与线程中断保持原有异常。错误处理接口见 [AAR API](pdn-aar-api.md)。
 
 `host_document_io_failed`: 所选文档或流读写失败；检查 URI 授权、提供者状态和存储空间，导出失败后移除不完整文档再重试。
+
+中断安装相关错误：
+
+- `recovery_unsafe`：暂存归属、身份、目录树或挂载无法确认安全；保留并人工检查。
+- `recovery_io_failed`：恢复记录、阶段持久化、查询或清理 IO 失败；检查权限和空间，清理可能不完整。
+- `recovery_not_found`：指定恢复 ID 不存在，重新查询清单。
+- `recovery_limit_exceeded`：管理目录条目过多，减少无关文件后重试。

@@ -66,6 +66,14 @@ public final class MainActivity extends Activity {
             append("交互终端已打开，可连续发送命令。");
         }));
         add(row, "关闭终端", () -> task(() -> { if (terminal != null) { terminal.close(); terminal = null; } }));
+        row = row(root);
+        add(row, "检查遗留", () -> task(() -> print(suite.run(suite.getRuntime().processBuilder(java.util.Arrays.asList("recovery", "list"))))));
+        add(row, "清理遗留", () -> new android.app.AlertDialog.Builder(this)
+                .setTitle("清理中断安装")
+                .setMessage("只清理身份明确且已中断的安装暂存。运行中任务、未知目录、已安装系统和下载缓存会保留。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("清理", (dialog, which) -> task(() -> print(suite.run(suite.getRuntime().processBuilder(java.util.Arrays.asList("recovery", "clear", "--yes"))))))
+                .show());
         ScrollView scroll = new ScrollView(this);
         logs = new TextView(this);
         logs.setTypeface(Typeface.MONOSPACE);

@@ -89,6 +89,14 @@ class PdnRuntime @JvmOverloads constructor(
     fun clearCache(name: String? = null): ProcessBuilder =
         processBuilder(listOf("cache", "clear") + (if (name == null) emptyList() else listOf(distroName(name))) + "--yes")
 
+    fun recovery(): ProcessBuilder = processBuilder(listOf("recovery", "list", "--json"))
+
+    @JvmOverloads
+    fun clearRecovery(id: String? = null): ProcessBuilder {
+        require(id == null || Regex("[0-9a-f]{32}").matches(id)) { "Invalid recovery ID" }
+        return processBuilder(listOf("recovery", "clear") + (if (id == null) emptyList() else listOf(id)) + "--yes")
+    }
+
     @JvmOverloads
     fun install(name: String, mirror: String? = null, archive: File? = null): ProcessBuilder {
         val args = mutableListOf("install", distroName(name))

@@ -51,6 +51,10 @@ public final class PdnCatalog {
         return cacheInfo(query(runtime.cache(distro)));
     }
 
+    public PdnRecoveryInfo recovery() throws IOException, InterruptedException {
+        return recoveryInfo(query(runtime.recovery()));
+    }
+
     private byte[] query(ProcessBuilder builder) throws IOException, InterruptedException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         PdnResult result;
@@ -162,6 +166,52 @@ public final class PdnCatalog {
             }
             if (sum != totalBytes) throw new IllegalArgumentException("Invalid cache byte total");
             return new PdnDownloadCacheInfo(path, totalBytes, values);
+        } catch (Exception failure) { throw invalid(failure); }
+    }
+
+    static PdnRecoveryInfo recoveryInfo(byte[] bytes) throws PdnHostException {
+        try {
+            JSONObject object = envelopeObject(bytes);
+            String path = string(object, "path");
+            if (!path.startsWith("/") || path.indexOf('\0') >= 0) throw new IllegalArgumentException("Invalid recovery path");
+            List<PdnRecoveryEntry> entries = new ArrayList<>();
+            Set<String> directories = new HashSet<>();
+            JSONArray rows = object.getJSONArray("entries");
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.getJSONObject(i);
+                String directory = string(row, "directory"), id = nullableString(row, "id");
+                boolean current = directory.matches("\\.pdn-install-[0-9a-f]{32}");
+                if ((!current && !directory.matches("\\.pdn-(alpine|ubuntu|debian|arch)-[A-Za-z0-9]{6}")) || !directories.add(directory))
+                    throw new IllegalArgumentException("Invalid recovery directory");
+                if (current ? !directory.substring(13).equals(id) : id != null) throw new IllegalArgumentException("Invalid recovery identity");
+                String target = nullableString(row, "target"), phase = nullableString(row, "phase"), boot = nullableString(row, "boot_id");
+                Long pid = row.get("pid") == JSONObject.NULL ? null : number(row, "pid");
+                Long start = row.get("start_time") == JSONObject.NULL ? null : number(row, "start_time");
+                Long created = row.get("created_at") == JSONObject.NULL ? null : number(row, "created_at");
+                String status = string(row, "status"), reason = string(row, "reason");
+                boolean interrupted = "interrupted".equals(status);
+                boolean active = "active".equals(status);
+                boolean unknown = "unknown".equals(status);
+                if (!(interrupted || active || unknown)) throw new IllegalArgumentException("Invalid recovery status");
+                if (interrupted ? !java.util.Arrays.asList("boot_changed", "process_missing", "pid_reused").contains(reason)
+                        : active ? !"owner_alive".equals(reason)
+                        : !java.util.Arrays.asList("ownership_unproven", "identity_unavailable", "process_unavailable", "boot_unavailable").contains(reason))
+                    throw new IllegalArgumentException("Invalid recovery reason");
+                if (target == null) {
+                    if (!unknown || !"ownership_unproven".equals(reason) || phase != null || pid != null || start != null || boot != null || created != null)
+                        throw new IllegalArgumentException("Unproven recovery identity");
+                } else {
+                    if ((unknown && "ownership_unproven".equals(reason)) || (interrupted && "boot_changed".equals(reason) && boot == null)
+                            || !current || target.length() > 128 || !target.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*") || phase == null
+                            || !java.util.Arrays.asList("preparing", "copying", "downloading", "verifying", "extracting", "configuring", "publishing").contains(phase)
+                            || pid == null || pid <= 0 || pid > Integer.MAX_VALUE || created == null || (start != null && start <= 0)
+                            || (boot != null && !boot.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
+                            || (active && (boot == null || start == null)) || (interrupted && !"boot_changed".equals(reason) && start == null))
+                        throw new IllegalArgumentException("Invalid recovery metadata");
+                }
+                entries.add(new PdnRecoveryEntry(directory, id, target, phase, pid, start, boot, created, status, reason));
+            }
+            return new PdnRecoveryInfo(path, entries);
         } catch (Exception failure) { throw invalid(failure); }
     }
 

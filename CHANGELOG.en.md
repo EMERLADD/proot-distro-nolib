@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
+## v0.6.17 — 2026-10-12
+
+Add interrupted-install inspection and explicit cleanup with persistent UUID, PID, start ticks and boot ID plus installation/session locks. Preserve unknown entries, installed systems and download cache. Java/Kotlin queries and cleanup builders are available, with example App controls.
+
 ## v0.6.16 — 2026-10-11
 
 Add AAR document URI, descriptor and stream import/export for installation, restore and backup. Shell install/restore accept stdin and backup supports binary stdout.

@@ -185,3 +185,21 @@ pdn backup workspace - > backup.tar.gz.part && mv backup.tar.gz.part backup.tar.
 ```
 
 也可通过管道传递归档。安装仍校验官方固定大小与 SHA256，任意自带 rootfs 使用 restore。流输出不能回滚：失败时删除不完整的输出文件，管道脚本还应检查各进程退出码。原来的文件路径接口保持不覆盖既有备份的行为；Shell 重定向本身会创建或截断目标文件。备份 stdout 不应直接输出到交互终端。Android 系统选择器接入见 [AAR API](pdn-aar-api.md)。
+
+
+## 中断安装检查与清理
+
+```sh
+pdn recovery list
+pdn recovery list --json
+pdn recovery clear 0123456789abcdef0123456789abcdef --yes
+pdn recovery clear --yes
+```
+
+先查询，再使用清单中的 ID 清理单个条目；不传 ID 时只清理能够确认已中断的安装暂存。清理不会继续解包或自动修复 Linux，也不会删除已发布 rootfs、项目目录或 `.pdn-downloads` 续传缓存。重复安装仍可复用下载缓存。
+
+新安装使用随机 128 位 UUID（32 位小写十六进制）、PID、进程启动时钟计数及可用的 boot ID 标识任务，并持久保存目标和阶段。查询结果为 `interrupted`、`active` 或 `unknown`，附带判断原因。PID 相同而启动时间不同视为 PID 被复用；boot ID 不同表示来自上一次系统启动。原进程已经不存在时也可确认安装中断，但不单凭 `/proc` 的不存在报错判断：会用不发送信号的 `kill(pid, 0)` 再检查，活跃或权限不足时保留。身份信息或 `/proc` 读取不足、旧版本无记录、记录损坏或目录归属不明时保守报告 unknown，不自动删除。
+
+检查和清理均持有安装锁；安装、备份、clone/rename 或其他清理占用锁时返回 `operation_busy`。清理还检查暂存 rootfs 的会话锁：使用中的系统不得清理。删除不跟随符号链接，不跨挂载点，先检查所有选中目录，再进行删除；存储失败或取消仍可能留下部分暂存，按错误建议重新检查。此接口不会绕过宿主权限，挂载身份无法确认时拒绝删除。
+
+只处理本接口记录的原生安装暂存；旧安装暂存仅列出供检查。restore、clone/rename 的中断事务与 AAR 文档暂存恢复仍未实现，已发布系统的掉电损坏也不在修复范围。关闭或无法读取 boot ID 时，只有其他证据能够确认原进程不存在或身份不同才允许清理；无法确认时保留。

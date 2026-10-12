@@ -9,7 +9,7 @@
 #define VERSION "5.4.0-pr"
 #endif
 
-#define PDN_VERSION "0.6.16"
+#define PDN_VERSION "0.6.17"
 
 static const char *recommended_bindings[] = {
 	"/etc/host.conf",

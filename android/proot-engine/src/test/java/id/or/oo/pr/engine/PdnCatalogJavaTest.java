@@ -55,6 +55,13 @@ public class PdnCatalogJavaTest {
             assertTrue(catalog.cache("alpine").getEntries().isEmpty());
             assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "cache", "list", "alpine", "--json"), command.get());
             try { catalog.cache("../alpine"); fail(); } catch (IllegalArgumentException expected) {}
+            response[0] = "{\"version\":1,\"path\":\"/roots\",\"entries\":[]}";
+            assertTrue(catalog.recovery().getEntries().isEmpty());
+            assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "recovery", "list", "--json"), command.get());
+            assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "recovery", "clear", "--yes"), runtime.clearRecovery().command());
+            String recoveryId = "1234567890abcdef1234567890abcdef";
+            assertEquals(java.util.Arrays.asList(runtime.getExecutable().getAbsolutePath(), "recovery", "clear", recoveryId, "--yes"), runtime.clearRecovery(recoveryId).command());
+            try { runtime.clearRecovery("../stage"); fail(); } catch (IllegalArgumentException expected) {}
             failure[0] = "error";
             try { catalog.cache("missing"); fail(); }
             catch (PdnQueryException expected) {

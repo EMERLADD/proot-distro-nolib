@@ -93,7 +93,7 @@ OBJECTS += \
 	tls-align.o
 
 ifdef PDN_WITH_INSTALL
-  OBJECTS += cli/pdn_install.o cli/pdn_backup.o cli/pdn_instance.o
+  OBJECTS += cli/pdn_install.o cli/pdn_backup.o cli/pdn_instance.o cli/pdn_recovery.o
   CPPFLAGS += -DPDN_WITH_INSTALL
 endif
 

@@ -112,6 +112,8 @@ The current working directory does not automatically determine rootfs storage. A
 
 The AAR accepts document URIs, descriptors and streams for archive import and backup export. The example App includes document-picker buttons; see the [AAR API](docs/pdn-aar-api.en.md).
 
+Use `pdn recovery list` to inspect interrupted installation staging and `pdn recovery clear --yes` for explicit cleanup. Installed systems, unknown entries and resume cache are preserved; see [distribution management](docs/pdn-distributions.en.md#interrupted-installation-checks-and-cleanup).
+
 ### 3.2 Install, log in and manage distributions
 
 ```sh

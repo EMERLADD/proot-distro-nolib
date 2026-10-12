@@ -104,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.16"), "version: " + c.stderr());
-            return "native PDN 0.6.16, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.17"), "version: " + c.stderr());
+            return "native PDN 0.6.17, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -128,6 +128,7 @@ public final class ProbeSuite {
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));
         check(checks, "cache_management", () -> verifyCacheManagement());
+        check(checks, "interrupted_install_recovery", () -> verifyRecovery());
         check(checks, "archive_stdio", () -> {
             java.lang.Process exporter = runtime.processBuilder(Arrays.asList("backup", "alpine", "-")).start();
             byte[] archive;
@@ -445,6 +446,93 @@ public final class ProbeSuite {
         Files.write(new File(context.getFilesDir(), "acceptance.json").toPath(), report.toString(2).getBytes(StandardCharsets.UTF_8));
         log.accept(success ? "ALL CHECKS PASSED" : "CHECKS FAILED — see acceptance.json");
         return report;
+    }
+
+    private String verifyRecovery() throws Exception {
+        File roots = runtime.getRootfsDir();
+        java.lang.Process installer = runtime.processBuilder(Arrays.asList("install", "alpine", "--name", "recovery-target", "--archive", "-")).start();
+        File stage = null;
+        String original = null;
+        File legacy = new File(roots, ".pdn-alpine-QAZ123");
+        File outside = new File(host.getCacheDir(), "recovery-outside-" + java.util.UUID.randomUUID());
+        try {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            while (System.nanoTime() < deadline && stage == null) {
+                File[] candidates = roots.listFiles((dir, name) -> name.matches("\\.pdn-install-[0-9a-f]{32}"));
+                if (candidates != null) for (File candidate : candidates) {
+                    File record = new File(candidate, ".pdn-operation");
+                    if (!record.isFile()) continue;
+                    String value = new String(Files.readAllBytes(record.toPath()), StandardCharsets.UTF_8);
+                    if (value.contains("target=recovery-target\n") && value.contains("phase=copying\n")) { stage = candidate; original = value; break; }
+                }
+                if (!installer.isAlive()) throw new IllegalStateException("installation exited before identity capture");
+                Thread.sleep(10);
+            }
+            require(stage != null, "installation identity timeout");
+            Capture busy = run(runtime.processBuilder(Arrays.asList("recovery", "list", "--json")));
+            require(!busy.result.isSuccess() && "operation_busy".equals(busy.result.getCode()), "live installation lock");
+            long nativePid = -1;
+            for (String line : original.split("\n")) if (line.startsWith("pid=")) nativePid = Long.parseLong(line.substring(4));
+            require(nativePid > 0 && installer.isAlive(), "native owner before SIGKILL");
+            android.system.Os.kill((int)nativePid, android.system.OsConstants.SIGKILL);
+            require(installer.waitFor(10, java.util.concurrent.TimeUnit.SECONDS), "SIGKILL wait");
+            require(installer.exitValue() == 137, "SIGKILL exit code: " + installer.exitValue());
+            Capture listed = run(runtime.processBuilder(Arrays.asList("recovery", "list", "--json")));
+            require(listed.result.isSuccess(), "recovery listing: " + listed.stderr());
+            JSONArray entries = new JSONObject(listed.stdout()).getJSONArray("entries");
+            require(entries.length() == 1, "isolated interrupted entry: " + listed.stdout());
+            JSONObject row = entries.getJSONObject(0);
+            String id = row.getString("id");
+            require("interrupted".equals(row.getString("status")) && "process_missing".equals(row.getString("reason")), "dead process classification: " + row);
+            require(row.getLong("pid") > 0 && row.getLong("start_time") > 0 && stage.getName().equals(".pdn-install-" + id), "UUID/PID/start identity");
+            id.or.oo.pr.engine.PdnRecoveryInfo info = runtime.catalog().recovery();
+            require(info.getEntries().size() == 1 && info.getEntries().get(0).isInterrupted() && id.equals(info.getEntries().get(0).getId()), "typed recovery parity");
+            try { info.getEntries().clear(); throw new IllegalStateException("mutable recovery snapshot"); }
+            catch (UnsupportedOperationException expected) {}
+            require(legacy.mkdir() && outside.mkdir(), "recovery fixtures");
+            Files.write(new File(outside, "keep").toPath(), new byte[]{1, 2, 3});
+            Files.createSymbolicLink(new File(stage, "external").toPath(), outside.toPath());
+            File stagedRoot = new File(stage, "rootfs");
+            require(stagedRoot.mkdir(), "staged rootfs");
+            Files.write(new File(stagedRoot, "keep").toPath(), new byte[]{4});
+            String stat = new String(Files.readAllBytes(new File("/proc/self/stat").toPath()), StandardCharsets.UTF_8);
+            long ownStart = Long.parseLong(stat.substring(stat.lastIndexOf(')') + 1).trim().split(" +")[19]);
+            String own = original.replace("pid=" + row.getLong("pid") + "\n", "pid=" + android.os.Process.myPid() + "\n")
+                    .replace("start_time=" + row.getLong("start_time") + "\n", "start_time=" + ownStart + "\n");
+            Files.write(new File(stage, ".pdn-operation").toPath(), own.getBytes(StandardCharsets.UTF_8));
+            Capture ownListing = run(runtime.processBuilder(Arrays.asList("recovery", "list", "--json")));
+            Capture active = run(runtime.processBuilder(Arrays.asList("recovery", "clear", id, "--yes")));
+            require(!active.result.isSuccess() && "recovery_unsafe".equals(active.result.getCode()) && stage.isDirectory(), "live identity refusal: code=" + active.result.getCode() + " exists=" + stage.isDirectory() + " rows=" + ownListing.stdout() + " ownStart=" + ownStart + " ownPid=" + android.os.Process.myPid());
+            String reused = own.replace("start_time=" + ownStart + "\n", "start_time=" + (ownStart + 1) + "\n");
+            Files.write(new File(stage, ".pdn-operation").toPath(), reused.getBytes(StandardCharsets.UTF_8));
+            Capture changed = run(runtime.processBuilder(Arrays.asList("recovery", "list", "--json")));
+            JSONArray rows = new JSONObject(changed.stdout()).getJSONArray("entries");
+            boolean matched = false;
+            for (int i = 0; i < rows.length(); i++) if (id.equals(rows.getJSONObject(i).optString("id"))) {
+                JSONObject identity = rows.getJSONObject(i);
+                boolean hidden = "unknown".equals(identity.getString("status")) && "process_unavailable".equals(identity.getString("reason"));
+                matched = "interrupted".equals(identity.getString("status")) && "pid_reused".equals(identity.getString("reason")) || hidden;
+                if (hidden) {
+                    Capture retained = run(runtime.processBuilder(Arrays.asList("recovery", "clear", id, "--yes")));
+                    require(!retained.result.isSuccess() && "recovery_unsafe".equals(retained.result.getCode()) && stage.exists(), "hidden owner retention");
+                }
+            }
+            require(matched, "PID reuse detection or conservative hidden process: " + changed.stdout());
+            Files.write(new File(stage, ".pdn-operation").toPath(), original.getBytes(StandardCharsets.UTF_8));
+            Capture cleared = run(runtime.processBuilder(Arrays.asList("recovery", "clear", "--yes")));
+            require(cleared.result.isSuccess() && !stage.exists() && legacy.exists(), "cleanup and unknown retention: " + cleared.stderr());
+            require(Arrays.equals(Files.readAllBytes(new File(outside, "keep").toPath()), new byte[]{1, 2, 3}) && getRootfs().isDirectory(), "project and installed rootfs preservation");
+            return "actual SIGKILL, install lock, UUID/PID/start identity, controlled PID reuse/hidden process, safe cleanup and unknown retention";
+        } finally {
+            installer.destroyForcibly(); installer.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+            installer.getOutputStream().close(); installer.getInputStream().close(); installer.getErrorStream().close();
+            if (stage != null && stage.isDirectory() && original != null) {
+                Files.write(new File(stage, ".pdn-operation").toPath(), original.getBytes(StandardCharsets.UTF_8));
+                run(runtime.processBuilder(Arrays.asList("recovery", "clear", stage.getName().substring(13), "--yes")));
+            }
+            Files.deleteIfExists(legacy.toPath());
+            Files.deleteIfExists(new File(outside, "keep").toPath()); Files.deleteIfExists(outside.toPath());
+        }
     }
 
     private String verifyCacheManagement() throws Exception {

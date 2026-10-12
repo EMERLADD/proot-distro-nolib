@@ -56,7 +56,7 @@ class StreamTests(unittest.TestCase):
                                 env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root.parent / 'alpine').exists())
-        self.assertEqual(list(self.root.parent.glob('.pdn-alpine-*')), [])
+        self.assertEqual(list(self.root.parent.glob('.pdn-install-*')), [])
 
 
 if __name__ == '__main__':
