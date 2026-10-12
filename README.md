@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-**ARM64 Android · 早期测试版**。当前版本见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)，功能更新见 [CHANGELOG](CHANGELOG.md)。
+**ARM64 Android**。当前版本见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)，功能更新见 [CHANGELOG](CHANGELOG.md)。
 
 面向 ARM64 Android 的免 root Linux 发行版管理器与可嵌入 SDK。无需 Termux，即可运行 Debian、Ubuntu、Alpine 和 Arch。
 
@@ -65,6 +65,8 @@
 PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有效。Shizuku 是可选的权限入口，安装和运行 Linux 本身不要求它。详见[Android shell 教程](docs/pdn-shizuku-android-shell.md)和 [App 接入教程](docs/android-embedding.md)。
 
 ## 2. 下载与更新
+
+项目目前处于测试阶段。
 
 从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 获取同一版本的文件，并核对 `SHA256SUMS`：
 

@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-**ARM64 Android · Early test release**. Find the current version on [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and changes in [CHANGELOG](CHANGELOG.en.md).
+**ARM64 Android**. Find the current version on [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and changes in [CHANGELOG](CHANGELOG.en.md).
 
 Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run Debian, Ubuntu, Alpine and Arch without Termux.
 
@@ -65,6 +65,8 @@ The main paths above have been verified with **MT Manager, an independent APK bu
 PRoot's root identity is simulated; the host's actual UID and SELinux restrictions still apply. Shizuku is an optional privilege entry point, not a requirement for installing or running Linux. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) and [App integration guide](docs/android-embedding.en.md).
 
 ## 2. Downloads and updates
+
+The project is currently in testing.
 
 Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and verify `SHA256SUMS`:
 
