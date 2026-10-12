@@ -4,6 +4,8 @@
 
 **ARM64 Android · Early test release**. Find the current version on [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and changes in [CHANGELOG](CHANGELOG.en.md).
 
+Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run Debian, Ubuntu, Alpine and Arch without Termux.
+
 ## Contents
 
 - [0. What is this?](#0-what-is-this)
@@ -19,7 +21,7 @@
 
 ## 0. What is this?
 
-**PDN is a standalone Android Linux distribution manager based on [pr](https://github.com/oonid/pr).** It combines the PRoot engine, downloads, verification, extraction and distribution management in one ARM64 Android program. It lets Android devices run Linux environments without installing Termux or requiring the host to provide Bash, Python, curl or tar.
+**PDN is a rootless Linux distribution manager and embeddable SDK for ARM64 Android, based on [pr](https://github.com/oonid/pr).** It combines the PRoot engine, downloads, verification, extraction and distribution management in one ARM64 Android program. It lets Android devices run Linux environments without installing Termux or requiring the host to provide Bash, Python, curl or tar.
 
 <p align="center">
   <img src="docs/images/mt-ubuntu-highlighted.png" alt="Ubuntu running through PDN in MT Manager’s built-in terminal, with the MT private directory highlighted" width="420">

@@ -4,6 +4,8 @@
 
 **ARM64 Android · 早期测试版**。当前版本见 [GitHub Releases](https://github.com/EMERLADD/proot-distro-nolib/releases)，功能更新见 [CHANGELOG](CHANGELOG.md)。
 
+面向 ARM64 Android 的免 root Linux 发行版管理器与可嵌入 SDK。无需 Termux，即可运行 Debian、Ubuntu、Alpine 和 Arch。
+
 ## 目录
 
 - [0. 这是什么？](#0-这是什么)
@@ -19,7 +21,7 @@
 
 ## 0. 这是什么？
 
-**PDN 是基于 [pr](https://github.com/oonid/pr) 的独立 Android Linux 发行版管理工具。** 它把 PRoot 引擎、下载、校验、解压和发行版管理整合进一个 ARM64 Android 程序，让 Android 设备运行 Linux 环境，无需额外安装 Termux，也不需要宿主提供 Bash、Python、curl 或 tar。
+**PDN 是基于 [pr](https://github.com/oonid/pr)、面向 ARM64 Android 的免 root Linux 发行版管理器与可嵌入 SDK。** 它把 PRoot 引擎、下载、校验、解压和发行版管理整合进一个 ARM64 Android 程序，让 Android 设备运行 Linux 环境，无需额外安装 Termux，也不需要宿主提供 Bash、Python、curl 或 tar。
 
 <p align="center">
   <img src="docs/images/mt-ubuntu-highlighted.png" alt="MT 管理器内置终端通过 PDN 进入 Ubuntu，黄色框标出 MT 私有目录" width="420">
