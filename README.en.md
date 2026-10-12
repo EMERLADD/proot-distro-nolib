@@ -29,16 +29,6 @@ Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run De
 
 **Device demonstration: from MT Manager into Ubuntu.** MT Manager’s built-in terminal emulator runs an Android shell with ordinary App privileges. The yellow outline marks MT’s private directory, `/data/user/0/bin.mt.plus/files/term/home`. Running `pdn login Ubuntu` enters Ubuntu 24.04 LTS (ARM64). Linux `root` is simulated by PRoot and does not grant Android root privileges; this path requires neither Termux nor Shizuku. The screenshot retains its original version number; see the [unannotated original](docs/images/mt-ubuntu-original.jpg).
 
-**Quick startup**: with the same Alpine ARM64 archive, cleared environment variables and a fresh HOME in Termux, PDN started in about **35 ms**, compared with **269 ms** for proot-distro.
-
-| Startup entry in a clean environment | Median time |
-| --- | --- |
-| Termux + proot-distro | **269 ms** |
-| The same Termux + PDN | **35 ms** |
-| Android shell + PDN | **41 ms** |
-
-Measured through the first command and exit using each tool's default login configuration, excluding rish connection, download and installation. These are reference results from one device; actual times vary with the system, storage and load.
-
 - **Manage Linux directly**: install, log in, execute commands, bind project directories, save configuration, back up, restore and remove distributions.
 - **Callable from other APKs**: two integration options, AAR and directly packaged `.so` files, for workspaces, AI frontends and other Apps needing Linux execution.
 - **GUI and terminal support**: Java/Kotlin APIs provide structured events, error suggestions, asynchronous tasks and independent PTY terminal sessions. The host draws the interface.

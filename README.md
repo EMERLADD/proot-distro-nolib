@@ -29,16 +29,6 @@
 
 **实机演示：从 MT 管理器进入 Ubuntu。** 图中使用 MT 管理器内置终端模拟器，宿主是普通 App 权限下的 Android Shell；黄色框标出了 MT 私有目录 `/data/user/0/bin.mt.plus/files/term/home`。执行 `pdn login Ubuntu` 后进入 Ubuntu 24.04 LTS（ARM64）。Linux 中的 `root` 是 PRoot 模拟身份，不代表 Android 已取得 root；这条运行路径不需要 Termux 或 Shizuku。截图保留当时的版本号，见[未经标注的原图](docs/images/mt-ubuntu-original.jpg)。
 
-**启动轻快**：同一份 Alpine ARM64 归档，在清空环境变量、使用新 HOME 的 Termux 中，PDN 启动耗时约 **35 ms**，proot-distro 约 **269 ms**。
-
-| 干净环境下的启动入口 | 中位耗时 |
-| --- | --- |
-| Termux + proot-distro | **269 ms** |
-| 同样的 Termux + PDN | **35 ms** |
-| Android shell + PDN | **41 ms** |
-
-按各自默认登录配置，计时至首条命令执行并退出；不含 rish 连接、下载或安装。这些是同一设备上的参考结果，实际耗时因系统、存储和负载而异。
-
 - **直接管理 Linux**：安装、登录、执行命令、挂载项目目录、保存配置、备份恢复和卸载。
 - **可供其他 APK 调用**：提供 AAR 和直接打包 `.so` 两种接入方式，适合工作区、AI 前端或其他需要 Linux 执行能力的 App。
 - **可接入 GUI 和终端**：Java/Kotlin API 提供结构化事件、错误建议、异步任务和独立 PTY 终端会话，界面由宿主绘制。
