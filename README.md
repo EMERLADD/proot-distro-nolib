@@ -6,6 +6,14 @@
 
 面向 ARM64 Android 的免 root Linux 发行版管理器与可嵌入 SDK。无需 Termux，即可运行 Debian、Ubuntu、Alpine 和 Arch。
 
+[![Maven Central](https://img.shields.io/badge/Maven_Central-0.6.18-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/0.6.18)
+
+## 快速开始
+
+[![调试 Android](https://img.shields.io/badge/%E8%B0%83%E8%AF%95%20Android-6f42c1?style=for-the-badge)](docs/pdn-shizuku-android-shell.md)
+[![集成到我的 App](https://img.shields.io/badge/%E9%9B%86%E6%88%90%E5%88%B0%E6%88%91%E7%9A%84%20App-0969da?style=for-the-badge)](docs/android-embedding.md)
+[![在 Shell 中使用](https://img.shields.io/badge/%E5%9C%A8%20Shell%20%E4%B8%AD%E4%BD%BF%E7%94%A8-238636?style=for-the-badge)](#31-在-android-shell-部署程序)
+
 ## 目录
 
 - [0. 这是什么？](#0-这是什么)
@@ -205,6 +213,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 | 场景 | 验证结果 |
 | --- | --- |
+| Maven Central 接入 | Java/Kotlin 依赖可解析；Debug 与 R8 Release App 的安装、命令、事件、stdin 和 PTY 均验证通过 |
 | MT 管理器 / Android shell | 可安装和启动 Linux；Ubuntu 内可调用继承 shell 权限的 Android 调试命令 |
 | AAR 独立 APK | Debug 与 R8 Release 均通过初始化、安装、命令、事件、工作区、异步任务和交互终端验收 |
 | 直接 `.so` 独立 APK | Debug 与 R8 Release 均通过独立进程、事件和 PTY 接入验收 |

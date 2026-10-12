@@ -6,6 +6,14 @@
 
 Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run Debian, Ubuntu, Alpine and Arch without Termux.
 
+[![Maven Central](https://img.shields.io/badge/Maven_Central-0.6.18-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/0.6.18)
+
+## Quick start
+
+[![Debug Android](https://img.shields.io/badge/Debug%20Android-6f42c1?style=for-the-badge)](docs/pdn-shizuku-android-shell.en.md)
+[![Embed in my App](https://img.shields.io/badge/Embed%20in%20my%20App-0969da?style=for-the-badge)](docs/android-embedding.en.md)
+[![Use in a Shell](https://img.shields.io/badge/Use%20in%20a%20Shell-238636?style=for-the-badge)](#31-deploy-to-android-shell)
+
 ## Contents
 
 - [0. What is this?](#0-what-is-this)
@@ -205,6 +213,7 @@ These ELFs are not invoked with `System.loadLibrary("pdn")`. Directory layout, e
 
 | Use case | Result |
 | --- | --- |
+| Maven Central integration | Java/Kotlin dependency resolution works; Debug and R8 Release Apps passed installation, command, event, stdin and PTY checks |
 | MT Manager / Android shell | Install and start Linux; call Android debugging commands from Ubuntu with inherited shell privileges |
 | Independent AAR APK | Debug and R8 Release passed initialization, installation, commands, events, workspace, asynchronous tasks and interactive terminal checks |
 | Independent direct `.so` APK | Debug and R8 Release passed independent process, event and PTY integration checks |
