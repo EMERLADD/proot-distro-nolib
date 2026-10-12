@@ -4,6 +4,8 @@ import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    `maven-publish`
+    signing
     jacoco
 }
 
@@ -69,6 +71,12 @@ android {
     compileSdk = 36
     ndkVersion = "26.3.11579264"
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     defaultConfig {
         minSdk = 28
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -122,4 +130,106 @@ dependencies {
     testImplementation("org.json:json:20160810")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
+}
+
+val pdnReleaseVersion = Regex("#define PDN_VERSION \"([0-9.]+)\"")
+    .find(rootProject.file("../src/proot/src/cli/proot.h").readText())!!.groupValues[1]
+val nativeReleaseBundle = rootProject.file("../build/packages/proot-distro-nolib-v$pdnReleaseVersion-android-arm64.tar.gz")
+val nativePublicationSources = tasks.register<Sync>("stageNativePublicationSources") {
+    from(tarTree(resources.gzip(nativeReleaseBundle))) {
+        include("*/source.tar.gz", "*/licenses/**", "*/LICENSE", "*/BUILD-INFO.txt")
+        eachFile { path = path.substringAfter('/') }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("generated/mavenNativeSources"))
+}
+val pdnJavadoc = tasks.register<Javadoc>("pdnJavadoc") {
+    dependsOn("compileReleaseJavaWithJavac")
+    source = fileTree("src/main/java") { include("**/*.java") }
+    classpath = files(android.bootClasspath, configurations["releaseCompileClasspath"],
+        layout.buildDirectory.dir("tmp/kotlin-classes/release"),
+        layout.buildDirectory.dir("intermediates/javac/release/compileReleaseJavaWithJavac/classes"))
+    destinationDir = layout.buildDirectory.dir("docs/pdnJavadoc").get().asFile
+    (options as StandardJavadocDocletOptions).apply {
+        encoding = "UTF-8"
+        charSet = "UTF-8"
+        addStringOption("Xdoclint:none", "-quiet")
+    }
+}
+val pdnJavadocJar = tasks.register<Jar>("pdnJavadocJar") {
+    dependsOn(pdnJavadoc)
+    archiveClassifier.set("javadoc")
+    from(layout.buildDirectory.dir("docs/pdnJavadoc"))
+    from(rootProject.file("../docs")) {
+        include("pdn-aar-api*.md", "pdn-events*.md", "pdn-errors*.md")
+        into("guides")
+    }
+}
+tasks.withType<Jar>().configureEach {
+    if (name == "sourceReleaseJar") {
+        dependsOn(nativePublicationSources)
+        from(nativePublicationSources) { into("META-INF/pdn") }
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                artifact(pdnJavadocJar)
+                groupId = providers.gradleProperty("pdnMavenGroup").getOrElse("io.github.emerladd")
+                artifactId = "pdn-engine"
+                version = pdnReleaseVersion
+                pom {
+                    name.set("PDN Android SDK")
+                    description.set("Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run Debian, Ubuntu, Alpine and Arch without Termux.")
+                    url.set("https://github.com/EMERLADD/proot-distro-nolib")
+                    licenses {
+                        license {
+                            name.set("GNU General Public License v2.0 or later (PRoot engine)")
+                            url.set("https://www.gnu.org/licenses/old-licenses/gpl-2.0.html")
+                            distribution.set("repo")
+                        }
+                        license {
+                            name.set("GNU Lesser General Public License v3.0 or later (talloc)")
+                            url.set("https://www.gnu.org/licenses/lgpl-3.0.html")
+                            distribution.set("repo")
+                        }
+                        license {
+                            name.set("MIT License (Android API)")
+                            url.set("https://github.com/EMERLADD/proot-distro-nolib/blob/main/LICENSE")
+                            distribution.set("repo")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("EMERLADD")
+                            name.set("EMERLADD")
+                            url.set("https://github.com/EMERLADD")
+                        }
+                    }
+                    scm {
+                        connection.set("scm:git:https://github.com/EMERLADD/proot-distro-nolib.git")
+                        developerConnection.set("scm:git:ssh://git@github.com/EMERLADD/proot-distro-nolib.git")
+                        url.set("https://github.com/EMERLADD/proot-distro-nolib")
+                    }
+                }
+            }
+        }
+        repositories {
+            maven {
+                name = "PdnStaging"
+                url = uri(rootProject.file("../build/maven/repository"))
+            }
+        }
+    }
+    val signingKey = providers.environmentVariable("PDN_SIGNING_KEY").orNull
+        ?: providers.environmentVariable("PDN_SIGNING_KEY_FILE").orNull?.let { file(it).readText() }
+    if (signingKey != null) {
+        signing {
+            useInMemoryPgpKeys(signingKey, providers.environmentVariable("PDN_SIGNING_PASSWORD").orNull)
+            sign(publishing.publications["release"])
+        }
+    }
 }
