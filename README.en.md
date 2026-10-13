@@ -12,9 +12,11 @@ Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run De
 
 [![Debug Android](https://img.shields.io/badge/Debug%20Android-6f42c1?style=for-the-badge)](docs/pdn-shizuku-android-shell.en.md)
 [![Embed in my App](https://img.shields.io/badge/Embed%20in%20my%20App-0969da?style=for-the-badge)](docs/android-embedding.en.md)
-[![Use in a Shell](https://img.shields.io/badge/Use%20in%20a%20Shell-238636?style=for-the-badge)](#31-deploy-to-android-shell)
+[![Use in a Shell](https://img.shields.io/badge/Use%20in%20a%20Shell-238636?style=for-the-badge)](docs/pdn-shell.en.md)
 
 ## Contents
+
+In-page navigation may not work in GitHub for Android. Open a standalone guide using the buttons above, or view this page in a browser.
 
 - [0. What is this?](#0-what-is-this)
 - [1. Requirements and permissions](#1-requirements-and-permissions)
@@ -230,6 +232,7 @@ Both APK paths run under ordinary Android App identities; simulated Linux root d
 | Run Linux and debug Android from Android shell / MT | [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) |
 | Install, log in, bind, configure, back up or remove Linux | [Distribution management](docs/pdn-distributions.en.md) |
 | Embed PDN in another APK | [App integration](docs/android-embedding.en.md) |
+| Deploy, install and manage Linux in a shell | [Shell quick start](docs/pdn-shell.en.md) |
 | Look up Java/Kotlin configuration, tasks, queries and terminals | [AAR API](docs/pdn-aar-api.en.md) |
 | Handle events or investigate classified errors | [Event protocol](docs/pdn-events.en.md), [Error reference](docs/pdn-errors.en.md) |
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |

@@ -12,9 +12,11 @@
 
 [![调试 Android](https://img.shields.io/badge/%E8%B0%83%E8%AF%95%20Android-6f42c1?style=for-the-badge)](docs/pdn-shizuku-android-shell.md)
 [![集成到我的 App](https://img.shields.io/badge/%E9%9B%86%E6%88%90%E5%88%B0%E6%88%91%E7%9A%84%20App-0969da?style=for-the-badge)](docs/android-embedding.md)
-[![在 Shell 中使用](https://img.shields.io/badge/%E5%9C%A8%20Shell%20%E4%B8%AD%E4%BD%BF%E7%94%A8-238636?style=for-the-badge)](#31-在-android-shell-部署程序)
+[![在 Shell 中使用](https://img.shields.io/badge/%E5%9C%A8%20Shell%20%E4%B8%AD%E4%BD%BF%E7%94%A8-238636?style=for-the-badge)](docs/pdn-shell.md)
 
 ## 目录
+
+GitHub 安卓 App 的页内目录跳转可能不可用；可通过上方按钮打开独立教程，或在浏览器中查看本页。
 
 - [0. 这是什么？](#0-这是什么)
 - [1. 运行条件与权限](#1-运行条件与权限)
@@ -230,6 +232,7 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 | 在 Android shell / MT 中运行 Linux，并调试 Android | [Android shell 教程](docs/pdn-shizuku-android-shell.md) |
 | 安装、登录、挂载、配置、备份或卸载 Linux | [发行版管理教程](docs/pdn-distributions.md) |
 | 给其他 APK 嵌入 PDN | [App 接入教程](docs/android-embedding.md) |
+| 在 Shell 中部署、安装和管理 Linux | [Shell 快速开始](docs/pdn-shell.md) |
 | 查 Java/Kotlin 配置、任务、查询和终端接口 | [AAR API](docs/pdn-aar-api.md) |
 | 自己接事件或排查分类错误 | [事件协议](docs/pdn-events.md)、[错误说明](docs/pdn-errors.md) |
 | 查上游归档与 SHA256 | [rootfs 来源](docs/pdn-rootfs-sources.zh-CN.md) |
