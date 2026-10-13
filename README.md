@@ -62,7 +62,7 @@ GitHub 安卓 App 的页内目录跳转可能不可用；可通过上方按钮�
 - **Linux 存储**：目录必须可访问并支持 Unix 权限和符号链接，例如 App 私有目录或 Android shell 的 `/data/local/tmp`。`/sdcard` 适合下载包、备份和共享文件，不适合解压 rootfs。
 - **网络与共享文件**：在线安装需要网络权限，读取共享存储需要相应访问权限。
 
-PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有效。Shizuku 是可选的权限入口，安装和运行 Linux 本身不要求它。详见[Android shell 教程](docs/pdn-shizuku-android-shell.md)和 [App 接入教程](docs/android-embedding.md)。
+PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有效。Shizuku 是可选的权限入口，安装和运行 Linux 本身不要求它。部署步骤见 [Shell 部署教程](docs/pdn-shell.md)和 [App 接入教程](docs/android-embedding.md)。
 
 ## 2. 下载与更新
 
@@ -88,98 +88,17 @@ AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个�
 
 ## 3. 快速开始
 
-### 3.1 在 Android shell 部署程序
+### 3.1 在终端中部署 ELF
 
-下面适用于允许从 `/data/local/tmp` 执行程序的 Android shell，例如 ADB 或已启动的 Shizuku/rish shell。普通终端 App 应使用自己允许执行和读写的目录；不要在 Android shell 中访问 App 私有目录初始化原始 rish。
+从 [MT 管理器终端部署教程](docs/pdn-shell.md)开始：下载 ELF、复制到 App 私有目录、设置固定存储路径并注册 `pdn` 短命令。以 MT 普通终端为例，运行 Linux 本身无需 Shizuku 或 Termux；其他具备执行权限的 Android shell 可换用自己的目录。
 
-下载 `pdn` 和 `proot-loader` 后，按实际位置修改两条 `cp` 的源路径：
+### 3.2 安装和管理发行版
 
-```sh
-mkdir -p /data/local/tmp/pdn
-cp /sdcard/Download/pdn /data/local/tmp/pdn/pdn
-cp /sdcard/Download/proot-loader /data/local/tmp/pdn/proot-loader
-chmod 755 /data/local/tmp/pdn/pdn /data/local/tmp/pdn/proot-loader
-cd /data/local/tmp/pdn
-./pdn version
-```
-
-指定 Linux 和临时目录：
-
-```sh
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
-export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
-mkdir -p "$PROOT_TMP_DIR"
-```
-
-当前工作目录不会自动决定 rootfs 位置。Android shell 的 `HOME` 可能是 `/`，因此应显式设置目录。完整步骤和 MT 示例见[Android shell 教程](docs/pdn-shizuku-android-shell.md)。
-
-AAR 支持系统文件选择器返回的 URI、FD 和流，用于压缩包导入与备份导出；示例 App 提供选择器按钮，详见 [AAR API](docs/pdn-aar-api.md)。
-
-中断安装可用 `pdn recovery list` 检查、`pdn recovery clear --yes` 清理明确中断的暂存；已安装系统、未知条目和续传缓存保留，详见 [发行版管理](docs/pdn-distributions.md#中断安装检查与清理)。
-
-### 3.2 安装、登录和管理发行版
-
-```sh
-./pdn list --available
-./pdn install ubuntu
-./pdn login ubuntu
-```
-
-退出 Linux 后，在宿主 shell 中执行一次命令或管理系统：
-
-```sh
-./pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
-./pdn mirrors ubuntu
-./pdn list
-```
-
-在线下载中断或取消后，保持相同 rootfs 管理目录并重复同一安装操作，会自动尝试从相同镜像 URL 续传；不会在后台自动重试。完整大小和 SHA256 校验通过后才解压，详见[发行版管理教程](docs/pdn-distributions.md)。
-
-支持 Alpine、Ubuntu Base、Debian slim 和 Arch Linux ARM。官方源选择、离线归档、挂载、账号、默认配置、备份恢复和完整指令索引见[发行版管理教程](docs/pdn-distributions.md)。
-
-同一发行版可以安装成不同实例；各自拥有独立 rootfs：
-
-```sh
-./pdn install alpine --name ai-python
-./pdn install alpine --name ai-node
-./pdn login ai-python
-./pdn list --json
-```
-
-名称最多 128 个 ASCII 字符，首字符为字母、数字或下划线，后续还允许点和短横线；名称冲突不区分大小写。新实例记录稳定 ID、来源、版本、摘要和创建时间。旧 rootfs 查询为 `instance: null`，不会自动改写；备份恢复为新实例时生成新 ID。
-
-复制实例会生成新 ID；重命名保留原 ID，并迁移属于原 rootfs 的链接与保存的挂载配置。操作前退出实例会话：
-
-```sh
-./pdn clone ai-python ai-python-test
-./pdn rename ai-python-test workspace-python
-./pdn login workspace-python
-```
+部署后可安装、登录和执行 Linux 命令。来源、续传、多实例、挂载、备份恢复和卸载见 [发行版管理教程](docs/pdn-distributions.md)，完整命令见 [CLI 手册](docs/proot-distro-nolib.zh-CN.md)。
 
 ### 3.3 在 Linux 内调用 Android 调试命令
 
-先在已授权宿主中启动原始 `rish`，用 `id` 确认真实 Android shell 身份，再按上面部署程序。在 Android shell 中带挂载启动 Ubuntu：
-
-```sh
-./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
-```
-
-Ubuntu 内定义一个自选名字的命令：
-
-```sh
-rish() {
-    /system/bin/sh -c 'export PATH=/system/bin:/system/xbin; exec /system/bin/sh "$@"' -- "$@"
-}
-rish -c 'getprop ro.build.version.sdk'
-rish -c 'cmd package path android'
-```
-
-这里的 `rish` 是 Bash 函数，使用已继承的权限调用 Android shell，不会再次连接 Shizuku。从 ADB shell 启动时无需 Shizuku；使用 Shizuku 时，把已授权宿主保持在前台，部分系统即使设置电池“无限制”也可能在后台断连。
-
-目录变量可保存到配置文件，并创建自动加载设置、携带 Android 挂载的 `ubuntu-android` 专用登录命令，见[固定目录变量和登录入口](docs/pdn-shizuku-android-shell.md#固定目录变量和专用登录入口)。
-
-原始 rish 准备、函数保存到 `.bashrc`、验证 Android 设置确实改变并清理、重连和常见报错见[完整教程](docs/pdn-shizuku-android-shell.md)。
+需要 Android shell 级权限时，从 Shizuku/rish 或 ADB shell 启动，再配置 Android 系统挂载和 Linux 内的命令入口。完整流程及前台连接要求见 [调试 Android](docs/pdn-shizuku-android-shell.md)。
 
 ### 3.4 通过 AAR 接入 App
 
@@ -229,10 +148,10 @@ PdnTask task = operations.start(pdn.install("alpine"), listener);
 
 | 我想做什么 | 文档 |
 | --- | --- |
-| 在 Android shell / MT 中运行 Linux，并调试 Android | [Android shell 教程](docs/pdn-shizuku-android-shell.md) |
+| 从 Linux 调用 Android 系统调试命令 | [调试 Android](docs/pdn-shizuku-android-shell.md) |
 | 安装、登录、挂载、配置、备份或卸载 Linux | [发行版管理教程](docs/pdn-distributions.md) |
 | 给其他 APK 嵌入 PDN | [App 接入教程](docs/android-embedding.md) |
-| 在 Shell 中部署、安装和管理 Linux | [Shell 快速开始](docs/pdn-shell.md) |
+| 在 MT 等终端部署原始 ELF | [Shell 部署教程](docs/pdn-shell.md) |
 | 查 Java/Kotlin 配置、任务、查询和终端接口 | [AAR API](docs/pdn-aar-api.md) |
 | 自己接事件或排查分类错误 | [事件协议](docs/pdn-events.md)、[错误说明](docs/pdn-errors.md) |
 | 查上游归档与 SHA256 | [rootfs 来源](docs/pdn-rootfs-sources.zh-CN.md) |

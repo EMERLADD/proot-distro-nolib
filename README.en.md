@@ -62,7 +62,7 @@ The main paths above have been verified with **MT Manager, an independent APK bu
 - **Linux storage**: an accessible directory supporting Unix permissions and symbolic links, such as App-private storage or Android shell's `/data/local/tmp`. `/sdcard` is suitable for downloads, backups and shared files, not rootfs extraction.
 - **Networking and shared files**: online installation needs network permission; shared storage requires the corresponding access permissions.
 
-PRoot's root identity is simulated; the host's actual UID and SELinux restrictions still apply. Shizuku is an optional privilege entry point, not a requirement for installing or running Linux. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) and [App integration guide](docs/android-embedding.en.md).
+PRoot's root identity is simulated; the host's actual UID and SELinux restrictions still apply. Shizuku is an optional privilege entry point, not a requirement for installing or running Linux. See [shell deployment](docs/pdn-shell.en.md) and [App integration](docs/android-embedding.en.md).
 
 ## 2. Downloads and updates
 
@@ -88,98 +88,17 @@ See [building and release files](docs/pdn-build-and-release.en.md) for file stru
 
 ## 3. Quick start
 
-### 3.1 Deploy to Android shell
+### 3.1 Deploy the ELF in a terminal
 
-This example applies to Android shell environments permitted to execute from `/data/local/tmp`, such as ADB or an already connected Shizuku/rish shell. Ordinary terminal Apps should use their own accessible executable directories. Do not try to initialize the original rish in App-private storage after entering Android shell.
+Start with the [MT Manager terminal deployment guide](docs/pdn-shell.en.md): download the ELF, copy it into App-private storage, configure fixed storage paths and register the `pdn` short command. Running Linux from MT's ordinary terminal requires neither Shizuku nor Termux; other permitted Android shells can use their own directories.
 
-Download `pdn` and `proot-loader`, then adjust the two source paths to their actual locations:
+### 3.2 Install and manage distributions
 
-```sh
-mkdir -p /data/local/tmp/pdn
-cp /sdcard/Download/pdn /data/local/tmp/pdn/pdn
-cp /sdcard/Download/proot-loader /data/local/tmp/pdn/proot-loader
-chmod 755 /data/local/tmp/pdn/pdn /data/local/tmp/pdn/proot-loader
-cd /data/local/tmp/pdn
-./pdn version
-```
-
-Select Linux and temporary directories:
-
-```sh
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
-export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
-mkdir -p "$PROOT_TMP_DIR"
-```
-
-The current working directory does not automatically determine rootfs storage. Android shell may set `HOME=/`, so configure paths explicitly. See the [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) for complete steps and the MT example.
-
-The AAR accepts document URIs, descriptors and streams for archive import and backup export. The example App includes document-picker buttons; see the [AAR API](docs/pdn-aar-api.en.md).
-
-Use `pdn recovery list` to inspect interrupted installation staging and `pdn recovery clear --yes` for explicit cleanup. Installed systems, unknown entries and resume cache are preserved; see [distribution management](docs/pdn-distributions.en.md#interrupted-installation-checks-and-cleanup).
-
-### 3.2 Install, log in and manage distributions
-
-```sh
-./pdn list --available
-./pdn install ubuntu
-./pdn login ubuntu
-```
-
-After exiting Linux, execute a command or manage the system from the host shell:
-
-```sh
-./pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
-./pdn mirrors ubuntu
-./pdn list
-```
-
-After an online download is interrupted or cancelled, repeat the same installation with the same rootfs management directory to automatically attempt resuming from the same mirror URL. There is no automatic background retry. Extraction requires the full pinned size and SHA256 to match; see [distribution management](docs/pdn-distributions.en.md).
-
-Alpine, Ubuntu Base, Debian slim and Arch Linux ARM are supported. See [distribution management](docs/pdn-distributions.en.md) for official sources, offline archives, binds, accounts, default configuration, backups and the full command index.
-
-Install the same distribution under separate names, each with its own rootfs:
-
-```sh
-./pdn install alpine --name ai-python
-./pdn install alpine --name ai-node
-./pdn login ai-python
-./pdn list --json
-```
-
-Names contain up to 128 ASCII letters, digits, underscores, dots or hyphens, starting with a letter, digit or underscore. Collisions are case insensitive. New instances record a stable ID, provenance, version, digest and creation time. Legacy rootfs queries return `instance: null` without modifying them; restoring a backup creates a fresh ID.
-
-Cloning creates a new ID. Renaming keeps the original ID and migrates rootfs-owned links and saved bind paths. Exit active instance sessions first:
-
-```sh
-./pdn clone ai-python ai-python-test
-./pdn rename ai-python-test workspace-python
-./pdn login workspace-python
-```
+After deployment, install distributions, log in and run Linux commands. See [distribution management](docs/pdn-distributions.en.md) for sources, resume, instances, binds, backups and removal, or the [CLI manual](docs/proot-distro-nolib.md) for all commands.
 
 ### 3.3 Call Android debugging commands from Linux
 
-Start the original `rish` from the authorized host first, confirm the actual Android shell identity with `id`, then deploy PDN as above. Start Ubuntu with these binds from Android shell:
-
-```sh
-./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
-```
-
-Inside Ubuntu, define a command with a name of your choice:
-
-```sh
-rish() {
-    /system/bin/sh -c 'export PATH=/system/bin:/system/xbin; exec /system/bin/sh "$@"' -- "$@"
-}
-rish -c 'getprop ro.build.version.sdk'
-rish -c 'cmd package path android'
-```
-
-Here `rish` is a Bash function calling Android shell with inherited privileges; it does not reconnect to Shizuku. Starting from ADB shell does not need Shizuku. When using Shizuku, keep the authorized host in the foreground: the tested environment disconnected in the background even with battery usage set to unrestricted.
-
-Save directory variables in a configuration file and create an `ubuntu-android` entry that loads them and supplies the Android mounts. See [persistent settings and login entry](docs/pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry).
-
-See the [complete tutorial](docs/pdn-shizuku-android-shell.en.md) for original rish setup, saving the function to `.bashrc`, verifying and cleaning up Android settings changes, reconnection and common errors.
+For Android shell privileges, start through Shizuku/rish or ADB shell, then configure Android system mounts and a command entry inside Linux. See [debug Android](docs/pdn-shizuku-android-shell.en.md) for the complete flow and foreground connection requirements.
 
 ### 3.4 Integrate an App with the AAR
 
@@ -229,10 +148,10 @@ Both APK paths run under ordinary Android App identities; simulated Linux root d
 
 | Goal | Documentation |
 | --- | --- |
-| Run Linux and debug Android from Android shell / MT | [Android shell tutorial](docs/pdn-shizuku-android-shell.en.md) |
+| Call Android system debugging commands from Linux | [Debug Android](docs/pdn-shizuku-android-shell.en.md) |
 | Install, log in, bind, configure, back up or remove Linux | [Distribution management](docs/pdn-distributions.en.md) |
 | Embed PDN in another APK | [App integration](docs/android-embedding.en.md) |
-| Deploy, install and manage Linux in a shell | [Shell quick start](docs/pdn-shell.en.md) |
+| Deploy the original ELF in MT or another terminal | [Shell deployment](docs/pdn-shell.en.md) |
 | Look up Java/Kotlin configuration, tasks, queries and terminals | [AAR API](docs/pdn-aar-api.en.md) |
 | Handle events or investigate classified errors | [Event protocol](docs/pdn-events.en.md), [Error reference](docs/pdn-errors.en.md) |
 | Check upstream archives and SHA256 | [Rootfs sources](docs/pdn-rootfs-sources.md) |

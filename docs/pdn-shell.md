@@ -1,140 +1,127 @@
-# 在 Android shell 中使用 PDN
+# 在 MT 管理器终端部署 PDN ELF
 
 简体中文 | [English](pdn-shell.en.md) · [返回 README](../README.md)
 
-先从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 下载同一版本的原始 `pdn` 和 `proot-loader`。本页介绍在有执行和存储权限的 shell 中部署、安装和管理 Linux；如果要在 Linux 内调用 Android 调试命令，见 [Android 调试教程](pdn-shizuku-android-shell.md)。
+本页以 **MT 管理器自带的普通终端**为例，把原始 ELF 放进 App 私有目录，配置 Linux 存储位置，再注册 `pdn` 命令。安装和运行 Linux 不需要先进入 rish，也不需要 Termux。其他允许执行 ELF 的 Android 终端可以使用同样的方法，目录换成该 App 自己能访问的位置。
 
-## 在 Android shell 部署程序
+如果要从 Linux 调用具有 Android shell 权限的系统调试命令，另见 [调试 Android](pdn-shizuku-android-shell.md)。
 
-下面适用于允许从 `/data/local/tmp` 执行程序的 Android shell，例如 ADB 或已启动的 Shizuku/rish shell。普通终端 App 应使用自己允许执行和读写的目录；不要在 Android shell 中访问 App 私有目录初始化原始 rish。
+## 1. 准备文件和终端
 
-下载 `pdn` 和 `proot-loader` 后，按实际位置修改两条 `cp` 的源路径：
+从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 下载同一版本的 ARM64 Android `pdn` 和 `proot-loader`，核对 `SHA256SUMS`。下载到 `/sdcard/Download/` 即可；共享存储用于存放下载文件，程序和 rootfs 部署到私有目录。
+
+打开 MT 管理器自带终端，确认所在环境：
 
 ```sh
-mkdir -p /data/local/tmp/pdn
-cp /sdcard/Download/pdn /data/local/tmp/pdn/pdn
-cp /sdcard/Download/proot-loader /data/local/tmp/pdn/proot-loader
-chmod 755 /data/local/tmp/pdn/pdn /data/local/tmp/pdn/proot-loader
-cd /data/local/tmp/pdn
+id
+pwd
+```
+
+下面在 **MT 原来的终端**执行。示例使用包名 `bin.mt.plus` 的私有目录；如果你的 MT 包名或终端目录不同，改成实际目录。已经进入 rish 时，先 `exit` 回到 MT 原来的终端，才能访问 MT 私有目录。
+
+## 2. 把 ELF 放进私有目录
+
+```sh
+cd /data/user/0/bin.mt.plus/files/term
+mkdir -p pdn
+cd pdn
+cp /sdcard/Download/pdn .
+cp /sdcard/Download/proot-loader .
+chmod 700 pdn proot-loader
 ./pdn version
 ```
 
-指定 Linux 和临时目录：
+也可以通过 MT 的文件管理界面把两个文件复制到同一目录，再执行 `chmod` 和版本检查。文件名保留为 `pdn`、`proot-loader`；这是独立程序，不需要改成 `.so` 或安装成 APK。
+
+如果源文件不在 Download，修改两条 `cp` 的源路径。私有目录不能访问时，检查是否仍在 MT 普通终端、包名及路径是否正确；Shizuku/ADB shell 的 `/data/local/tmp` 部署属于另一条入口。
+
+## 3. 创建固定目录的启动入口
+
+仍在刚才的 `pdn` 目录中，逐行执行：
 
 ```sh
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
-export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
-mkdir -p "$PROOT_TMP_DIR"
-```
-
-当前工作目录不会自动决定 rootfs 位置。Android shell 的 `HOME` 可能是 `/`，因此应显式设置目录。完整步骤和 MT 示例见[Android shell 教程](pdn-shizuku-android-shell.md)。
-
-AAR 支持系统文件选择器返回的 URI、FD 和流，用于压缩包导入与备份导出；示例 App 提供选择器按钮，详见 [AAR API](pdn-aar-api.md)。
-
-中断安装可用 `pdn recovery list` 检查、`pdn recovery clear --yes` 清理明确中断的暂存；已安装系统、未知条目和续传缓存保留，详见 [发行版管理](pdn-distributions.md#中断安装检查与清理)。
-
-## 保存目录设置，供以后使用
-
-`export` 只在当前 shell 及其子进程中有效。要以后每次使用相同目录，在外层 Android shell 创建一个专用入口。先进入部署目录，再逐行输入短命令：
-
-```sh
-cd /data/local/tmp/pdn
 cat > pdn-run <<'EOF'
 #!/system/bin/sh
-PDN_DIR=/data/local/tmp/pdn
+PDN_DIR=$(dirname "$0")
+PDN_DIR=$(cd "$PDN_DIR" && pwd) || exit 1
 export PDN_ROOTFS_DIR="$PDN_DIR/linux"
 export PROOT_TMP_DIR="$PDN_DIR/tmp"
+export PROOT_LOADER="$PDN_DIR/proot-loader"
 mkdir -p "$PROOT_TMP_DIR" || exit 1
 exec "$PDN_DIR/pdn" "$@"
 EOF
 chmod 700 pdn-run
-
-./pdn-run install alpine
-./pdn-run login alpine
 ```
 
-`EOF` 必须独占一行，输入最后一个 `EOF` 前显示 `>` 是 shell 正在等待文件内容。上面的变量赋值各自一行，避免粘贴长命令时遗漏。文件名写作 `pdn-run`，不要把目录和文件名用空格拼在一起。
+入口从自己的位置确定目录，每次启动都设置 rootfs、临时目录和 loader 路径，不依赖外层 shell 的 `HOME` 或当前工作目录。安装操作创建 `linux`，入口创建 `tmp`：
 
-入口每次自动设置目录。MT 示例如果部署在 `/data/local/tmp/pdn-mt`，修改 `cd` 的目录、脚本中的 `PDN_DIR` 和下面函数内的入口路径；rootfs 路径应沿用已有安装的位置。原生 Android shell 不保证自动读取 `~/.bashrc` 或 `~/.profile`。
+```text
+files/term/pdn/
+├── pdn
+├── proot-loader
+├── pdn-run
+├── pdn-command.sh
+├── linux/
+└── tmp/
+```
 
-### 直接使用 pdn 短命令
+已有 Linux 时，`PDN_ROOTFS_DIR` 应沿用原来的管理目录，避免新入口看不到已安装系统。不要把 rootfs 指向 `/sdcard`。
 
-已有 `pdn-run` 后，在外层 Android shell 定义函数：
+`EOF` 必须独占一行；结束前的 `>` 表示 shell 正在等待文件内容。变量赋值各自一行，文件名直接写 `pdn-run`，不需要把长目录和文件名拼在一起。
+
+## 4. 注册 pdn 短命令
+
+在同一目录创建并加载定义文件：
 
 ```sh
-pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
+cat > pdn-command.sh <<'EOF'
+pdn() {
+    /data/user/0/bin.mt.plus/files/term/pdn/pdn-run "$@"
+}
+EOF
+chmod 600 pdn-command.sh
+. ./pdn-command.sh
+pdn version
+```
+
+函数转发参数给启动入口，之后可直接输入 `pdn login alpine`。换部署目录时，修改函数里的入口路径。`./pdn` 会直接执行原始 ELF；使用固定目录的入口请写 `pdn` 或 `./pdn-run`。
+
+定义文件会保留，函数需在每次新终端会话中加载：
+
+```sh
+. /data/user/0/bin.mt.plus/files/term/pdn/pdn-command.sh
+```
+
+如果终端支持启动时执行命令，把这一行配置进去即可。不要假定 Android shell 会自动读取 `~/.bashrc` 或 `~/.profile`。文件只需可读，必须用点命令加载；直接执行它不会把函数注册到当前 shell。
+
+## 5. 安装并进入 Linux
+
+```sh
+pdn list --available
 pdn install alpine
 pdn login alpine
 ```
 
-要保存函数定义，创建文件并在当前会话加载：
+进入后可运行 Linux 命令，`exit` 返回 MT 终端。也可以安装并登录 Ubuntu：
 
 ```sh
-cd /data/local/tmp/pdn
-cat > pdn-command.sh <<'EOF'
-pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
-EOF
-chmod 600 pdn-command.sh
-. ./pdn-command.sh
-pdn login alpine
-```
-
-每次重新进入 rish，加载一次定义文件：
-
-```sh
-. /data/local/tmp/pdn/pdn-command.sh
-pdn login alpine
-```
-
-如果终端或连接工具支持初始化命令，将加载这一行配置为**进入 rish 后**执行。定义文件会持续保存，shell 不会自动加载它；函数调用 `pdn-run`，由入口每次设置 rootfs 和临时目录。使用短命令时写 `pdn`；`./pdn` 会直接执行原始程序，跳过这个入口。
-
-如果启动时出现 `mkdir: '': No such file or directory`，临时目录变量为空，检查文件是否粘贴完整：
-
-```sh
-cd /data/local/tmp/pdn
-cat pdn-run
-cat pdn-command.sh
-```
-
-把 `pdn-run` 按上面的完整内容重写后，再用 `pdn login alpine`。配置文件尚未创建时，点命令会提示找不到文件；先完成 `cat … EOF`，再执行 `. ./pdn-command.sh`。需要带 Android 调试挂载的 Ubuntu 专用入口，见 [Android 调试教程](pdn-shizuku-android-shell.md#固定目录变量和专用登录入口)。
-
-## 安装、登录和管理发行版
-
-```sh
-pdn list --available
 pdn install ubuntu
 pdn login ubuntu
 ```
 
-退出 Linux 后，在宿主 shell 中执行一次命令或管理系统：
+这里的 Linux root 是 PRoot 模拟身份，仍受 MT 的 Android UID 和 SELinux 权限限制。发行版来源、续传、命令执行、实例管理和备份恢复见 [发行版管理](pdn-distributions.md)；完整选项见 [CLI 手册](proot-distro-nolib.zh-CN.md)。
 
-```sh
-pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
-pdn mirrors ubuntu
-pdn list
-```
+## 6. 更新与排查
 
-在线下载中断或取消后，保持相同 rootfs 管理目录并重复同一安装操作，会自动尝试从相同镜像 URL 续传；不会在后台自动重试。完整大小和 SHA256 校验通过后才解压，详见[发行版管理教程](pdn-distributions.md)。
+更新时先退出 Linux 会话，把同一新版本的 `pdn`、`proot-loader` 复制到上述程序目录，再执行 `chmod 700 pdn proot-loader` 并检查 `pdn version`。保留 `linux` 和两个入口文件，已有系统不需要重装。
 
-支持 Alpine、Ubuntu Base、Debian slim 和 Arch Linux ARM。官方源选择、离线归档、挂载、账号、默认配置、备份恢复和完整指令索引见[发行版管理教程](pdn-distributions.md)。
+| 现象 | 检查方法 |
+| --- | --- |
+| `pdn: not found` | 加载 `pdn-command.sh`；函数仅在当前 shell 中生效 |
+| 找不到 `pdn-command.sh` | 先完成文件创建，再在程序目录执行 `. ./pdn-command.sh` |
+| `can't create …: Is a directory` | 重定向目标必须是文件；在程序目录使用 `cat > pdn-command.sh` |
+| `mkdir: '': No such file or directory` | 用 `cat pdn-run` 检查变量赋值是否粘贴完整 |
+| rootfs 路径只读或没有权限 | 检查是否使用了入口，以及 `PDN_ROOTFS_DIR` 是否为当前宿主可写目录 |
+| ELF 无法执行 | 确认使用 ARM64 Android 文件、已设置执行权限，且程序位于宿主允许执行的私有目录 |
 
-同一发行版可以安装成不同实例；各自拥有独立 rootfs：
-
-```sh
-pdn install alpine --name ai-python
-pdn install alpine --name ai-node
-pdn login ai-python
-pdn list --json
-```
-
-名称最多 128 个 ASCII 字符，首字符为字母、数字或下划线，后续还允许点和短横线；名称冲突不区分大小写。新实例记录稳定 ID、来源、版本、摘要和创建时间。旧 rootfs 查询为 `instance: null`，不会自动改写；备份恢复为新实例时生成新 ID。
-
-复制实例会生成新 ID；重命名保留原 ID，并迁移属于原 rootfs 的链接与保存的挂载配置。操作前退出实例会话：
-
-```sh
-pdn clone ai-python ai-python-test
-pdn rename ai-python-test workspace-python
-pdn login workspace-python
-```
-
+系统若禁止当前 App 从私有目录执行 ELF，需要换允许执行的宿主入口；其他 App 的私有目录不会因为复制文件或 PRoot 模拟 root 而变得可访问。
