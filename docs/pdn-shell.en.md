@@ -36,30 +36,31 @@ Use `pdn recovery list` to inspect interrupted installation staging and `pdn rec
 
 ## Keep directory settings for later use
 
-`export` affects only the current shell and its children. Create a dedicated entry from the outer Android shell to reuse the same paths on every launch:
+`export` affects only the current shell and its children. Create a dedicated entry in the outer Android shell to reuse the same paths. Change into the deployment directory first, then enter the short lines:
 
 ```sh
-cat > /data/local/tmp/pdn/pdn-run <<'EOF'
+cd /data/local/tmp/pdn
+cat > pdn-run <<'EOF'
 #!/system/bin/sh
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
-export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
+PDN_DIR=/data/local/tmp/pdn
+export PDN_ROOTFS_DIR="$PDN_DIR/linux"
+export PROOT_TMP_DIR="$PDN_DIR/tmp"
 mkdir -p "$PROOT_TMP_DIR" || exit 1
-exec /data/local/tmp/pdn/pdn "$@"
+exec "$PDN_DIR/pdn" "$@"
 EOF
-chmod 700 /data/local/tmp/pdn/pdn-run
+chmod 700 pdn-run
 
-/data/local/tmp/pdn/pdn-run install alpine
-/data/local/tmp/pdn/pdn-run login alpine
+./pdn-run install alpine
+./pdn-run login alpine
 ```
 
-After reconnecting through rish, run the absolute `pdn-run` path above; it sets the variables on each invocation. The original `pdn` remains available, and running `./pdn` directly does not load this script. Replace every `/data/local/tmp/pdn` with your deployment directory, such as `/data/local/tmp/pdn-mt` for the MT example.
+`EOF` must be on its own line. A `>` prompt before the closing `EOF` means the shell is waiting for file content. Keep variable assignments on separate lines to avoid losing parts of long pasted commands. Use the filename `pdn-run`; do not join the directory and filename with a space.
 
-To use `pdn` by name in the current session, save and source `pdn-env.sh`; see [saved settings and login entry](pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry). Native Android shell does not guarantee loading `~/.bashrc` or `~/.profile`.
+The entry sets directories on every invocation. For an MT deployment at `/data/local/tmp/pdn-mt`, change the `cd` directory, `PDN_DIR` and the entry path in the function below. Keep the rootfs location used for existing installations. Native Android shell does not guarantee loading `~/.bashrc` or `~/.profile`.
 
 ### Use pdn as the short command
 
-After creating `pdn-run`, define a function in the outer Android shell. You can then enter `pdn login alpine` directly:
+After creating `pdn-run`, define a function in the outer Android shell:
 
 ```sh
 pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
@@ -67,33 +68,51 @@ pdn install alpine
 pdn login alpine
 ```
 
-The function applies to the current shell. Save its definition and load it as follows:
+Save the function definition and load it into the current session:
 
 ```sh
-cat > /data/local/tmp/pdn/pdn-command.sh <<'EOF'
+cd /data/local/tmp/pdn
+cat > pdn-command.sh <<'EOF'
 pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
 EOF
-chmod 600 /data/local/tmp/pdn/pdn-command.sh
+chmod 600 pdn-command.sh
+. ./pdn-command.sh
+pdn login alpine
+```
+
+After reconnecting through rish, load the definition once:
+
+```sh
 . /data/local/tmp/pdn/pdn-command.sh
 pdn login alpine
 ```
 
-After reconnecting through rish, run `. /data/local/tmp/pdn/pdn-command.sh` to restore the short command. If your terminal or connection tool supports initialization commands, configure this line to run **after entering rish**; Android shell does not guarantee loading this file automatically. The saved function delegates directory setup to `pdn-run` on every invocation. Replace the deployment directory with `/data/local/tmp/pdn-mt` for the MT example. `./pdn` explicitly runs the original executable; use `pdn` for the short command.
+If your terminal or connection tool supports initialization commands, configure the source command to run **after entering rish**. The definition file persists but is not loaded automatically. The function calls `pdn-run`, which sets rootfs and temporary directories on each launch. Use `pdn` for the short command; `./pdn` runs the original executable directly and bypasses this entry.
+
+If startup reports `mkdir: '': No such file or directory`, the temporary directory variable is empty. Check that the files were pasted completely:
+
+```sh
+cd /data/local/tmp/pdn
+cat pdn-run
+cat pdn-command.sh
+```
+
+Rewrite `pdn-run` with the complete content above and retry `pdn login alpine`. Sourcing a definition file before it exists reports a missing file; finish `cat … EOF` before running `. ./pdn-command.sh`. For a dedicated Ubuntu entry with Android debugging mounts, see the [Android debugging tutorial](pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry).
 
 ## Install, log in and manage distributions
 
 ```sh
-./pdn list --available
-./pdn install ubuntu
-./pdn login ubuntu
+pdn list --available
+pdn install ubuntu
+pdn login ubuntu
 ```
 
 After exiting Linux, execute a command or manage the system from the host shell:
 
 ```sh
-./pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
-./pdn mirrors ubuntu
-./pdn list
+pdn exec ubuntu -- /bin/sh -c 'echo hello; uname -r'
+pdn mirrors ubuntu
+pdn list
 ```
 
 After an online download is interrupted or cancelled, repeat the same installation with the same rootfs management directory to automatically attempt resuming from the same mirror URL. There is no automatic background retry. Extraction requires the full pinned size and SHA256 to match; see [distribution management](pdn-distributions.en.md).
@@ -103,10 +122,10 @@ Alpine, Ubuntu Base, Debian slim and Arch Linux ARM are supported. See [distribu
 Install the same distribution under separate names, each with its own rootfs:
 
 ```sh
-./pdn install alpine --name ai-python
-./pdn install alpine --name ai-node
-./pdn login ai-python
-./pdn list --json
+pdn install alpine --name ai-python
+pdn install alpine --name ai-node
+pdn login ai-python
+pdn list --json
 ```
 
 Names contain up to 128 ASCII letters, digits, underscores, dots or hyphens, starting with a letter, digit or underscore. Collisions are case insensitive. New instances record a stable ID, provenance, version, digest and creation time. Legacy rootfs queries return `instance: null` without modifying them; restoring a backup creates a fresh ID.
@@ -114,8 +133,8 @@ Names contain up to 128 ASCII letters, digits, underscores, dots or hyphens, sta
 Cloning creates a new ID. Renaming keeps the original ID and migrates rootfs-owned links and saved bind paths. Exit active instance sessions first:
 
 ```sh
-./pdn clone ai-python ai-python-test
-./pdn rename ai-python-test workspace-python
-./pdn login workspace-python
+pdn clone ai-python ai-python-test
+pdn rename ai-python-test workspace-python
+pdn login workspace-python
 ```
 
