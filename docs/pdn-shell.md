@@ -34,6 +34,29 @@ AAR 支持系统文件选择器返回的 URI、FD 和流，用于压缩包导入
 
 中断安装可用 `pdn recovery list` 检查、`pdn recovery clear --yes` 清理明确中断的暂存；已安装系统、未知条目和续传缓存保留，详见 [发行版管理](pdn-distributions.md#中断安装检查与清理)。
 
+## 保存目录设置，供以后使用
+
+`export` 只在当前 shell 及其子进程中有效。要以后每次使用相同目录，可以用命令创建一个专用入口；在外层 Android shell 执行：
+
+```sh
+cat > /data/local/tmp/pdn/pdn-run <<'EOF'
+#!/system/bin/sh
+export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
+export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
+export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
+mkdir -p "$PROOT_TMP_DIR" || exit 1
+exec /data/local/tmp/pdn/pdn "$@"
+EOF
+chmod 700 /data/local/tmp/pdn/pdn-run
+
+/data/local/tmp/pdn/pdn-run install alpine
+/data/local/tmp/pdn/pdn-run login alpine
+```
+
+以后重新进入 rish，直接执行上面的 `pdn-run` 绝对路径即可，入口每次自动设置变量，不需要再次 export。原始 `pdn` 文件保留；直接执行 `./pdn` 不会自动读取这个脚本。按实际部署目录修改所有 `/data/local/tmp/pdn`，例如本页 MT 场景可使用 `/data/local/tmp/pdn-mt`。
+
+如果希望当前会话直接输入 `pdn`，也可以保存 `pdn-env.sh` 并用点命令加载，完整命令见 [保存环境及登录入口](pdn-shizuku-android-shell.md#固定目录变量和专用登录入口)。原生 Android shell 不保证自动读取 `~/.bashrc` 或 `~/.profile`。
+
 ## 安装、登录和管理发行版
 
 ```sh

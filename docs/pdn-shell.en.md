@@ -34,6 +34,29 @@ The AAR accepts document URIs, descriptors and streams for archive import and ba
 
 Use `pdn recovery list` to inspect interrupted installation staging and `pdn recovery clear --yes` for explicit cleanup. Installed systems, unknown entries and resume cache are preserved; see [distribution management](pdn-distributions.en.md#interrupted-installation-checks-and-cleanup).
 
+## Keep directory settings for later use
+
+`export` affects only the current shell and its children. Create a dedicated entry from the outer Android shell to reuse the same paths on every launch:
+
+```sh
+cat > /data/local/tmp/pdn/pdn-run <<'EOF'
+#!/system/bin/sh
+export PDN_ROOTFS_DIR=/data/local/tmp/pdn/linux
+export PROOT_TMP_DIR=/data/local/tmp/pdn/tmp
+export PROOT_LOADER=/data/local/tmp/pdn/proot-loader
+mkdir -p "$PROOT_TMP_DIR" || exit 1
+exec /data/local/tmp/pdn/pdn "$@"
+EOF
+chmod 700 /data/local/tmp/pdn/pdn-run
+
+/data/local/tmp/pdn/pdn-run install alpine
+/data/local/tmp/pdn/pdn-run login alpine
+```
+
+After reconnecting through rish, run the absolute `pdn-run` path above; it sets the variables on each invocation. The original `pdn` remains available, and running `./pdn` directly does not load this script. Replace every `/data/local/tmp/pdn` with your deployment directory, such as `/data/local/tmp/pdn-mt` for the MT example.
+
+To use `pdn` by name in the current session, save and source `pdn-env.sh`; see [saved settings and login entry](pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry). Native Android shell does not guarantee loading `~/.bashrc` or `~/.profile`.
+
 ## Install, log in and manage distributions
 
 ```sh
