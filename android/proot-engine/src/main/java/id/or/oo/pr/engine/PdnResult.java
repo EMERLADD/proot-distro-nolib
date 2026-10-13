@@ -2,6 +2,7 @@ package id.or.oo.pr.engine;
 
 public final class PdnResult {
     private final String operationId;
+    private final Integer deniedExecutions;
     private final String outcome;
     private final int exitCode;
     private final Integer guestExitCode;
@@ -11,6 +12,7 @@ public final class PdnResult {
     private final String message;
     private final String suggestion;
     PdnResult(String operationId, int exitCode, PdnEvent event) {
+        this.deniedExecutions = event == null ? null : (event.getDeniedExecutions() == null ? 0 : event.getDeniedExecutions());
         this.operationId = operationId;
         this.exitCode = exitCode;
         this.outcome = event == null ? "host_protocol_error" : event.getOutcome();
@@ -22,6 +24,7 @@ public final class PdnResult {
         this.guestSignal = event == null ? null : event.getGuestSignal();
     }
     public String getOperationId() { return operationId; }
+    public Integer getDeniedExecutions() { return deniedExecutions; }
     public String getOutcome() { return outcome; }
     public int getExitCode() { return exitCode; }
     public Integer getGuestExitCode() { return guestExitCode; }

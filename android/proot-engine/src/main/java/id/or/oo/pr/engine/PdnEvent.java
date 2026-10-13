@@ -17,6 +17,12 @@ public final class PdnEvent {
     public String getCode() { return string("code"); }
     public String getMessage() { return string("message"); }
     public String getSuggestion() { return string("suggestion"); }
+    public String getProgram() { return string("program"); }
+    public String getWorkingDirectory() { return string("cwd"); }
+    public String getReason() { return string("reason"); }
+    public Integer getErrno() { return integer("errno"); }
+    public Integer getRuleIndex() { return integer("rule_index"); }
+    public Integer getDeniedExecutions() { return integer("denied_executions"); }
     public String getOutcome() { return string("outcome"); }
     public Integer getExitCode() { return integer("exit_code"); }
     public Integer getGuestExitCode() { return integer("guest_exit_code"); }

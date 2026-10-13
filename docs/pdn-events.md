@@ -118,7 +118,7 @@ try {
 | `operation_id` | 1–64 个 ASCII 字母、数字、`.`、`_`、`-`；Java 自动生成 |
 | `sequence` | 从 1 开始连续递增 |
 | `operation` | `install`、`exec`、`backup` 等操作名 |
-| `type` | `started`、`stage`、`progress`、`error`、`result` |
+| `type` | `started`、`stage`、`progress`、`error`、`execution_denied`、`result` |
 
 示例：
 
@@ -163,3 +163,7 @@ proot-engine-*.aar
 `libptyjni.so` 是给交互终端使用的 JNI 共享库。标准 AAR 仅包含上述三项原生文件，`pdn-engine-lite-版本号.aar` 是字节相同的兼容文件名。旧 Java/Kotlin 类保留接口兼容，但依赖旧 pr-cli 的方法需要宿主另行提供原生程序；PDN 操作与终端应使用当前 API。AAR 不包含终端 Compose UI、示例 App、Linux rootfs 或已经安装的软件；这些分别属于宿主界面或运行时数据。
 
 宿主导入 AAR 后，还需配置 ARM64、minSdk 28、原生库解压和联网权限。Maven 接入自动传递 Kotlin 标准库，本地 AAR 需手动提供。直接导入本地 AAR 不会自动携带 Maven 依赖声明。Java 工程可以使用本版 Java 接口，但 `PdnRuntime` 本身仍是 Kotlin 实现，运行时需要 Kotlin 标准库。路径全部由宿主提供，见 [Android 接入教程](android-embedding.md)。
+
+## 执行规则事件
+
+可选规则拒绝程序时产生 `execution_denied`，包含 `code=policy_exec_denied`、`program`、`cwd`、`reason`（`program_denied` 或 `working_directory_denied`）、`rule_index`、`errno=13`、`message` 和 `suggestion`。最终 `result` 有拒绝时增加 `denied_executions`。事件文本路径最多 512 字节，长路径截短；判断仍使用完整路径。guest 可自行处理拒绝，因此拒绝事件不必然意味着最终失败。接口及边界见 [执行规则](pdn-aar-api.md#可选执行规则)。

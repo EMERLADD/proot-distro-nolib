@@ -2,6 +2,10 @@
 
 简体中文 | [English](CHANGELOG.en.md) · [返回 README](README.md)
 
+## v0.6.19 — 2026-10-13
+
+增加可选原生执行规则及 Java/Kotlin 配置：禁止指定程序，或只允许从指定 guest 目录启动；覆盖被追踪子进程和解释器，拒绝提供结构化事件及次数，默认不启用。
+
 ## v0.6.18 — 2026-10-12
 
 增加普通任务 stdin 接口：`startInteractive()`、UTF-8／二进制 `writeStdin()`、有序 EOF 的 `closeStdin()` 与 `isStdinOpen()`。输入在后台发送，有界缓冲提供明确的错误分类；退出、取消和超时清理管道。默认任务关闭 stdin 的行为及完整 PTY 功能保持一致。

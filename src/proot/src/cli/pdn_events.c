@@ -12,7 +12,7 @@
 
 static int event_fd = -1, finished, loaded, guest_status = -1, guest_signal, cancelled;
 static int login_shell, startup_error, loader_active;
-static unsigned sequence, progress_count;
+static unsigned sequence, progress_count, denied_executions;
 static char operation[24], identifier[65], stage[32], error_code[64], error_message[513], suggestion[513];
 static long long last_current = -1, last_tick;
 static int last_percent = -1;
@@ -171,6 +171,29 @@ void pdn_events_progress(long long current, long long total)
     last_current = current; last_percent = percent; last_tick = tick; progress_count++;
 }
 
+void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule, const char *reason)
+{
+    denied_executions++;
+    if (event_fd < 0) return;
+    char bounded_program[513], bounded_cwd[513];
+    copy(bounded_program, sizeof(bounded_program), program);
+    copy(bounded_cwd, sizeof(bounded_cwd), cwd);
+    struct record record = start("execution_denied");
+    field(&record, "code", "policy_exec_denied");
+    field(&record, "program", bounded_program);
+    field(&record, "cwd", bounded_cwd);
+    field(&record, "reason", reason);
+    field(&record, "message", "Program execution was refused by the host policy");
+    field(&record, "suggestion", "Use an allowed startup directory or ask the host to change its execution policy");
+    append(&record, ",\"rule_index\":%u,\"errno\":%d", rule, EACCES);
+    send(&record);
+    if (pdn_events_bootstrapping()) {
+        startup_error = 1;
+        pdn_events_problem("policy_exec_denied", "The startup program was refused by the host execution policy",
+            "Allow the guest startup shell/interpreter or change the execution policy");
+    }
+}
+
 void pdn_events_problem(const char *code, const char *message, const char *advice)
 {
     if (event_fd < 0) return;
@@ -314,6 +337,7 @@ void pdn_events_finish(int status)
     struct record record = start("result");
     field(&record, "outcome", outcome);
     append(&record, ",\"exit_code\":%d", status & 255);
+    if (denied_executions) append(&record, ",\"denied_executions\":%u", denied_executions);
     if (!startup_error && loaded && guest_status >= 0) append(&record, ",\"guest_exit_code\":%d", guest_status);
     if (!startup_error && guest_signal) append(&record, ",\"guest_signal\":%d", guest_signal);
     if (cancelled) append(&record, ",\"signal\":%d", cancelled);

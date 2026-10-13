@@ -495,3 +495,14 @@ New installations persist a random 128-bit UUID (32 lowercase hexadecimal charac
 Queries and cleanup hold the installation lock. Installation, backup, clone/rename or another cleanup can return operation_busy. A staging rootfs session lock also prevents deletion while in use. Cleanup does not follow symlinks or cross mounts, and checks all selected trees before deletion. Storage failure or cancellation may leave partial staging; inspect again following the error advice. Host permissions still apply; deletion is refused when mount identity cannot be verified.
 
 This covers recorded native install staging only; legacy installation directories are listed for manual review. Interrupted restore, clone/rename transactions and AAR document staging remain unsupported. Published-system damage after power loss is outside this repair scope. With an unavailable boot ID, cleanup requires other evidence proving that the original process is absent or has a different identity; unprovable state is retained.
+
+## Optional program startup restrictions
+
+```sh
+pdn exec ubuntu --exec-cwd /usr/sbin/sshd /workspace --work-dir /workspace -- /usr/sbin/sshd -D
+pdn login ubuntu --deny-exec /usr/bin/example
+```
+
+`--deny-exec /PROGRAM` refuses that program. `--exec-cwd /PROGRAM /DIRECTORY` permits startup only from the exact guest directory; repeat it to allow several directories. Deny takes precedence. Rules apply only to the current login/exec and traced descendants, are not saved in config, and are disabled by default. Symlink and bind resolution makes aliases share rules. Use normalized absolute paths, at most 512 bytes, and at most 128 rules.
+
+Refusal returns EACCES and reports `policy_exec_denied` through stderr and JSONL. See [execution policy](pdn-aar-api.en.md#optional-execution-policy) for full semantics and SDK integration. Startup rules do not restrict later resource access or distinguish shell builtins, interpreter operations or BusyBox applets by command name.

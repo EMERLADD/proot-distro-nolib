@@ -38,6 +38,41 @@ val operations = PdnOperations(pdn)
 
 默认将项目目录挂载到 `/workspace`；显式配置相同 guest 路径可以替换它。单次调用传入完整 `PdnConfiguration` 会替换运行时配置；旧 `user` 参数只覆盖账号，其余配置保留。它不会替代发行版内保存的 `pdn config` 文件。
 
+## 可选执行规则
+
+以下接口要求 SDK 0.6.19 或更新版本；README 所示 Maven 版本较旧时，使用对应版本的本地 AAR。
+
+宿主可以为一次 `exec()` 或 `login()` 设置执行规则，PRoot 检查被追踪的子进程以及脚本解释器、ELF 动态加载器。默认没有规则，原有调用方式保持一致。
+
+```java
+PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(
+    PdnExecRule.onlyFrom("/usr/sbin/sshd", "/workspace"),
+    PdnExecRule.deny("/usr/bin/example")
+));
+PdnConfiguration configuration = new PdnConfiguration(
+    "root", "/workspace", Collections.emptyList(), Collections.emptyMap(), policy
+);
+ProcessBuilder builder = pdn.exec(
+    "ubuntu", Arrays.asList("/usr/sbin/sshd", "-D"), configuration
+);
+```
+
+Kotlin 使用相同接口：
+
+```kotlin
+val policy = PdnExecPolicy(listOf(PdnExecRule.onlyFrom("/usr/sbin/sshd", "/workspace")))
+val configuration = PdnConfiguration("root", "/workspace", emptyList(), emptyMap(), policy)
+val builder = pdn.exec("ubuntu", listOf("/usr/sbin/sshd", "-D"), configuration)
+```
+
+`onlyFrom` 限制**启动时的 guest 工作目录**，目录匹配是精确匹配，子目录不会自动获准。对同一程序添加多个 `onlyFrom` 可允许多个目录；`deny` 优先于目录许可。程序和目录必须是规范的绝对路径，最多 512 UTF-8 字节；每次最多 128 条规则。规则列表不可修改，由宿主通过参数传入 tracer，不从 guest 环境或文件读取，也不会保存到 `pdn config`。
+
+程序路径、规则路径及目录经过 PRoot 的符号链接和 bind 解析，相同目标的别名共享规则。规则随同本次会话内被追踪的子进程执行；工作目录在每次启动时检查。`login()` 生成的 ProcessBuilder 交给 PTY 时也适用。已有 `user` 重载只覆盖账号，不会丢失规则。
+
+拒绝执行返回 `EACCES`，常见 shell 会返回 126，同时回调 `execution_denied` 事件，`getCode()` 为 `policy_exec_denied`。`getProgram()`、`getWorkingDirectory()`、`getReason()`、`getRuleIndex()` 和 `getErrno()` 提供详情；索引从 1 开始。`PdnResult.getDeniedExecutions()` 汇总拒绝次数。事件不包含完整命令参数。脚本可以处理拒绝后继续成功退出，所以最终是否成功仍按退出结果判断，并单独检查拒绝事件或次数。启动 shell 被禁止时，最终结果为带该错误码的 `manager_error`。
+
+这是程序启动策略，不能限制已启动程序的文件访问、网络、shell 内建命令或解释器内部操作；程序复制到其他位置、显式加载器加载程序、BusyBox 内部 applet 等方式也不能依赖路径规则全面阻止。不要把它当作针对不可信代码的安全沙箱。对 `/bin/sh`、BusyBox 或共享加载器设规则会影响所有使用同一目标的入口，包括 PDN 的启动 shell。宿主应保护 rootfs 和规则涉及的路径，并在可控命令场景使用。
+
 ## 异步任务
 
 Java 可以直接调用：

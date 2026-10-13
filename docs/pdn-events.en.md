@@ -118,7 +118,7 @@ Each line is UTF-8 JSON ending with a newline. Common fields:
 | `operation_id` | 1–64 ASCII letters, digits, `.`, `_`, or `-`; Java generates it automatically |
 | `sequence` | Consecutive sequence starting at 1 |
 | `operation` | Operation name, such as `install`, `exec`, or `backup` |
-| `type` | `started`, `stage`, `progress`, `error`, or `result` |
+| `type` | `started`, `stage`, `progress`, `error`, `execution_denied`, or `result` |
 
 Example:
 
@@ -163,3 +163,7 @@ proot-engine-*.aar
 `libptyjni.so` is the JNI shared library for interactive terminals. The standard AAR contains only the three native files above; `pdn-engine-lite-VERSION.aar` is a byte-identical compatibility filename. Legacy Java/Kotlin classes retain API compatibility, but methods depending on old pr-cli need separately supplied native programs. Use current APIs for PDN operations and terminals. The AAR does not include terminal Compose UI, an example App, Linux rootfs, or installed software; those belong to the host UI or runtime data.
 
 The host still configures ARM64, minSdk 28, native-library extraction, and Internet permission. Maven integration brings the Kotlin standard library transitively; local AAR imports require it explicitly. Importing a local AAR does not automatically carry Maven dependency declarations. Java projects can use the Java interfaces, but the Kotlin implementation of `PdnRuntime` still needs the Kotlin standard library at runtime. All paths come from the host; see the [Android integration guide](android-embedding.en.md).
+
+## Execution policy events
+
+A refusal emits `execution_denied` with `code=policy_exec_denied`, `program`, `cwd`, `reason` (`program_denied` or `working_directory_denied`), `rule_index`, `errno=13`, `message` and `suggestion`. The final `result` adds `denied_executions` when nonzero. Event path text is truncated to at most 512 bytes; decisions use complete paths. A guest may handle refusal, so a denial does not necessarily make the final outcome fail. See [execution policy](pdn-aar-api.en.md#optional-execution-policy) for the API and scope.

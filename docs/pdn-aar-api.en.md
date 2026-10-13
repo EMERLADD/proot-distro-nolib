@@ -38,6 +38,41 @@ Configuration copies the bind list and environment map and is immutable after co
 
 The project directory is bound to `/workspace` by default; an explicit bind to that guest path replaces it. Passing a complete `PdnConfiguration` for one call replaces the runtime configuration. The legacy `user` argument overrides only the account, retaining the remaining settings. Runtime configuration does not replace a distribution's saved `pdn config` file.
 
+## Optional execution policy
+
+These APIs require SDK 0.6.19 or later. Use a matching local AAR if the Maven version shown in the README is older.
+
+A host can attach rules to an `exec()` or `login()` invocation. PRoot checks traced descendants, script interpreters and ELF dynamic loaders. No rules are configured by default.
+
+```java
+PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(
+    PdnExecRule.onlyFrom("/usr/sbin/sshd", "/workspace"),
+    PdnExecRule.deny("/usr/bin/example")
+));
+PdnConfiguration configuration = new PdnConfiguration(
+    "root", "/workspace", Collections.emptyList(), Collections.emptyMap(), policy
+);
+ProcessBuilder builder = pdn.exec(
+    "ubuntu", Arrays.asList("/usr/sbin/sshd", "-D"), configuration
+);
+```
+
+Kotlin uses the same API:
+
+```kotlin
+val policy = PdnExecPolicy(listOf(PdnExecRule.onlyFrom("/usr/sbin/sshd", "/workspace")))
+val configuration = PdnConfiguration("root", "/workspace", emptyList(), emptyMap(), policy)
+val builder = pdn.exec("ubuntu", listOf("/usr/sbin/sshd", "-D"), configuration)
+```
+
+`onlyFrom` restricts the **guest working directory at startup**, matching exactly; subdirectories are not implicitly allowed. Multiple `onlyFrom` rules for the same program allow multiple directories. `deny` takes precedence. Paths must be normalized absolute paths of at most 512 UTF-8 bytes, with at most 128 rules per invocation. Lists are immutable and rules are passed from the host to the tracer, never read from guest environment variables or files. They are not persisted by `pdn config`.
+
+Program, rule and directory paths use PRoot symlink and bind resolution, so aliases of the same target share rules. Each traced child execution checks its current directory. Rules also apply when a `login()` builder is used with PTY. Existing user overloads preserve the policy while replacing the account.
+
+Refusal returns `EACCES` (typically shell status 126) and an `execution_denied` callback with code `policy_exec_denied`. Read `getProgram()`, `getWorkingDirectory()`, `getReason()`, `getRuleIndex()` and `getErrno()`; rule indices start at 1. `PdnResult.getDeniedExecutions()` reports the total. Events exclude full command arguments. A script may handle refusal and exit successfully, so inspect denial events or the count separately from the final outcome. Denying the startup shell returns `manager_error` with the policy error code.
+
+This controls program startup, not file access, network operations, shell builtins or operations within interpreters. Program copies at other paths, explicitly invoking a loader and BusyBox applets are outside comprehensive path-based blocking. It is not a security sandbox for untrusted code. Rules for `/bin/sh`, BusyBox or a shared loader affect every entry using the same target, including the PDN startup shell. Protect the rootfs and policy-related paths and use this feature for controlled command workflows.
+
 ## Asynchronous tasks
 
 Java can call the API directly:

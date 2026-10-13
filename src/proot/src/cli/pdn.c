@@ -12,6 +12,7 @@
 #include "cli/pdn_events.h"
 #include "cli/pdn_json.h"
 #include "cli/pdn_instance.h"
+#include "cli/pdn_exec_policy.h"
 
 #ifdef PDN_WITH_INSTALL
 int pdn_install_as(const char *name, const char *local_archive, const char *mirror_name, const char *alias);
@@ -34,6 +35,26 @@ static int fail(const char *message, const char *value)
     fprintf(stderr, "pdn: %s: %s\n", message, value);
     pdn_events_problem("invalid_argument", message, "Check the selected rootfs and arguments; see pdn help");
     return 2;
+}
+
+/* Per invocation, never read policy from a guest-controlled environment/file. */
+PdnExecRule pdn_exec_rules[PDN_EXEC_RULE_LIMIT];
+unsigned pdn_exec_rule_count;
+
+static int policy_path(const char *path)
+{
+    if (!path || path[0] != '/' || strlen(path) > 512) return 0;
+    if (!strcmp(path, "/")) return 1;
+    const char *part = path + 1;
+    while (*part) {
+        const char *end = strchr(part, '/');
+        size_t length = end ? (size_t)(end - part) : strlen(part);
+        if (!length || (length == 1 && part[0] == '.') ||
+            (length == 2 && part[0] == '.' && part[1] == '.')) return 0;
+        if (!end) return 1;
+        part = end + 1;
+    }
+    return 0;
 }
 
 static int coded_fail(const char *code, const char *message, const char *value)
@@ -135,6 +156,7 @@ static int help(void)
          "  pdn config NAME|--rootfs PATH [--show | --clear | OPTIONS]\n"
          "  OPTIONS: --bind/-b HOST[:GUEST], --env/-e KEY=VALUE (repeatable),\n"
          "           --user/-u NAME|UID[:GID], --work-dir/-w /GUEST/PATH\n"
+         "           --deny-exec /PROGRAM, --exec-cwd /PROGRAM /DIRECTORY (repeatable)\n"
          "  Login/exec: --no-config bypasses saved defaults.\n"
          "  Config replaces all saved options; no options shows defaults as JSON.\n"
          "  pdn list [--json] (alias: ls)\n"
@@ -301,11 +323,23 @@ int pdn_login(int argc, char *const argv[])
     PdnOptions options = {0}, cli = {0};
     PdnIdentity identity = {0};
     if (argc == 3 && (equal(argv[2], "--help") || equal(argv[2], "-h"))) return help();
+    pdn_exec_rule_count = 0;
     result = resolve_root(argc, argv, &root, &command);
     if (result) goto done;
     while (command < argc && strcmp(argv[command], "--") != 0) {
         const char *option = argv[command++];
         char kind = 0, *binding = NULL;
+        if (!config && (equal(option, "--deny-exec") || equal(option, "--exec-cwd"))) {
+            int values = equal(option, "--exec-cwd") ? 2 : 1;
+            if (pdn_exec_rule_count == PDN_EXEC_RULE_LIMIT || command + values > argc ||
+                !policy_path(argv[command]) || (values == 2 && !policy_path(argv[command + 1]))) {
+                result = fail("execution rules require normalized absolute paths (max 512 bytes, 128 rules)", option);
+                goto done;
+            }
+            pdn_exec_rules[pdn_exec_rule_count].program = argv[command++];
+            pdn_exec_rules[pdn_exec_rule_count++].cwd = values == 2 ? argv[command++] : NULL;
+            continue;
+        }
         if (equal(option, "--bind") || equal(option, "-b")) kind = 'b';
         else if (equal(option, "--env") || equal(option, "-e")) kind = 'e';
         else if (equal(option, "--user") || equal(option, "-u")) kind = 'u';
@@ -439,6 +473,7 @@ int pdn_login(int argc, char *const argv[])
     pdn_events_stage("starting");
     result = proot_main(n, args);
 done:
+    pdn_exec_rule_count = 0;
     if (rootfd >= 0) close(rootfd);
     pdn_options_free(&options);
     pdn_options_free(&cli);

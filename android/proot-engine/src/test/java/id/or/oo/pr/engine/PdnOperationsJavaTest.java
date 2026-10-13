@@ -357,4 +357,33 @@ public class PdnOperationsJavaTest {
         try { operations.run(shell("exit 0").redirectOutput(new File(directory, "log")), new PdnListener() {}); fail(); }
         catch (IllegalArgumentException expected) { }
     }
+    @Test public void nativeExecutionDenialsReachJavaAndPreserveGuestOutcome() throws Exception {
+        String executable = System.getenv("PDN_NATIVE_FIXTURE"), busybox = System.getenv("PDN_GUEST_FIXTURE");
+        org.junit.Assume.assumeTrue(executable != null && busybox != null);
+        File root = new File(directory, "policy-root");
+        for (String name : new String[]{"bin", "tmp", "tools", "root"}) assertTrue(new File(root, name).mkdirs());
+        for (String name : new String[]{"bin/busybox", "tools/busybox"}) {
+            File target = new File(root, name);
+            Files.copy(new File(busybox).toPath(), target.toPath());
+            assertTrue(target.setExecutable(true));
+        }
+        Files.createSymbolicLink(new File(root, "bin/sh").toPath(), java.nio.file.Paths.get("busybox"));
+        List<PdnEvent> records = new ArrayList<>();
+        ProcessBuilder builder = new ProcessBuilder(executable, "exec", "--rootfs", root.getAbsolutePath(),
+                "--deny-exec", "/tools/busybox", "--", "/bin/sh", "-c", "/tools/busybox echo BAD; exit 0");
+        builder.environment().clear();
+        builder.environment().put("PATH", "/system/bin");
+        builder.environment().put("PROOT_TMP_DIR", directory.getAbsolutePath());
+        PdnResult result = operations.run(builder, new PdnListener() {
+            public void onEvent(PdnEvent event) { records.add(event); }
+        });
+        assertTrue(result.getOutcome() + ":" + result.getCode() + ":" + result.getMessage(), result.isSuccess());
+        assertEquals(Integer.valueOf(1), result.getDeniedExecutions());
+        PdnEvent refusal = records.stream().filter(e -> "execution_denied".equals(e.getType())).findFirst().get();
+        assertEquals("/tools/busybox", refusal.getProgram());
+        assertEquals("/", refusal.getWorkingDirectory());
+        assertEquals("program_denied", refusal.getReason());
+        assertEquals(Integer.valueOf(1), refusal.getRuleIndex());
+        assertEquals(Integer.valueOf(1), records.get(records.size() - 1).getDeniedExecutions());
+    }
 }

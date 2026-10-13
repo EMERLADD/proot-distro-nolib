@@ -46,7 +46,7 @@ class PdnRuntime @JvmOverloads constructor(
 
     @JvmOverloads
     fun loginArguments(rootfs: File, user: String = configuration.user): List<String> =
-        loginArguments(rootfs, PdnConfiguration(user, configuration.workDir, configuration.binds, configuration.environment))
+        loginArguments(rootfs, PdnConfiguration(user, configuration.workDir, configuration.binds, configuration.environment, configuration.executionPolicy))
 
     fun loginArguments(rootfs: File, configuration: PdnConfiguration): List<String> {
         val args = mutableListOf("login", "--rootfs", rootfs.absolutePath, "--user", configuration.user)
@@ -57,6 +57,11 @@ class PdnRuntime @JvmOverloads constructor(
         for (bind in configuration.binds) args += listOf("--bind", "${bind.hostFile.absolutePath}:${bind.guestPath}")
         args += listOf("--work-dir", configuration.workDir)
         for ((key, value) in configuration.environment) args += listOf("--env", "$key=$value")
+        for (rule in configuration.executionPolicy.rules) {
+            val cwd = rule.workingDirectory
+            args += if (cwd == null) listOf("--deny-exec", rule.program)
+                    else listOf("--exec-cwd", rule.program, cwd)
+        }
         require(args.all { '\u0000' !in it }) { "Arguments cannot contain NUL" }
         return args
     }

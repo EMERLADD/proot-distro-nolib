@@ -34,4 +34,20 @@ public class PdnConfigurationJavaTest {
         org.junit.Assert.assertNotNull(PdnRuntime.class.getConstructor(ProotHost.class, java.io.File.class, java.io.File.class));
         org.junit.Assert.assertNotNull(PdnRuntime.class.getConstructor(ProotHost.class, PdnConfiguration.class));
     }
+    @Test public void executionRulesAreImmutableAndKeepExistingConstructors() {
+        List<PdnExecRule> rules = new ArrayList<>();
+        rules.add(PdnExecRule.onlyFrom("/usr/sbin/sshd", "/workspace"));
+        rules.add(PdnExecRule.deny("/bin/example"));
+        PdnExecPolicy policy = new PdnExecPolicy(rules);
+        rules.clear();
+        PdnConfiguration config = new PdnConfiguration("root", "/workspace", Collections.emptyList(), Collections.emptyMap(), policy);
+        assertEquals(2, config.getExecutionPolicy().getRules().size());
+        assertNull(policy.getRules().get(1).getWorkingDirectory());
+        assertThrows(UnsupportedOperationException.class, () -> policy.getRules().clear());
+        assertTrue(new PdnConfiguration().getExecutionPolicy().getRules().isEmpty());
+        for (String bad : Arrays.asList("relative", "/a/../b", "/a//b", "/a/", "/a/./b", "/a\0b"))
+            assertThrows(IllegalArgumentException.class, () -> PdnExecRule.deny(bad));
+        assertThrows(IllegalArgumentException.class, () -> new PdnExecPolicy(Collections.nCopies(129, PdnExecRule.deny("/a"))));
+        assertThrows(NullPointerException.class, () -> PdnExecRule.onlyFrom("/a", null));
+    }
 }

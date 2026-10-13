@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 
 public final class PdnConfiguration {
+    private final PdnExecPolicy executionPolicy;
     private final String user;
     private final String workDir;
     private final List<PdnBind> binds;
@@ -18,6 +19,12 @@ public final class PdnConfiguration {
     }
 
     public PdnConfiguration(String user, String workDir, List<PdnBind> binds, Map<String, String> environment) {
+        this(user, workDir, binds, environment, new PdnExecPolicy(Collections.emptyList()));
+    }
+
+    public PdnConfiguration(String user, String workDir, List<PdnBind> binds, Map<String, String> environment,
+                            PdnExecPolicy executionPolicy) {
+        this.executionPolicy = Objects.requireNonNull(executionPolicy);
         this.user = value(user);
         if (user.isEmpty()) throw new IllegalArgumentException("A guest user is required");
         this.workDir = absolutePath(workDir);
@@ -46,6 +53,7 @@ public final class PdnConfiguration {
         return value;
     }
 
+    public PdnExecPolicy getExecutionPolicy() { return executionPolicy; }
     public String getUser() { return user; }
     public String getWorkDir() { return workDir; }
     public List<PdnBind> getBinds() { return binds; }

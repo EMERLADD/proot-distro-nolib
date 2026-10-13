@@ -295,4 +295,15 @@ class PdnRuntimeTest {
         assertThrows(IllegalArgumentException::class.java) { runtime.loginArguments(root, "a\u0000b") }
     }
 
+    @Test fun executionRulesSurviveUserOverrideAndArePassedAsSeparateArguments() {
+        val host = host()
+        binaries(host)
+        val policy = PdnExecPolicy(listOf(PdnExecRule.onlyFrom("/usr/sbin/sshd", "/work dir"), PdnExecRule.deny("/bin/example")))
+        val config = PdnConfiguration("root", "/", emptyList(), emptyMap(), policy)
+        val runtime = PdnRuntime(host, configuration = config)
+        val args = runtime.exec("alpine", listOf("/bin/sh", "-c", "echo ok"), "1000").command()
+        val index = args.indexOf("--exec-cwd")
+        assertEquals(listOf("--exec-cwd", "/usr/sbin/sshd", "/work dir", "--deny-exec", "/bin/example"), args.subList(index, index + 5))
+        assertTrue(args.contains("1000"))
+    }
 }

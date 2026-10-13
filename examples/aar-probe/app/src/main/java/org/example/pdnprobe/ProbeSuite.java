@@ -104,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.18"), "version: " + c.stderr());
-            return "native PDN 0.6.18, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.19"), "version: " + c.stderr());
+            return "native PDN 0.6.19, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -124,6 +124,31 @@ public final class ProbeSuite {
                 require(c.events.stream().anyMatch(e -> "stage".equals(e.getType())), "installation callbacks");
             }
             return "pinned official offline ARM64 archive; verified, extracted and configured";
+        });
+        check(checks, "execution_policy", () -> {
+            File tools = new File(getRootfs(), "tools");
+            require(tools.mkdirs(), "policy fixture tools");
+            File target = new File(tools, "busybox");
+            Files.copy(new File(getRootfs(), "bin/busybox").toPath(), target.toPath());
+            require(target.setExecutable(true), "policy fixture executable");
+            try {
+              for (String cwd : Arrays.asList("/workspace", "/tmp")) {
+            id.or.oo.pr.engine.PdnConfiguration configuration = new id.or.oo.pr.engine.PdnConfiguration(
+                "root", cwd, java.util.Collections.emptyList(), java.util.Collections.emptyMap(),
+                new id.or.oo.pr.engine.PdnExecPolicy(java.util.Collections.singletonList(
+                    id.or.oo.pr.engine.PdnExecRule.onlyFrom("/tools/busybox", "/workspace"))));
+            ProcessBuilder builder = runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", "exec /tools/busybox echo POLICY_OK"), configuration);
+                Capture c = run(builder);
+                if (cwd.equals("/workspace")) {
+                    require(c.result.isSuccess() && c.stdout().equals("POLICY_OK\n"), "allowed directory: " + c.stderr());
+                } else {
+                    require(c.result.getExitCode() == 126 && !c.stdout().contains("POLICY_OK"), "disallowed directory: " + c.stderr());
+            require(c.events.stream().anyMatch(e -> "execution_denied".equals(e.getType())
+                && "working_directory_denied".equals(e.getReason()) && "/tmp".equals(e.getWorkingDirectory())), "typed denial callback");
+                }
+              }
+            } finally { target.delete(); tools.delete(); }
+            return "native child exec allowed in /workspace, refused in /tmp with policy event";
         });
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));

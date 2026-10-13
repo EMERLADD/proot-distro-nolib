@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
+## v0.6.19 — 2026-10-13
+
+Add optional native execution rules and Java/Kotlin configuration: refuse selected programs or require an exact guest startup directory. Rules cover traced descendants and interpreters, expose structured refusals and counts, and remain disabled by default.
+
 ## v0.6.18 — 2026-10-12
 
 Add explicit ordinary task stdin through `startInteractive()`, UTF-8/binary `writeStdin()`, ordered EOF via `closeStdin()` and `isStdinOpen()`. Bounded background input reports rejection and pipe failures; exit, cancellation and timeout clean up the pipe. Default stdin closure and full PTY support are preserved.

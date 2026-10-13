@@ -310,3 +310,14 @@ pdn recovery clear --yes
 检查和清理均持有安装锁；安装、备份、clone/rename 或其他清理占用锁时返回 `operation_busy`。清理还检查暂存 rootfs 的会话锁：使用中的系统不得清理。删除不跟随符号链接，不跨挂载点，先检查所有选中目录，再进行删除；存储失败或取消仍可能留下部分暂存，按错误建议重新检查。此接口不会绕过宿主权限，挂载身份无法确认时拒绝删除。
 
 只处理本接口记录的原生安装暂存；旧安装暂存仅列出供检查。restore、clone/rename 的中断事务与 AAR 文档暂存恢复仍未实现，已发布系统的掉电损坏也不在修复范围。关闭或无法读取 boot ID 时，只有其他证据能够确认原进程不存在或身份不同才允许清理；无法确认时保留。
+
+## 可选程序启动限制
+
+```sh
+pdn exec ubuntu --exec-cwd /usr/sbin/sshd /workspace --work-dir /workspace -- /usr/sbin/sshd -D
+pdn login ubuntu --deny-exec /usr/bin/example
+```
+
+`--deny-exec /PROGRAM` 禁止执行该程序；`--exec-cwd /PROGRAM /DIRECTORY` 只允许从指定 guest 目录启动，精确匹配，可重复设置多个允许目录。禁止优先。规则只适用于本次 login/exec 及被追踪的子进程，不保存到 config；默认未启用。路径使用符号链接及 bind 解析，别名共享规则；规范绝对路径最多 512 字节，最多 128 条规则。
+
+拒绝返回 EACCES，并向 stderr 及 JSONL 报告 `policy_exec_denied`。完整语义、SDK 接口和适用边界见 [执行规则](pdn-aar-api.md#可选执行规则)。这是启动控制，不限制程序运行后的资源访问，也不能按命令名区分 shell 内建、解释器内部操作或 BusyBox applet。

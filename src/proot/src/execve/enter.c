@@ -46,6 +46,7 @@
 #include "arch.h"
 #include "cli/note.h"
 #include "cli/pdn_events.h"
+#include "cli/pdn_exec_policy.h"
 
 #define P(a) PROGRAM_FIELD(load_info->elf_header, *program_header, a)
 
@@ -124,6 +125,40 @@ static int add_mapping(const Tracee *tracee UNUSED, LoadInfo *load_info,
 	return 0;
 }
 
+int pdn_exec_policy_check(Tracee *tracee, const char *program)
+{
+    if (!pdn_exec_rule_count) return 0;
+    char executable[PATH_MAX], rule_program[PATH_MAX], cwd[PATH_MAX], rule_cwd[PATH_MAX];
+    int status = translate_path(tracee, executable, AT_FDCWD, program, true);
+    if (status < 0) return status;
+    status = getcwd2(tracee, cwd);
+    if (status < 0) return status;
+    status = translate_path(tracee, rule_cwd, AT_FDCWD, cwd, true);
+    if (status < 0) return status;
+    char host_cwd[PATH_MAX];
+    strcpy(host_cwd, rule_cwd);
+    int restricted = 0, allowed = 0, denied = 0;
+    unsigned matched_rule = 0;
+    for (unsigned i = 0; i < pdn_exec_rule_count; i++) {
+        status = translate_path(tracee, rule_program, AT_FDCWD, pdn_exec_rules[i].program, true);
+        if (status < 0 || strcmp(executable, rule_program)) continue;
+        matched_rule = i + 1;
+        if (!pdn_exec_rules[i].cwd) { denied = 1; break; }
+        restricted = 1;
+        status = translate_path(tracee, rule_cwd, AT_FDCWD, pdn_exec_rules[i].cwd, true);
+        if (status >= 0 && !strcmp(host_cwd, rule_cwd)) allowed = 1;
+    }
+    if (!denied && (!restricted || allowed)) return 0;
+    char guest_executable[PATH_MAX];
+    strcpy(guest_executable, executable);
+    if (detranslate_path(tracee, guest_executable, NULL) < 0)
+        snprintf(guest_executable, sizeof(guest_executable), "%s", program);
+    fprintf(stderr, "pdn: policy_exec_denied: %s (cwd %s)\n", guest_executable, cwd);
+    pdn_events_exec_denied(guest_executable, cwd, matched_rule,
+        denied ? "program_denied" : "working_directory_denied");
+    return -EACCES;
+}
+
 /**
  * Translate @user_path into @host_path and check if this latter exists, is
  * executable and is a regular file.  This function returns -errno if
@@ -136,6 +171,10 @@ int translate_and_check_exec(Tracee *tracee, char host_path[PATH_MAX], const cha
 
 	if (user_path[0] == '\0')
 		return -ENOEXEC;
+
+	/* Covers the requested program, each shebang interpreter and PT_INTERP. */
+	status = pdn_exec_policy_check(tracee, user_path);
+	if (status < 0) return status;
 
 	status = translate_path(tracee, host_path, AT_FDCWD, user_path, true);
 	if (status < 0)
