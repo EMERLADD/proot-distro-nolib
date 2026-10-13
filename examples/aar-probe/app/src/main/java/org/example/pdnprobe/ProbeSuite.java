@@ -104,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.20"), "version: " + c.stderr());
-            return "native PDN 0.6.20, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 1.0.0"), "version: " + c.stderr());
+            return "native PDN 1.0.0, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();

@@ -43,8 +43,11 @@ cat >> "$notes" <<EOF
 Linux CI 负责交叉编译和打包检查；实机验证范围见上方记录。
 EOF
 commit=${RELEASE_COMMIT:-$(git rev-parse HEAD)}
+# Keep a draft until device acceptance; only 0.x releases are prereleases.
+set -- --draft
+case "$version" in 0.*) set -- "$@" --prerelease;; esac
 gh release create "$tag" --repo "$repository" --target "$commit" \
-    --title "$tag — proot-distro-nolib ARM64" --prerelease --draft \
+    --title "$tag — proot-distro-nolib ARM64" "$@" \
     --notes-file "$notes" \
     "build/packages/$package" "build/packages/$aar" "build/packages/$lite" \
     build/packages/pdn build/packages/proot-loader \

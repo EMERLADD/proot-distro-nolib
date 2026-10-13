@@ -2,13 +2,13 @@
 
 [简体中文](CHANGELOG.md) | English · [README](README.en.md)
 
-## v0.6.20 — 2026-10-13
+## v1.0.0 — 2026-10-13
 
-Add Linux command-name rules and Java/Kotlin factories to deny commands or restrict their startup directory, including recognized BusyBox/toybox dispatch. Preserve path rules and terminal support, and expose the matched command name in denial events.
+First stable release, combining rootless Linux distribution management, original ELF, AAR and direct `.so` integration with complete PTY sessions and Java/Kotlin APIs.
 
-## v0.6.19 — 2026-10-13
+Add optional execution policies: refuse program paths or Linux command names, require exact startup directories, and cover traced descendants plus recognized BusyBox/toybox dispatch. Refusal events expose program, command, directory, reason and counts. Disabled by default; not a security sandbox for untrusted code.
 
-Add optional native execution rules and Java/Kotlin configuration: refuse selected programs or require an exact guest startup directory. Rules cover traced descendants and interpreters, expose structured refusals and counts, and remain disabled by default.
+Validated original Android shell, AAR and direct `.so` Debug / R8 Release integration, including real file preservation/removal controls, apk directory restrictions and terminal interaction.
 
 ## v0.6.18 — 2026-10-12
 

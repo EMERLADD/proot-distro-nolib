@@ -43,6 +43,22 @@ class ReleasePublishTests(unittest.TestCase):
         self.assertEqual(args[args.index('--target') + 1], 'test-commit')
         self.assertEqual(args[-1], 'build/packages/SHA256SUMS')
 
+    def test_stable_version_is_not_marked_prerelease(self):
+        header = self.root / 'src/proot/src/cli/proot.h'
+        header.write_text('#define PDN_VERSION "1.0.0"\n')
+        changelog = self.root / 'CHANGELOG.md'
+        changelog.write_text(changelog.read_text().replace('0.6.11', '1.0.0'))
+        for file in (self.root / 'build/packages').iterdir():
+            if '0.6.11' in file.name: file.rename(file.with_name(file.name.replace('0.6.11', '1.0.0')))
+        sums = self.root / 'build/packages/SHA256SUMS'
+        sums.write_text(sums.read_text().replace('0.6.11', '1.0.0'))
+        result = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = json.loads((self.root / 'args.json').read_text())
+        self.assertEqual(args[:3], ['release', 'create', 'v1.0.0'])
+        self.assertIn('--draft', args)
+        self.assertNotIn('--prerelease', args)
+
     def test_existing_release_is_not_overwritten(self):
         self.env['EXISTING_RELEASE'] = '1'
         self.assertEqual(self.run_publish().returncode, 0)

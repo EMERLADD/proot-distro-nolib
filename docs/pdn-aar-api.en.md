@@ -6,7 +6,7 @@ The AAR packages PDN's native components and provides configuration objects, asy
 
 ## Artifacts and layout
 
-Use `implementation("io.github.emerladd:pdn-engine:0.6.18")` through Maven Central; the Kotlin standard library is transitive. See [App integration](android-embedding.en.md) for repository configuration. The filenames below apply to local AAR and direct ELF integration.
+Use `implementation("io.github.emerladd:pdn-engine:1.0.0")` through Maven Central; the Kotlin standard library is transitive. See [App integration](android-embedding.en.md) for repository configuration. The filenames below apply to local AAR and direct ELF integration.
 
 | File | Contents |
 | --- | --- |
@@ -40,7 +40,7 @@ The project directory is bound to `/workspace` by default; an explicit bind to t
 
 ## Optional execution policy
 
-These APIs require SDK 0.6.19 or later. Use a matching local AAR if the Maven version shown in the README is older.
+The stable SDK provides the following execution policy APIs.
 
 A host can attach rules to an `exec()` or `login()` invocation. PRoot checks traced descendants, script interpreters and ELF dynamic loaders. No rules are configured by default.
 
@@ -75,7 +75,7 @@ This controls program startup, not file access, network operations, shell builti
 
 ### Restrict Linux command names
 
-Command-name rules require SDK 0.6.20 or later. Configure multiple commands together:
+Configure multiple Linux command names together:
 
 ```java
 PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(

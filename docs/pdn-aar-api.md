@@ -6,7 +6,7 @@ AAR 仅打包 PDN 所需原生组件，保留配置对象、异步任务、独�
 
 ## 产物与目录
 
-可通过 Maven Central 使用 `implementation("io.github.emerladd:pdn-engine:0.6.18")`，Kotlin 标准库自动传递；完整仓库配置见 [App 接入教程](android-embedding.md)。下面的文件名用于本地 AAR 和直接 ELF 接入。
+可通过 Maven Central 使用 `implementation("io.github.emerladd:pdn-engine:1.0.0")`，Kotlin 标准库自动传递；完整仓库配置见 [App 接入教程](android-embedding.md)。下面的文件名用于本地 AAR 和直接 ELF 接入。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -40,7 +40,7 @@ val operations = PdnOperations(pdn)
 
 ## 可选执行规则
 
-以下接口要求 SDK 0.6.19 或更新版本；README 所示 Maven 版本较旧时，使用对应版本的本地 AAR。
+正式版 SDK 提供以下执行规则接口。
 
 宿主可以为一次 `exec()` 或 `login()` 设置执行规则，PRoot 检查被追踪的子进程以及脚本解释器、ELF 动态加载器。默认没有规则，原有调用方式保持一致。
 
@@ -75,7 +75,7 @@ val builder = pdn.exec("ubuntu", listOf("/usr/sbin/sshd", "-D"), configuration)
 
 ### 按 Linux 命令名限制
 
-按命令名限制的接口要求 SDK 0.6.20 或更新版本；可以一次配置多个命令：
+可以按命令名一次配置多个 Linux 命令：
 
 ```java
 PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(

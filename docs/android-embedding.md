@@ -38,7 +38,7 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("io.github.emerladd:pdn-engine:0.6.18")
+    implementation("io.github.emerladd:pdn-engine:1.0.0")
 }
 ```
 
@@ -50,7 +50,7 @@ Kotlin 标准库随 Maven 依赖自动传递；纯 Java App 也可使用，无�
 
 ```kotlin
 dependencies {
-    implementation(files("libs/pdn-engine-0.6.18.aar"))
+    implementation(files("libs/pdn-engine-1.0.0.aar"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
 }
 ```

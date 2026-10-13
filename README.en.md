@@ -6,7 +6,7 @@
 
 Rootless Linux distribution manager and embeddable SDK for ARM64 Android. Run Debian, Ubuntu, Alpine and Arch without Termux.
 
-[![Maven Central](https://img.shields.io/badge/Maven_Central-0.6.18-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/0.6.18)
+[![Maven Central](https://img.shields.io/badge/Maven_Central-1.0.0-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/1.0.0)
 
 ## Quick start
 
@@ -66,8 +66,6 @@ PRoot's root identity is simulated; the host's actual UID and SELinux restrictio
 
 ## 2. Downloads and updates
 
-The project is currently in testing.
-
 Get matching files from [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) and verify `SHA256SUMS`:
 
 | Use case | Files |
@@ -109,7 +107,7 @@ For Android shell privileges, start through Shizuku/rish or ADB shell, then conf
 
 ```kotlin
 dependencies {
-    implementation("io.github.emerladd:pdn-engine:0.6.18")
+    implementation("io.github.emerladd:pdn-engine:1.0.0")
 }
 ```
 

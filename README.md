@@ -6,7 +6,7 @@
 
 面向 ARM64 Android 的免 root Linux 发行版管理器与可嵌入 SDK。无需 Termux，即可运行 Debian、Ubuntu、Alpine 和 Arch。
 
-[![Maven Central](https://img.shields.io/badge/Maven_Central-0.6.18-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/0.6.18)
+[![Maven Central](https://img.shields.io/badge/Maven_Central-1.0.0-0969da)](https://central.sonatype.com/artifact/io.github.emerladd/pdn-engine/1.0.0)
 
 ## 快速开始
 
@@ -66,8 +66,6 @@ PRoot 的 root 是模拟身份，宿主的真实 UID 和 SELinux 限制仍然有
 
 ## 2. 下载与更新
 
-项目目前处于测试阶段。
-
 从 [Releases](https://github.com/EMERLADD/proot-distro-nolib/releases) 获取同一版本的文件，并核对 `SHA256SUMS`：
 
 | 场景 | 文件 |
@@ -109,7 +107,7 @@ AAR 包含 Java/Kotlin 接口，以及 PDN、配套加载器和 PTY JNI 三个�
 
 ```kotlin
 dependencies {
-    implementation("io.github.emerladd:pdn-engine:0.6.18")
+    implementation("io.github.emerladd:pdn-engine:1.0.0")
 }
 ```
 

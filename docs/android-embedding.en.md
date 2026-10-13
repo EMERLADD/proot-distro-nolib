@@ -36,7 +36,7 @@ Add the dependency in the App module's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.emerladd:pdn-engine:0.6.18")
+    implementation("io.github.emerladd:pdn-engine:1.0.0")
 }
 ```
 
@@ -48,7 +48,7 @@ Download `pdn-engine-VERSION.aar` from the same Release and place it in your App
 
 ```kotlin
 dependencies {
-    implementation(files("libs/pdn-engine-0.6.18.aar"))
+    implementation(files("libs/pdn-engine-1.0.0.aar"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
 }
 ```
