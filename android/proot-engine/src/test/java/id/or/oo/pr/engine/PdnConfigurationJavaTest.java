@@ -50,4 +50,19 @@ public class PdnConfigurationJavaTest {
         assertThrows(IllegalArgumentException.class, () -> new PdnExecPolicy(Collections.nCopies(129, PdnExecRule.deny("/a"))));
         assertThrows(NullPointerException.class, () -> PdnExecRule.onlyFrom("/a", null));
     }
+    @Test public void commandNameRulesAreDistinctAndValidated() {
+        PdnExecRule deny = PdnExecRule.denyCommand("rm");
+        assertTrue(deny.isCommandRule());
+        assertEquals("rm", deny.getCommandName());
+        assertEquals("rm", deny.getProgram());
+        assertNull(deny.getWorkingDirectory());
+        PdnExecRule cwd = PdnExecRule.commandOnlyFrom("apk", "/workspace");
+        assertEquals("/workspace", cwd.getWorkingDirectory());
+        assertFalse(PdnExecRule.deny("/bin/rm").isCommandRule());
+        assertNull(PdnExecRule.deny("/bin/rm").getCommandName());
+        for (String name : Arrays.asList("", "-rm", "/bin/rm", "rm -f", "rm;echo", "删除", String.join("", Collections.nCopies(129, "r"))))
+            assertThrows(IllegalArgumentException.class, () -> PdnExecRule.denyCommand(name));
+        assertThrows(NullPointerException.class, () -> PdnExecRule.denyCommand(null));
+        assertThrows(NullPointerException.class, () -> PdnExecRule.commandOnlyFrom("rm", null));
+    }
 }

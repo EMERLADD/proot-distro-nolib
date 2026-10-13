@@ -386,4 +386,15 @@ public class PdnOperationsJavaTest {
         assertEquals(Integer.valueOf(1), refusal.getRuleIndex());
         assertEquals(Integer.valueOf(1), records.get(records.size() - 1).getDeniedExecutions());
     }
+    @Test public void commandDenialEventsAreTypedAndMalformedNamesAreRejected() throws Exception {
+        String refusal = record(2, "execution_denied", ",\"code\":\"policy_exec_denied\",\"program\":\"/bin/busybox\",\"cwd\":\"/workspace\",\"reason\":\"command_denied\",\"command\":\"rm\",\"rule_index\":1,\"errno\":13,\"message\":\"refused\",\"suggestion\":\"ask host\"");
+        List<PdnEvent> records = new ArrayList<>();
+        PdnResult result = operations.run(shell(started() + refusal + record(3, "result", ",\"exit_code\":0,\"outcome\":\"success\",\"denied_executions\":1")), new PdnListener() {
+            public void onEvent(PdnEvent event) { records.add(event); }
+        });
+        assertTrue(result.isSuccess());
+        assertEquals("rm", records.get(1).getCommandName());
+        assertEquals(Integer.valueOf(1), result.getDeniedExecutions());
+        assertEquals("host_protocol_error", operations.run(shell(started() + refusal.replace("rm", "/bin/rm")), new PdnListener() {}).getOutcome());
+    }
 }

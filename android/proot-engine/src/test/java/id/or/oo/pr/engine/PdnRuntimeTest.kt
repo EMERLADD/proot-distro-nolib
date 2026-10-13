@@ -306,4 +306,14 @@ class PdnRuntimeTest {
         assertEquals(listOf("--exec-cwd", "/usr/sbin/sshd", "/work dir", "--deny-exec", "/bin/example"), args.subList(index, index + 5))
         assertTrue(args.contains("1000"))
     }
+    @Test fun commandNameRulesUseNativeNameOptions() {
+        val host = host()
+        binaries(host)
+        val policy = PdnExecPolicy(listOf(PdnExecRule.denyCommand("rm"), PdnExecRule.commandOnlyFrom("apk", "/work dir")))
+        val config = PdnConfiguration("root", "/", emptyList(), emptyMap(), policy)
+        val runtime = PdnRuntime(host, configuration = config)
+        val args = runtime.exec("alpine", listOf("/bin/sh"), "1000").command()
+        val index = args.indexOf("--deny-command")
+        assertEquals(listOf("--deny-command", "rm", "--command-cwd", "apk", "/work dir"), args.subList(index, index + 5))
+    }
 }

@@ -57,6 +57,16 @@ static int policy_path(const char *path)
     return 0;
 }
 
+static int policy_command(const char *name)
+{
+    size_t length = strlen(name);
+    if (!length || length > 128 || name[0] == '-') return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '_' || *p == '.' || *p == '+' || *p == '-' || *p == '@')) return 0;
+    return 1;
+}
+
 static int coded_fail(const char *code, const char *message, const char *value)
 {
     fprintf(stderr, "pdn: %s: %s\n", message, value);
@@ -157,6 +167,7 @@ static int help(void)
          "  OPTIONS: --bind/-b HOST[:GUEST], --env/-e KEY=VALUE (repeatable),\n"
          "           --user/-u NAME|UID[:GID], --work-dir/-w /GUEST/PATH\n"
          "           --deny-exec /PROGRAM, --exec-cwd /PROGRAM /DIRECTORY (repeatable)\n"
+         "           --deny-command NAME, --command-cwd NAME /DIRECTORY (repeatable)\n"
          "  Login/exec: --no-config bypasses saved defaults.\n"
          "  Config replaces all saved options; no options shows defaults as JSON.\n"
          "  pdn list [--json] (alias: ls)\n"
@@ -329,13 +340,17 @@ int pdn_login(int argc, char *const argv[])
     while (command < argc && strcmp(argv[command], "--") != 0) {
         const char *option = argv[command++];
         char kind = 0, *binding = NULL;
-        if (!config && (equal(option, "--deny-exec") || equal(option, "--exec-cwd"))) {
-            int values = equal(option, "--exec-cwd") ? 2 : 1;
+        if (!config && (equal(option, "--deny-exec") || equal(option, "--exec-cwd") ||
+                        equal(option, "--deny-command") || equal(option, "--command-cwd"))) {
+            int named = equal(option, "--deny-command") || equal(option, "--command-cwd");
+            int values = equal(option, "--exec-cwd") || equal(option, "--command-cwd") ? 2 : 1;
             if (pdn_exec_rule_count == PDN_EXEC_RULE_LIMIT || command + values > argc ||
-                !policy_path(argv[command]) || (values == 2 && !policy_path(argv[command + 1]))) {
-                result = fail("execution rules require normalized absolute paths (max 512 bytes, 128 rules)", option);
+                !(named ? policy_command(argv[command]) : policy_path(argv[command])) ||
+                (values == 2 && !policy_path(argv[command + 1]))) {
+                result = fail("invalid execution rule: use normalized absolute paths or a simple command name (max 128 rules)", option);
                 goto done;
             }
+            pdn_exec_rules[pdn_exec_rule_count].command = named;
             pdn_exec_rules[pdn_exec_rule_count].program = argv[command++];
             pdn_exec_rules[pdn_exec_rule_count++].cwd = values == 2 ? argv[command++] : NULL;
             continue;

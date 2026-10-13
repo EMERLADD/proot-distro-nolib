@@ -59,8 +59,10 @@ class PdnRuntime @JvmOverloads constructor(
         for ((key, value) in configuration.environment) args += listOf("--env", "$key=$value")
         for (rule in configuration.executionPolicy.rules) {
             val cwd = rule.workingDirectory
-            args += if (cwd == null) listOf("--deny-exec", rule.program)
-                    else listOf("--exec-cwd", rule.program, cwd)
+            val denyOption = if (rule.isCommandRule) "--deny-command" else "--deny-exec"
+            val cwdOption = if (rule.isCommandRule) "--command-cwd" else "--exec-cwd"
+            args += if (cwd == null) listOf(denyOption, rule.program)
+                    else listOf(cwdOption, rule.program, cwd)
         }
         require(args.all { '\u0000' !in it }) { "Arguments cannot contain NUL" }
         return args

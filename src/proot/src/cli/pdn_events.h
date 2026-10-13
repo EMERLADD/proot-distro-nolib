@@ -4,7 +4,7 @@
 int pdn_events_begin(const char *operation);
 void pdn_events_disable(void);
 void pdn_events_finish(int status);
-void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule, const char *reason);
+void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule, const char *reason, const char *command);
 void pdn_events_stage(const char *stage);
 void pdn_events_progress(long long current, long long total);
 void pdn_events_problem(const char *code, const char *message, const char *suggestion);

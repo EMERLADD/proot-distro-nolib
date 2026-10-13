@@ -171,7 +171,7 @@ void pdn_events_progress(long long current, long long total)
     last_current = current; last_percent = percent; last_tick = tick; progress_count++;
 }
 
-void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule, const char *reason)
+void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule, const char *reason, const char *command)
 {
     denied_executions++;
     if (event_fd < 0) return;
@@ -183,6 +183,7 @@ void pdn_events_exec_denied(const char *program, const char *cwd, unsigned rule,
     field(&record, "program", bounded_program);
     field(&record, "cwd", bounded_cwd);
     field(&record, "reason", reason);
+    if (command) field(&record, "command", command);
     field(&record, "message", "Program execution was refused by the host policy");
     field(&record, "suggestion", "Use an allowed startup directory or ask the host to change its execution policy");
     append(&record, ",\"rule_index\":%u,\"errno\":%d", rule, EACCES);

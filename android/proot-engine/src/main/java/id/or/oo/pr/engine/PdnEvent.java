@@ -17,6 +17,7 @@ public final class PdnEvent {
     public String getCode() { return string("code"); }
     public String getMessage() { return string("message"); }
     public String getSuggestion() { return string("suggestion"); }
+    public String getCommandName() { return string("command"); }
     public String getProgram() { return string("program"); }
     public String getWorkingDirectory() { return string("cwd"); }
     public String getReason() { return string("reason"); }

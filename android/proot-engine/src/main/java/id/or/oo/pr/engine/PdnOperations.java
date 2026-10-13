@@ -376,7 +376,7 @@ public final class PdnOperations {
             if (!("started".equals(type) || "stage".equals(type) || "progress".equals(type)
                     || "error".equals(type) || "execution_denied".equals(type) || "result".equals(type))) fail();
             if ((sequence == 0) != "started".equals(type)) fail();
-            for (String key : new String[]{"stage", "code", "message", "suggestion", "outcome", "program", "cwd", "reason"}) {
+            for (String key : new String[]{"stage", "code", "message", "suggestion", "outcome", "program", "cwd", "reason", "command"}) {
                 if (data.has(key)) string(data, key);
             }
             for (String key : new String[]{"current", "total"}) {
@@ -402,9 +402,11 @@ public final class PdnOperations {
                         || !string(data, "cwd").startsWith("/") || integer(data, "rule_index") < 1
                         || integer(data, "rule_index") > 128 || integer(data, "errno") != 13
                         || !("program_denied".equals(string(data, "reason"))
+                             || "command_denied".equals(string(data, "reason"))
                              || "working_directory_denied".equals(string(data, "reason")))
                         || string(data, "message").isEmpty() || string(data, "suggestion").isEmpty()) fail();
             }
+            if (data.has("command")) PdnExecRule.commandName(string(data, "command"));
             if (data.has("denied_executions") && integer(data, "denied_executions") < 0) fail();
             if (data.has("signal") && integer(data, "signal") == 0) fail();
             PdnEvent event = new PdnEvent(data);

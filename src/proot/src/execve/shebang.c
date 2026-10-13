@@ -36,6 +36,7 @@
 #include "execve/aoxp.h"
 #include "tracee/tracee.h"
 #include "attribute.h"
+#include "cli/pdn_exec_policy.h"
 
 /**
  * Extract into @user_path and @argument the shebang from @host_path.
@@ -250,6 +251,8 @@ int expand_shebang(Tracee *tracee, char host_path[PATH_MAX], char user_path[PATH
 		if (status == 0)
 			break;
 		has_shebang = true;
+		status = pdn_exec_policy_check_applet(tracee, user_path, argument);
+		if (status < 0) return status;
 
 		/* Translate new path (user -> host), then check it is executable.  */
 		status = translate_and_check_exec(tracee, host_path, user_path);

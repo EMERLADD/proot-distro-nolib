@@ -166,4 +166,6 @@ proot-engine-*.aar
 
 ## 执行规则事件
 
-可选规则拒绝程序时产生 `execution_denied`，包含 `code=policy_exec_denied`、`program`、`cwd`、`reason`（`program_denied` 或 `working_directory_denied`）、`rule_index`、`errno=13`、`message` 和 `suggestion`。最终 `result` 有拒绝时增加 `denied_executions`。事件文本路径最多 512 字节，长路径截短；判断仍使用完整路径。guest 可自行处理拒绝，因此拒绝事件不必然意味着最终失败。接口及边界见 [执行规则](pdn-aar-api.md#可选执行规则)。
+可选规则拒绝程序时产生 `execution_denied`，包含 `code=policy_exec_denied`、`program`、`cwd`、`reason`（`program_denied`、`command_denied` 或 `working_directory_denied`）、`rule_index`、`errno=13`、`message` 和 `suggestion`。最终 `result` 有拒绝时增加 `denied_executions`。事件文本路径最多 512 字节，长路径截短；判断仍使用完整路径。guest 可自行处理拒绝，因此拒绝事件不必然意味着最终失败。接口及边界见 [执行规则](pdn-aar-api.md#可选执行规则)。
+
+按命令名匹配的拒绝事件额外包含 `command`，SDK 用 `getCommandName()` 读取。它只包含匹配的命令名称，不包含整行参数。

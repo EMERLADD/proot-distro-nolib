@@ -506,3 +506,12 @@ pdn login ubuntu --deny-exec /usr/bin/example
 `--deny-exec /PROGRAM` refuses that program. `--exec-cwd /PROGRAM /DIRECTORY` permits startup only from the exact guest directory; repeat it to allow several directories. Deny takes precedence. Rules apply only to the current login/exec and traced descendants, are not saved in config, and are disabled by default. Symlink and bind resolution makes aliases share rules. Use normalized absolute paths, at most 512 bytes, and at most 128 rules.
 
 Refusal returns EACCES and reports `policy_exec_denied` through stderr and JSONL. See [execution policy](pdn-aar-api.en.md#optional-execution-policy) for full semantics and SDK integration. Startup rules do not restrict later resource access or distinguish shell builtins, interpreter operations or BusyBox applets by command name.
+
+### Restrict command names
+
+```sh
+pdn login alpine --deny-command rm --deny-command curl
+pdn exec alpine --command-cwd apk /workspace --work-dir /workspace -- /sbin/apk --version
+```
+
+`--deny-command NAME` refuses that Linux command; `--command-cwd NAME /DIRECTORY` limits its startup directory. Repeat rules and combine them with path rules. Names match program filenames and recognized BusyBox/toybox applet dispatch; refusing rm does not disable the entire BusyBox. See [command-name rules](pdn-aar-api.en.md#restrict-linux-command-names) for names, event fields and scope.

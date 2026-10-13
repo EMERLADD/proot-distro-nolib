@@ -321,3 +321,12 @@ pdn login ubuntu --deny-exec /usr/bin/example
 `--deny-exec /PROGRAM` 禁止执行该程序；`--exec-cwd /PROGRAM /DIRECTORY` 只允许从指定 guest 目录启动，精确匹配，可重复设置多个允许目录。禁止优先。规则只适用于本次 login/exec 及被追踪的子进程，不保存到 config；默认未启用。路径使用符号链接及 bind 解析，别名共享规则；规范绝对路径最多 512 字节，最多 128 条规则。
 
 拒绝返回 EACCES，并向 stderr 及 JSONL 报告 `policy_exec_denied`。完整语义、SDK 接口和适用边界见 [执行规则](pdn-aar-api.md#可选执行规则)。这是启动控制，不限制程序运行后的资源访问，也不能按命令名区分 shell 内建、解释器内部操作或 BusyBox applet。
+
+### 按命令名限制
+
+```sh
+pdn login alpine --deny-command rm --deny-command curl
+pdn exec alpine --command-cwd apk /workspace --work-dir /workspace -- /sbin/apk --version
+```
+
+`--deny-command NAME` 禁止该 Linux 命令，`--command-cwd NAME /DIRECTORY` 限制其启动目录。可重复配置，也可混用路径规则。名字精确匹配程序文件名及已识别的 BusyBox/toybox applet，不会因为禁止 rm 而禁止整个 BusyBox。命令名、事件字段和适用边界见 [按命令名限制](pdn-aar-api.md#按-linux-命令名限制)。

@@ -71,7 +71,33 @@ val builder = pdn.exec("ubuntu", listOf("/usr/sbin/sshd", "-D"), configuration)
 
 拒绝执行返回 `EACCES`，常见 shell 会返回 126，同时回调 `execution_denied` 事件，`getCode()` 为 `policy_exec_denied`。`getProgram()`、`getWorkingDirectory()`、`getReason()`、`getRuleIndex()` 和 `getErrno()` 提供详情；索引从 1 开始。`PdnResult.getDeniedExecutions()` 汇总拒绝次数。事件不包含完整命令参数。脚本可以处理拒绝后继续成功退出，所以最终是否成功仍按退出结果判断，并单独检查拒绝事件或次数。启动 shell 被禁止时，最终结果为带该错误码的 `manager_error`。
 
-这是程序启动策略，不能限制已启动程序的文件访问、网络、shell 内建命令或解释器内部操作；程序复制到其他位置、显式加载器加载程序、BusyBox 内部 applet 等方式也不能依赖路径规则全面阻止。不要把它当作针对不可信代码的安全沙箱。对 `/bin/sh`、BusyBox 或共享加载器设规则会影响所有使用同一目标的入口，包括 PDN 的启动 shell。宿主应保护 rootfs 和规则涉及的路径，并在可控命令场景使用。
+这是程序启动策略，不能限制已启动程序的文件访问、网络、shell 内建命令或解释器内部操作；程序改名、显式加载器加载程序、shell 内部直接运行 applet 等方式也不能依赖路径规则全面阻止。不要把它当作针对不可信代码的安全沙箱。对 `/bin/sh`、BusyBox 或共享加载器设规则会影响所有使用同一目标的入口，包括 PDN 的启动 shell。宿主应保护 rootfs 和规则涉及的路径，并在可控命令场景使用。
+
+### 按 Linux 命令名限制
+
+按命令名限制的接口要求 SDK 0.6.20 或更新版本；可以一次配置多个命令：
+
+```java
+PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(
+    PdnExecRule.denyCommand("rm"),
+    PdnExecRule.denyCommand("curl"),
+    PdnExecRule.commandOnlyFrom("apk", "/workspace")
+));
+PdnConfiguration configuration = new PdnConfiguration(
+    "root", "/workspace", Collections.emptyList(), Collections.emptyMap(), policy
+);
+ProcessBuilder builder = pdn.exec(
+    "alpine", Arrays.asList("/bin/sh", "-c", "apk --version"), configuration
+);
+```
+
+Kotlin 同样使用 `PdnExecRule.denyCommand("rm")` 和 `PdnExecRule.commandOnlyFrom("apk", "/workspace")`。这些规则也适用于 `login()` 和使用其 ProcessBuilder 的终端会话。
+
+名字按大小写精确匹配请求路径及解析后的程序文件名，不依赖固定安装目录。显式 `busybox rm`、`toybox rm` 以及这两种程序的 applet 入口也检查命令名；禁止 `rm` 不会因此禁止共享 BusyBox 的 `/bin/sh`。普通程序的参数不会被当成命令名，例如禁止 `rm` 不影响 `echo rm`。名字最多 128 个 ASCII 字符，允许字母、数字、下划线、点、`+`、`@` 和短横线，不能以短横线开头；不要传入整行 shell 表达式。
+
+可与原有路径规则混用，禁止优先；匹配的目录许可取并集，仍是精确目录匹配。拒绝事件的 `getCommandName()` 给出匹配名称，按名称禁止时 `getReason()` 为 `command_denied`；按名称限制目录的拒绝仍为 `working_directory_denied`。最终拒绝次数及退出结果语义保持一致。
+
+名字规则不分析脚本文本，也不限制 shell 内建命令或解释器内部操作。识别的多调用程序入口名是 `busybox`、`toybox`；改名的程序、未知分派器和 shell 在内部直接运行的 applet 不属于全面控制范围。它用于可控命令工作流，不能作为不可信代码的安全沙箱。
 
 ## 异步任务
 

@@ -166,4 +166,6 @@ The host still configures ARM64, minSdk 28, native-library extraction, and Inter
 
 ## Execution policy events
 
-A refusal emits `execution_denied` with `code=policy_exec_denied`, `program`, `cwd`, `reason` (`program_denied` or `working_directory_denied`), `rule_index`, `errno=13`, `message` and `suggestion`. The final `result` adds `denied_executions` when nonzero. Event path text is truncated to at most 512 bytes; decisions use complete paths. A guest may handle refusal, so a denial does not necessarily make the final outcome fail. See [execution policy](pdn-aar-api.en.md#optional-execution-policy) for the API and scope.
+A refusal emits `execution_denied` with `code=policy_exec_denied`, `program`, `cwd`, `reason` (`program_denied`, `command_denied` or `working_directory_denied`), `rule_index`, `errno=13`, `message` and `suggestion`. The final `result` adds `denied_executions` when nonzero. Event path text is truncated to at most 512 bytes; decisions use complete paths. A guest may handle refusal, so a denial does not necessarily make the final outcome fail. See [execution policy](pdn-aar-api.en.md#optional-execution-policy) for the API and scope.
+
+Name-rule refusals additionally contain `command`, exposed as `getCommandName()` in the SDK. It contains only the matched command name, not the full argument list.

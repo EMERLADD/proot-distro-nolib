@@ -125,7 +125,24 @@ static int add_mapping(const Tracee *tracee UNUSED, LoadInfo *load_info,
 	return 0;
 }
 
-int pdn_exec_policy_check(Tracee *tracee, const char *program)
+static const char *policy_basename(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
+static int policy_provider(const char *name)
+{
+    return !strcmp(name, "busybox") || !strcmp(name, "toybox");
+}
+
+static int policy_has_commands(void)
+{
+    for (unsigned i = 0; i < pdn_exec_rule_count; i++) if (pdn_exec_rules[i].command) return 1;
+    return 0;
+}
+
+static int policy_check(Tracee *tracee, const char *program, const char *applet)
 {
     if (!pdn_exec_rule_count) return 0;
     char executable[PATH_MAX], rule_program[PATH_MAX], cwd[PATH_MAX], rule_cwd[PATH_MAX];
@@ -139,10 +156,18 @@ int pdn_exec_policy_check(Tracee *tracee, const char *program)
     strcpy(host_cwd, rule_cwd);
     int restricted = 0, allowed = 0, denied = 0;
     unsigned matched_rule = 0;
+    const char *matched_command = NULL;
     for (unsigned i = 0; i < pdn_exec_rule_count; i++) {
-        status = translate_path(tracee, rule_program, AT_FDCWD, pdn_exec_rules[i].program, true);
-        if (status < 0 || strcmp(executable, rule_program)) continue;
+        if (pdn_exec_rules[i].command) {
+            const char *name = pdn_exec_rules[i].program;
+            if (strcmp(name, policy_basename(program)) && strcmp(name, policy_basename(executable)) &&
+                (!applet || strcmp(name, applet))) continue;
+        } else {
+            status = translate_path(tracee, rule_program, AT_FDCWD, pdn_exec_rules[i].program, true);
+            if (status < 0 || strcmp(executable, rule_program)) continue;
+        }
         matched_rule = i + 1;
+        matched_command = pdn_exec_rules[i].command ? pdn_exec_rules[i].program : NULL;
         if (!pdn_exec_rules[i].cwd) { denied = 1; break; }
         restricted = 1;
         status = translate_path(tracee, rule_cwd, AT_FDCWD, pdn_exec_rules[i].cwd, true);
@@ -155,8 +180,51 @@ int pdn_exec_policy_check(Tracee *tracee, const char *program)
         snprintf(guest_executable, sizeof(guest_executable), "%s", program);
     fprintf(stderr, "pdn: policy_exec_denied: %s (cwd %s)\n", guest_executable, cwd);
     pdn_events_exec_denied(guest_executable, cwd, matched_rule,
-        denied ? "program_denied" : "working_directory_denied");
+        denied ? (matched_command ? "command_denied" : "program_denied") : "working_directory_denied",
+        matched_command);
     return -EACCES;
+}
+
+int pdn_exec_policy_check(Tracee *tracee, const char *program)
+{
+    return policy_check(tracee, program, NULL);
+}
+
+int pdn_exec_policy_check_applet(Tracee *tracee, const char *program, const char *applet)
+{
+    if (!policy_has_commands()) return 0;
+    char host[PATH_MAX];
+    int status = translate_path(tracee, host, AT_FDCWD, program, true);
+    if (status < 0) return status;
+    if (!policy_provider(policy_basename(host)) && !policy_provider(policy_basename(program))) return 0;
+    return policy_check(tracee, program, applet && *applet ? policy_basename(applet) : NULL);
+}
+
+int pdn_exec_policy_check_argv(Tracee *tracee, const char *program)
+{
+    if (!policy_has_commands()) return 0;
+    char host[PATH_MAX];
+    int status = translate_path(tracee, host, AT_FDCWD, program, true);
+    if (status < 0) return status;
+    if (!policy_provider(policy_basename(host)) && !policy_provider(policy_basename(program))) return 0;
+    /* Only dispatch names are inspected, never the full command line or environment. */
+    if (!peek_reg(tracee, CURRENT, SYSARG_2)) return 0;
+    ArrayOfXPointers *arguments = NULL;
+    char *name = NULL;
+    status = fetch_array_of_xpointers(tracee, &arguments, SYSARG_2, 1);
+    if (status < 0) return status;
+    status = read_xpointee_as_string(arguments, 0, &name);
+    if (status < 0 || !name) return status;
+    const char *applet = policy_basename(name);
+    if (*applet == '-') applet++;
+    if (policy_provider(applet)) {
+        status = fetch_array_of_xpointers(tracee, &arguments, SYSARG_2, 2);
+        if (status < 0) return status;
+        status = read_xpointee_as_string(arguments, 1, &name);
+        if (status < 0 || !name) return status;
+        applet = policy_basename(name);
+    }
+    return policy_check(tracee, program, applet);
 }
 
 /**
@@ -674,6 +742,9 @@ int translate_execve_enter(Tracee *tracee)
 	status = get_sysarg_path(tracee, user_path, SYSARG_1);
 	if (status < 0)
 		return status;
+
+	status = pdn_exec_policy_check_argv(tracee, user_path);
+	if (status < 0) return status;
 
 	/* Remember the user path before it is overwritten by
 	 * expand_shebang().  This "raw" path is useful to fix the

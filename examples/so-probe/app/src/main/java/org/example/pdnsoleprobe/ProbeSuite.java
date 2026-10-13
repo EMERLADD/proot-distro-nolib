@@ -101,8 +101,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.19"), "version: " + c.stderr());
-            return "native PDN 0.6.19, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.20"), "version: " + c.stderr());
+            return "native PDN 0.6.20, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -144,6 +144,37 @@ public final class ProbeSuite {
               }
             } finally { target.delete(); tools.delete(); }
             return "native child exec allowed in /workspace, refused in /tmp with policy event";
+        });
+        check(checks, "command_policy", () -> {
+            File marker = new File(runtime.getProjectDir(), "policy-" + java.util.UUID.randomUUID());
+            Files.write(marker.toPath(), "keep".getBytes(StandardCharsets.UTF_8));
+            String guest = "/workspace/" + marker.getName();
+            String script = "/bin/rm " + guest + "; test $? = 126 || exit 31; "
+                + "/bin/busybox rm " + guest + "; test $? = 126 || exit 32; "
+                + "test -f " + guest + " || exit 33; echo COMMAND_SAFE";
+            try {
+            ProcessBuilder builder = runtime.processBuilder(Arrays.asList("exec", "alpine", "--bind",
+                runtime.getProjectDir().getAbsolutePath() + ":/workspace", "--work-dir", "/workspace",
+                "--deny-command", "rm", "--", "/bin/sh", "-c", script));
+            Capture c = run(builder);
+            require(c.result.isSuccess() && c.stdout().equals("COMMAND_SAFE\n"), "rm policy: " + c.stderr());
+            require(new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8).equals("keep"), "file must survive");
+            require(c.events.stream().filter(e -> "execution_denied".equals(e.getType()) && "rm".equals(e.data.optString("command"))).count() == 2, "two JSONL rm refusals");
+            Capture unrestricted = run(runtime.exec("alpine", Arrays.asList("/bin/rm", guest)));
+            require(unrestricted.result.isSuccess() && !marker.exists(), "unrestricted rm must actually remove the file");
+            for (String cwd : Arrays.asList("/workspace", "/tmp")) {
+                Capture version = run(runtime.processBuilder(Arrays.asList("exec", "alpine", "--bind",
+                    runtime.getProjectDir().getAbsolutePath() + ":/workspace", "--work-dir", cwd,
+                    "--command-cwd", "apk", "/workspace", "--", "/sbin/apk", "--version")));
+                if (cwd.equals("/workspace")) {
+                    require(version.result.isSuccess() && version.stdout().contains("apk"), "allowed apk --version: " + version.stderr());
+                } else {
+                    require(version.result.getExitCode() == 126, "apk must be refused outside allowed cwd");
+                    require(version.events.stream().anyMatch(e -> "execution_denied".equals(e.getType()) && "apk".equals(e.data.optString("command"))), "apk policy event");
+                }
+            }
+            } finally { marker.delete(); }
+            return "rm and busybox rm refused without stopping shell; file preserved; apk restricted by cwd without network";
         });
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));

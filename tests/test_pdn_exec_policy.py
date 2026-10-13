@@ -112,3 +112,92 @@ class PdnExecPolicyTests(unittest.TestCase):
             self.error_code("invalid_argument", "exec", "ubuntu", "--deny-exec", path, "--", "/bin/sh")
         self.error_code("invalid_argument", "exec", "ubuntu", "--exec-cwd", "/tools/busybox")
         self.error_code("invalid_argument", "config", "ubuntu", "--deny-exec", "/tools/busybox")
+
+    def test_command_rules_do_not_disable_the_shared_busybox_shell(self):
+        for name in ('rm', 'cp', 'mv', 'mkdir'):
+            (self.root / ('bin/' + name)).symlink_to('busybox')
+        for name, command in (
+            ('rm', '/bin/rm /tmp/keep'),
+            ('cp', '/bin/cp /tmp/keep /tmp/copied'),
+            ('mv', '/bin/mv /tmp/keep /tmp/moved'),
+            ('mkdir', '/bin/mkdir /tmp/created'),
+        ):
+            with self.subTest(name=name):
+                (self.root / 'tmp/keep').write_text('keep')
+                result, events = self.invoke_events('exec', 'ubuntu', '--deny-command', name, '--',
+                    '/bin/sh', '-c', command + '; status=$?; echo "blocked=$status"; echo shell-alive')
+                self.good(result, 'blocked=126\nshell-alive\n')
+                denials = [e for e in events if e['type'] == 'execution_denied']
+                self.assertEqual(len(denials), 1, events)
+                self.assertEqual(denials[0]['command'], name)
+                self.assertEqual(denials[0]['reason'], 'command_denied')
+                self.assertEqual((self.root / 'tmp/keep').read_text(), 'keep')
+                for target in ('copied', 'moved', 'created'):
+                    self.assertFalse((self.root / ('tmp/' + target)).exists())
+
+    def test_explicit_multicall_dispatch_is_refused(self):
+        (self.root / 'tmp/keep').write_text('keep')
+        for mode in (None, '1'):
+            if mode is None: self.env.pop('PROOT_NO_SECCOMP', None)
+            else: self.env['PROOT_NO_SECCOMP'] = mode
+            result, events = self.invoke_events('exec', 'ubuntu', '--deny-command', 'rm', '--',
+                '/bin/busybox', 'rm', '/tmp/keep')
+            self.assertEqual(result.returncode, 126, result.stderr)
+            self.assertEqual((self.root / 'tmp/keep').read_text(), 'keep')
+            self.assertEqual([e for e in events if e['type'] == 'execution_denied'][0]['command'], 'rm')
+            self.good(self.invoke('exec', 'ubuntu', '--deny-command', 'rm', '--',
+                                 '/bin/busybox', 'echo', 'rm'), 'rm\n')
+
+    def test_command_directory_rules_follow_child_cwd(self):
+        (self.root / 'allowed').mkdir()
+        (self.root / 'other').mkdir()
+        for cwd, expected in (('/allowed', 0), ('/other', 126)):
+            result = self.invoke('exec', 'ubuntu', '--command-cwd', 'mkdir', '/allowed', '-w', cwd,
+                '--', '/bin/busybox', 'mkdir', 'created')
+            self.assertEqual(result.returncode, expected, result.stderr)
+            self.assertEqual((self.root / (cwd[1:] + '/created')).exists(), expected == 0)
+        result, events = self.invoke_events('exec', 'ubuntu', '--command-cwd', 'mkdir', '/allowed',
+            '--command-cwd', 'mkdir', '/other', '-w', '/other', '--deny-command', 'mkdir', '--',
+            '/bin/busybox', 'mkdir', 'must-not-exist')
+        self.assertEqual(result.returncode, 126, result.stderr)
+        self.assertEqual(events[-1]['denied_executions'], 1)
+
+    def test_named_rule_checks_program_alias_and_interpreter(self):
+        script = self.root / 'bin/script'
+        script.write_text('#!/bin/busybox rm\n')
+        script.chmod(0o755)
+        result, events = self.invoke_events('exec', 'ubuntu', '--deny-command', 'rm', '--', '/bin/script')
+        self.assertEqual(result.returncode, 126, result.stderr)
+        self.assertEqual([e for e in events if e['type'] == 'execution_denied'][0]['command'], 'rm')
+        (self.root / 'tools').mkdir()
+        shutil.copy2(self.root / 'bin/busybox', self.root / 'tools/wget')
+        (self.root / 'bin/alias').symlink_to('../tools/wget')
+        result = self.invoke('exec', 'ubuntu', '--deny-command', 'wget', '--', '/bin/alias', '--help')
+        self.assertEqual(result.returncode, 126, result.stderr)
+        result, events = self.invoke_events('exec', 'ubuntu', '--deny-command', 'sh', '--', '/bin/sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(events[-1]['code'], 'policy_exec_denied')
+
+    def test_invalid_command_rules_are_rejected(self):
+        for name in ('', '-rm', '/bin/rm', 'rm -f', 'rm;echo', 'r' * 129, '删除'):
+            self.error_code('invalid_argument', 'exec', 'ubuntu', '--deny-command', name, '--', '/bin/sh')
+        self.error_code('invalid_argument', 'exec', 'ubuntu', '--command-cwd', 'rm', 'relative', '--', '/bin/sh')
+        self.error_code('invalid_argument', 'config', 'ubuntu', '--deny-command', 'rm')
+
+    @unittest.skipUnless(os.path.exists('/system/bin/toybox'), 'requires Android toybox')
+    def test_toybox_dispatch_is_refused_before_file_changes(self):
+        (self.root / 'tmp/keep').write_text('keep')
+        result, events = self.invoke_events('exec', 'ubuntu', '-b', '/system', '--deny-command', 'rm', '--',
+            '/system/bin/toybox', 'rm', '/tmp/keep')
+        self.assertEqual(result.returncode, 126, result.stderr)
+        self.assertEqual((self.root / 'tmp/keep').read_text(), 'keep')
+        self.assertEqual([e for e in events if e['type'] == 'execution_denied'][0]['command'], 'rm')
+
+    def test_command_rules_apply_to_interactive_login(self):
+        marker = self.root / 'tmp/keep'
+        marker.write_text('keep')
+        result = self.invoke('login', 'ubuntu', '--deny-command', 'rm',
+            input='/bin/busybox rm /tmp/keep\necho shell-alive\nexit\n')
+        self.good(result, 'shell-alive\n')
+        self.assertIn('policy_exec_denied', result.stderr)
+        self.assertEqual(marker.read_text(), 'keep')

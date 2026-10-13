@@ -104,8 +104,8 @@ public final class ProbeSuite {
         });
         check(checks, "version_events", () -> {
             Capture c = run(runtime.version());
-            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.19"), "version: " + c.stderr());
-            return "native PDN 0.6.19, correlated started/result callbacks";
+            require(c.result.isSuccess() && c.stdout().contains("proot-distro-nolib 0.6.20"), "version: " + c.stderr());
+            return "native PDN 0.6.20, correlated started/result callbacks";
         });
         check(checks, "install_alpine", () -> {
             boolean fresh = !getRootfs().exists();
@@ -149,6 +149,40 @@ public final class ProbeSuite {
               }
             } finally { target.delete(); tools.delete(); }
             return "native child exec allowed in /workspace, refused in /tmp with policy event";
+        });
+        check(checks, "command_policy", () -> {
+            File marker = new File(runtime.getProjectDir(), "policy-" + java.util.UUID.randomUUID());
+            Files.write(marker.toPath(), "keep".getBytes(StandardCharsets.UTF_8));
+            String guest = "/workspace/" + marker.getName();
+            String script = "/bin/rm " + guest + "; test $? = 126 || exit 31; "
+                + "/bin/busybox rm " + guest + "; test $? = 126 || exit 32; "
+                + "test -f " + guest + " || exit 33; echo COMMAND_SAFE";
+            try {
+            id.or.oo.pr.engine.PdnConfiguration config = new id.or.oo.pr.engine.PdnConfiguration(
+                "root", "/workspace", java.util.Collections.emptyList(), java.util.Collections.emptyMap(),
+                new id.or.oo.pr.engine.PdnExecPolicy(java.util.Collections.singletonList(id.or.oo.pr.engine.PdnExecRule.denyCommand("rm"))));
+            ProcessBuilder builder = runtime.exec("alpine", Arrays.asList("/bin/sh", "-c", script), config);
+            Capture c = run(builder);
+            require(c.result.isSuccess() && c.stdout().equals("COMMAND_SAFE\n"), "rm policy: " + c.stderr());
+            require(new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8).equals("keep"), "file must survive");
+            require(c.events.stream().filter(e -> "execution_denied".equals(e.getType()) && "rm".equals(e.getCommandName())).count() == 2, "two typed rm refusals");
+            require(c.result.getDeniedExecutions() == 2, "denial summary");
+            Capture unrestricted = run(runtime.exec("alpine", Arrays.asList("/bin/rm", guest)));
+            require(unrestricted.result.isSuccess() && !marker.exists(), "unrestricted rm must actually remove the file");
+            for (String cwd : Arrays.asList("/workspace", "/tmp")) {
+                id.or.oo.pr.engine.PdnConfiguration apkConfig = new id.or.oo.pr.engine.PdnConfiguration(
+                    "root", cwd, java.util.Collections.emptyList(), java.util.Collections.emptyMap(),
+                    new id.or.oo.pr.engine.PdnExecPolicy(java.util.Collections.singletonList(id.or.oo.pr.engine.PdnExecRule.commandOnlyFrom("apk", "/workspace"))));
+                Capture version = run(runtime.exec("alpine", Arrays.asList("/sbin/apk", "--version"), apkConfig));
+                if (cwd.equals("/workspace")) {
+                    require(version.result.isSuccess() && version.stdout().contains("apk"), "allowed apk --version: " + version.stderr());
+                } else {
+                    require(version.result.getExitCode() == 126, "apk must be refused outside allowed cwd");
+                    require(version.events.stream().anyMatch(e -> "execution_denied".equals(e.getType()) && "apk".equals(e.getCommandName())), "apk policy event");
+                }
+            }
+            } finally { marker.delete(); }
+            return "rm and busybox rm refused without stopping shell; file preserved; apk restricted by cwd without network";
         });
         check(checks, "download_complete_cache", () -> verifyDownloadCache(true));
         if (!offlineOnly) check(checks, "download_https_resume", () -> verifyDownloadCache(false));

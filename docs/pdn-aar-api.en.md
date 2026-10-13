@@ -71,7 +71,33 @@ Program, rule and directory paths use PRoot symlink and bind resolution, so alia
 
 Refusal returns `EACCES` (typically shell status 126) and an `execution_denied` callback with code `policy_exec_denied`. Read `getProgram()`, `getWorkingDirectory()`, `getReason()`, `getRuleIndex()` and `getErrno()`; rule indices start at 1. `PdnResult.getDeniedExecutions()` reports the total. Events exclude full command arguments. A script may handle refusal and exit successfully, so inspect denial events or the count separately from the final outcome. Denying the startup shell returns `manager_error` with the policy error code.
 
-This controls program startup, not file access, network operations, shell builtins or operations within interpreters. Program copies at other paths, explicitly invoking a loader and BusyBox applets are outside comprehensive path-based blocking. It is not a security sandbox for untrusted code. Rules for `/bin/sh`, BusyBox or a shared loader affect every entry using the same target, including the PDN startup shell. Protect the rootfs and policy-related paths and use this feature for controlled command workflows.
+This controls program startup, not file access, network operations, shell builtins or operations within interpreters. Renamed programs, explicitly invoking a loader and applets run internally by a shell are outside comprehensive blocking. It is not a security sandbox for untrusted code. Rules for `/bin/sh`, BusyBox or a shared loader affect every entry using the same target, including the PDN startup shell. Protect the rootfs and policy-related paths and use this feature for controlled command workflows.
+
+### Restrict Linux command names
+
+Command-name rules require SDK 0.6.20 or later. Configure multiple commands together:
+
+```java
+PdnExecPolicy policy = new PdnExecPolicy(Arrays.asList(
+    PdnExecRule.denyCommand("rm"),
+    PdnExecRule.denyCommand("curl"),
+    PdnExecRule.commandOnlyFrom("apk", "/workspace")
+));
+PdnConfiguration configuration = new PdnConfiguration(
+    "root", "/workspace", Collections.emptyList(), Collections.emptyMap(), policy
+);
+ProcessBuilder builder = pdn.exec(
+    "alpine", Arrays.asList("/bin/sh", "-c", "apk --version"), configuration
+);
+```
+
+Kotlin uses the same `PdnExecRule.denyCommand("rm")` and `PdnExecRule.commandOnlyFrom("apk", "/workspace")` factories. Rules also apply to `login()` and terminal sessions using its builder.
+
+Names match requested and resolved program filenames exactly and case-sensitively, regardless of installation directory. Explicit `busybox rm`, `toybox rm` and their applet entries also check the command name, so denying `rm` does not disable the shared BusyBox `/bin/sh`. Ordinary program arguments are not command names: denying `rm` does not affect `echo rm`. Names allow up to 128 ASCII letters, digits, underscores, dots, `+`, `@` and hyphens, but cannot start with a hyphen. Do not supply a complete shell expression.
+
+Name and path rules can be combined. Deny takes precedence; matching directory permissions form a union and match exact directories. `getCommandName()` identifies the matched name on refusal. Name-based denial uses reason `command_denied`; a directory refusal remains `working_directory_denied`. Final counts and exit-outcome semantics are unchanged.
+
+Name rules do not analyze script text or control shell builtins and interpreter operations. Recognized multicall entry names are `busybox` and `toybox`; renamed programs, unknown dispatchers and applets executed internally by a shell are outside comprehensive control. Use this for controlled command workflows, not as a security sandbox for untrusted code.
 
 ## Asynchronous tasks
 
