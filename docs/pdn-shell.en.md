@@ -57,6 +57,29 @@ After reconnecting through rish, run the absolute `pdn-run` path above; it sets 
 
 To use `pdn` by name in the current session, save and source `pdn-env.sh`; see [saved settings and login entry](pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry). Native Android shell does not guarantee loading `~/.bashrc` or `~/.profile`.
 
+### Use pdn as the short command
+
+After creating `pdn-run`, define a function in the outer Android shell. You can then enter `pdn login alpine` directly:
+
+```sh
+pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
+pdn install alpine
+pdn login alpine
+```
+
+The function applies to the current shell. Save its definition and load it as follows:
+
+```sh
+cat > /data/local/tmp/pdn/pdn-command.sh <<'EOF'
+pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
+EOF
+chmod 600 /data/local/tmp/pdn/pdn-command.sh
+. /data/local/tmp/pdn/pdn-command.sh
+pdn login alpine
+```
+
+After reconnecting through rish, run `. /data/local/tmp/pdn/pdn-command.sh` to restore the short command. If your terminal or connection tool supports initialization commands, configure this line to run **after entering rish**; Android shell does not guarantee loading this file automatically. The saved function delegates directory setup to `pdn-run` on every invocation. Replace the deployment directory with `/data/local/tmp/pdn-mt` for the MT example. `./pdn` explicitly runs the original executable; use `pdn` for the short command.
+
 ## Install, log in and manage distributions
 
 ```sh

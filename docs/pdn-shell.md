@@ -57,6 +57,29 @@ chmod 700 /data/local/tmp/pdn/pdn-run
 
 如果希望当前会话直接输入 `pdn`，也可以保存 `pdn-env.sh` 并用点命令加载，完整命令见 [保存环境及登录入口](pdn-shizuku-android-shell.md#固定目录变量和专用登录入口)。原生 Android shell 不保证自动读取 `~/.bashrc` 或 `~/.profile`。
 
+### 直接使用 pdn 短命令
+
+已有上面的 `pdn-run` 后，在外层 Android shell 定义一个函数，之后就能直接输入 `pdn login alpine`：
+
+```sh
+pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
+pdn install alpine
+pdn login alpine
+```
+
+函数名只在当前 shell 生效。要保存这个短命令，创建定义文件并加载：
+
+```sh
+cat > /data/local/tmp/pdn/pdn-command.sh <<'EOF'
+pdn() { /data/local/tmp/pdn/pdn-run "$@"; }
+EOF
+chmod 600 /data/local/tmp/pdn/pdn-command.sh
+. /data/local/tmp/pdn/pdn-command.sh
+pdn login alpine
+```
+
+重新连接 rish 后，执行 `. /data/local/tmp/pdn/pdn-command.sh` 恢复短命令。若终端或连接工具支持初始化命令，将这一行配置为**进入 rish 后**执行；Android shell 不保证自动加载这个文件。保存的是函数定义，`pdn-run` 每次负责设置 rootfs 和临时目录。MT 示例部署在 `/data/local/tmp/pdn-mt` 时，替换代码里的目录即可。`./pdn` 明确指定文件，会直接运行原始程序；使用短命令请写 `pdn`。
+
 ## 安装、登录和管理发行版
 
 ```sh
