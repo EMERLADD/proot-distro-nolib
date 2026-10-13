@@ -12,6 +12,7 @@
 - [前台与连接要求](#前台与连接要求)
 - [进入 Android shell](#进入-android-shell)
 - [部署 PDN 和安装 Ubuntu](#部署-pdn-和安装-ubuntu)
+- [固定目录变量和专用登录入口](#固定目录变量和专用登录入口)
 - [带挂载进入 Ubuntu](#带挂载进入-ubuntu)
 - [把长命令注册为 rish](#把长命令注册为-rish)
 - [验证 Android 设置并清理](#验证-android-设置并清理)
@@ -115,9 +116,52 @@ mkdir -p "$PROOT_TMP_DIR"
 
 `/data/local/tmp/pdn-mt` 是 shell 可写目录的示例，不是固定要求。选其他目录时，要同步修改程序、rootfs、临时目录和 loader 路径。不要把 rootfs 解压到 `/sdcard`。
 
+## 固定目录变量和专用登录入口
+
+`export` 只影响当前 shell 及其子进程。要长期保存目录设置，在 **Android shell** 中把它们写入配置文件；以后加载这个文件即可，不依赖当前工作目录。下面使用前面已创建的目录：
+
+```sh
+cat > /data/local/tmp/pdn-mt/pdn-env.sh <<'EOF'
+PDN_BIN_DIR=/data/local/tmp/pdn-mt
+export PDN_ROOTFS_DIR="$PDN_BIN_DIR/linux"
+export PROOT_TMP_DIR="$PDN_BIN_DIR/tmp"
+export PROOT_LOADER="$PDN_BIN_DIR/proot-loader"
+case ":$PATH:" in
+    *":$PDN_BIN_DIR:"*) ;;
+    *) export PATH="$PDN_BIN_DIR${PATH:+:$PATH}" ;;
+esac
+EOF
+chmod 600 /data/local/tmp/pdn-mt/pdn-env.sh
+. /data/local/tmp/pdn-mt/pdn-env.sh
+```
+
+每次重新进入 Android shell，可执行 `. /data/local/tmp/pdn-mt/pdn-env.sh`，然后直接使用 `pdn`。如果终端或连接工具支持 Android shell 的初始化命令，可将这一行放在那里，确保它在进入 rish 后的 Android shell 中执行。原生 `/system/bin/sh` 不保证读取 Bash 的 `~/.bashrc`，且 `HOME` 可能是 `/`，不能把 Ubuntu 的 `.bashrc` 当作外层 shell 的启动配置。
+
+需要保留 Android 系统挂载的 Ubuntu，单独创建一个 `ubuntu-android` 登录命令，在 **Android shell** 中执行：
+
+```sh
+cat > /data/local/tmp/pdn-mt/ubuntu-android <<'EOF'
+#!/system/bin/sh
+. /data/local/tmp/pdn-mt/pdn-env.sh || exit 1
+mkdir -p "$PROOT_TMP_DIR" || exit 1
+exec "$PDN_BIN_DIR/pdn" login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt "$@"
+EOF
+chmod 700 /data/local/tmp/pdn-mt/ubuntu-android
+```
+
+这个入口每次自动加载目录设置、准备临时目录，并带上三个 Android 挂载。已加载 `pdn-env.sh` 的会话也可直接输入 `ubuntu-android`。可以给文件改成自己喜欢的命令名；更换部署目录时，同步修改配置中的 `PDN_BIN_DIR` 和入口脚本加载配置的路径。文件会持续保存，环境变量仍是在每次启动时加载。
+
+入口沿用启动它的 Android 权限：普通 App shell 不会因此获得 shell/ADB 权限，使用 Shizuku 时仍须先连接原始 rish，并保持已授权宿主在前台。`ubuntu-android` 是外层登录入口，下面的 `rish` 函数则定义在 Ubuntu 内，作用不同。
+
 ## 带挂载进入 Ubuntu
 
-在 **Android shell** 执行下面这一整行：
+在 **Android shell** 中，以下两种方式只选一种。已创建上面的专用入口时，执行：
+
+```sh
+/data/local/tmp/pdn-mt/ubuntu-android
+```
+
+没有创建专用入口时，执行完整挂载命令：
 
 ```sh
 ./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
@@ -213,13 +257,10 @@ settings get global pdn_ubuntu_demo_20261009
 从宿主终端重新连接原始 rish，进入 **Android shell** 后：
 
 ```sh
-cd /data/local/tmp/pdn-mt
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn-mt/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn-mt/tmp
-export PROOT_LOADER=/data/local/tmp/pdn-mt/proot-loader
-mkdir -p "$PROOT_TMP_DIR"
-./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
+/data/local/tmp/pdn-mt/ubuntu-android
 ```
+
+未创建专用入口时，仍可按前面步骤加载目录变量并执行带挂载的完整 `pdn login` 命令。
 
 Ubuntu 内保存的函数自动加载，不需要重装 Ubuntu，也不需要把原始 rish 和 dex 复制进 Ubuntu。
 

@@ -175,6 +175,8 @@ rish -c 'cmd package path android'
 
 Here `rish` is a Bash function calling Android shell with inherited privileges; it does not reconnect to Shizuku. Starting from ADB shell does not need Shizuku. When using Shizuku, keep the authorized host in the foreground: the tested environment disconnected in the background even with battery usage set to unrestricted.
 
+Save directory variables in a configuration file and create an `ubuntu-android` entry that loads them and supplies the Android mounts. See [persistent settings and login entry](docs/pdn-shizuku-android-shell.en.md#save-directory-variables-and-a-dedicated-login-entry).
+
 See the [complete tutorial](docs/pdn-shizuku-android-shell.en.md) for original rish setup, saving the function to `.bashrc`, verifying and cleaning up Android settings changes, reconnection and common errors.
 
 ### 3.4 Integrate an App with the AAR

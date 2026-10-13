@@ -175,6 +175,8 @@ rish -c 'cmd package path android'
 
 这里的 `rish` 是 Bash 函数，使用已继承的权限调用 Android shell，不会再次连接 Shizuku。从 ADB shell 启动时无需 Shizuku；使用 Shizuku 时，把已授权宿主保持在前台，部分系统即使设置电池“无限制”也可能在后台断连。
 
+目录变量可保存到配置文件，并创建自动加载设置、携带 Android 挂载的 `ubuntu-android` 专用登录命令，见[固定目录变量和登录入口](docs/pdn-shizuku-android-shell.md#固定目录变量和专用登录入口)。
+
 原始 rish 准备、函数保存到 `.bashrc`、验证 Android 设置确实改变并清理、重连和常见报错见[完整教程](docs/pdn-shizuku-android-shell.md)。
 
 ### 3.4 通过 AAR 接入 App

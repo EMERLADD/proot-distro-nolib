@@ -12,6 +12,7 @@ This tutorial uses MT Manager as an example and also applies to other Android sh
 - [Foreground and connection requirements](#foreground-and-connection-requirements)
 - [Enter an Android shell](#enter-an-android-shell)
 - [Deploy PDN and install Ubuntu](#deploy-pdn-and-install-ubuntu)
+- [Save directory variables and a dedicated login entry](#save-directory-variables-and-a-dedicated-login-entry)
 - [Enter Ubuntu with mounts](#enter-ubuntu-with-mounts)
 - [Give the long command the name rish](#give-the-long-command-the-name-rish)
 - [Verify Android settings and clean up](#verify-android-settings-and-clean-up)
@@ -115,9 +116,52 @@ Wait for download, SHA256 verification, and extraction to finish. Do not create 
 
 `/data/local/tmp/pdn-mt` is an example writable shell directory, not a fixed requirement. If choosing another directory, update the program, rootfs, temporary directory, and loader paths together. Do not extract the rootfs into `/sdcard`.
 
+## Save directory variables and a dedicated login entry
+
+`export` affects only the current shell and its children. Save the directory settings in a file from the **Android shell**, then load that file in later sessions without depending on the working directory. These commands use the directory created earlier:
+
+```sh
+cat > /data/local/tmp/pdn-mt/pdn-env.sh <<'EOF'
+PDN_BIN_DIR=/data/local/tmp/pdn-mt
+export PDN_ROOTFS_DIR="$PDN_BIN_DIR/linux"
+export PROOT_TMP_DIR="$PDN_BIN_DIR/tmp"
+export PROOT_LOADER="$PDN_BIN_DIR/proot-loader"
+case ":$PATH:" in
+    *":$PDN_BIN_DIR:"*) ;;
+    *) export PATH="$PDN_BIN_DIR${PATH:+:$PATH}" ;;
+esac
+EOF
+chmod 600 /data/local/tmp/pdn-mt/pdn-env.sh
+. /data/local/tmp/pdn-mt/pdn-env.sh
+```
+
+After reconnecting to Android shell, run `. /data/local/tmp/pdn-mt/pdn-env.sh` to use `pdn` by name. If your terminal or connection tool supports Android-shell initialization commands, put that line there, making sure it runs in the Android shell reached after entering rish. Native `/system/bin/sh` does not guarantee loading Bash's `~/.bashrc`, and `HOME` may be `/`; Ubuntu's `.bashrc` is not the outer shell's startup configuration.
+
+For Ubuntu with the Android system mounts, create a separate `ubuntu-android` login command in the **Android shell**:
+
+```sh
+cat > /data/local/tmp/pdn-mt/ubuntu-android <<'EOF'
+#!/system/bin/sh
+. /data/local/tmp/pdn-mt/pdn-env.sh || exit 1
+mkdir -p "$PROOT_TMP_DIR" || exit 1
+exec "$PDN_BIN_DIR/pdn" login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt "$@"
+EOF
+chmod 700 /data/local/tmp/pdn-mt/ubuntu-android
+```
+
+This entry loads the directory settings, prepares the temporary directory and supplies all three Android mounts on each login. Sessions that have loaded `pdn-env.sh` can simply use `ubuntu-android`. Rename the script to choose another command name. When relocating the deployment, update both `PDN_BIN_DIR` in the configuration and the configuration path in the entry script. The files persist; environment variables are loaded on each launch.
+
+The entry retains the launching shell's Android permissions. It does not grant shell/ADB privileges to an ordinary App shell. With Shizuku, connect through the original rish client first and keep the authorized host foregrounded. `ubuntu-android` is the outer login entry; the `rish` function below is defined inside Ubuntu and serves a different purpose.
+
 ## Enter Ubuntu with mounts
 
-Run this entire line in the **Android shell**:
+In the **Android shell**, choose one of the following methods. If you created the entry above, run:
+
+```sh
+/data/local/tmp/pdn-mt/ubuntu-android
+```
+
+Without the entry script, use the full mounted login command:
 
 ```sh
 ./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
@@ -213,13 +257,10 @@ If disconnected midway, delete the test key after reconnecting to the Android sh
 Reconnect the original rish client from the host terminal. Once in the **Android shell**:
 
 ```sh
-cd /data/local/tmp/pdn-mt
-export PDN_ROOTFS_DIR=/data/local/tmp/pdn-mt/linux
-export PROOT_TMP_DIR=/data/local/tmp/pdn-mt/tmp
-export PROOT_LOADER=/data/local/tmp/pdn-mt/proot-loader
-mkdir -p "$PROOT_TMP_DIR"
-./pdn login ubuntu --bind /system --bind /apex --bind /linkerconfig/ld.config.txt
+/data/local/tmp/pdn-mt/ubuntu-android
 ```
+
+If you have not created the entry script, load the directory settings and use the full mounted `pdn login` command shown earlier.
 
 The function saved inside Ubuntu loads automatically. Neither reinstalling Ubuntu nor copying the original rish and dex into Ubuntu is necessary.
 
